@@ -18,6 +18,14 @@ export async function loadCatalogFromAssets(
   assets: AssetsBinding,
   options: ExecutableActionOptions = {},
 ): Promise<CatalogStore> {
+  try {
+    const coreProviders = await readJsonAsset(assets, "/catalog/core-providers.json");
+    if (Array.isArray(coreProviders) && coreProviders.length > 0) {
+      return createCatalog(coreProviders as ProviderDefinition[], options);
+    }
+  } catch {
+    // Fall back to full chunked catalog if core-providers.json is unavailable
+  }
   const index = parseCatalogIndex(await readJsonAsset(assets, catalogIndexPath), catalogIndexPath);
   const chunks = await Promise.all(index.chunks.map((chunk) => requireProviderArrayAsset(assets, `/catalog/${chunk}`)));
   const providers = chunks.flat();

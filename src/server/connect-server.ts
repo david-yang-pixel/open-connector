@@ -144,7 +144,10 @@ export class ConnectServer {
 
   constructor(options: IConnectServerOptions) {
     this.options = options;
-    this.actionSearch = options.actionSearch ?? createActionSearchIndexProvider(options.catalog.actions);
+    let actionSearchInstance: ActionSearchIndexProvider | undefined;
+    this.actionSearch = options.actionSearch ?? {
+      get: async () => (actionSearchInstance ??= createActionSearchIndexProvider(this.options.catalog.actions)).get(),
+    };
     this.actionPolicy = options.actionPolicy ?? new ActionPolicyService();
     this.proxyRunner = new ProxyRunner({
       catalog: options.catalog,

@@ -39,6 +39,33 @@ export default {
   async fetch(request: Request, env: CloudflareEnv, _ctx: CloudflareExecutionContext): Promise<Response> {
     setPrivateNetworkAccessAllowed(parsePrivateNetworkAccessFlag(env.OOMOL_CONNECT_ALLOW_PRIVATE_NETWORK));
     setEgressTrustedHosts(parseEgressTrustedHosts(env.OOMOL_CONNECT_EGRESS_TRUSTED_HOSTS));
+
+    const url = new URL(request.url);
+    if (request.method === "GET" && url.pathname === "/api/providers" && env.ASSETS) {
+      const assetUrl = new URL("/catalog/provider-summaries.json", request.url);
+      const assetResponse = await env.ASSETS.fetch(new Request(assetUrl));
+      if (assetResponse.ok) {
+        const etag = assetResponse.headers.get("etag") || 'W/"provider-summaries";
+        const ifNoneMatch = request.headers.get("if-none-match");
+        if (ifNoneMatch && (ifNoneMatch === etag || ifNoneMatch.includes(etag))) {
+          return new Response(null, {
+            status: 304,
+            headers: {
+              "cache-control": "public, max-age=86400, stale-while-revalidate=86400",
+              "cloudflare-cdn-cache-control": "public, max-age=31536000, stale-while-revalidate=86400",
+              "etag": etag,
+            },
+          });
+        }
+        const headers = new Headers(assetResponse.headers);
+        headers.set("content-type", "application/json");
+        headers.set("cache-control", "public, max-age=86400, stale-while-revalidate=86400");
+        headers.set("cloudflare-cdn-cache-control", "public, max-age=31536000, stale-while-revalidate=86400");
+        headers.set("etag", etag);
+        return new Response(assetResponse.body, { status: 200, headers });
+      }
+    }
+
     const publicOrigin = resolvePublicOrigin(request, env);
     const { app } = await appCache.get(createCacheKey(env, publicOrigin), () => createCloudflareApp(env, publicOrigin));
     const response = await app.fetch(request, env);
@@ -58,7 +85,6 @@ async function createCloudflareApp(env: CloudflareEnv, publicOrigin: string): Pr
   // The Node server defers the MCP and docs modules to their first request so its startup graph stays small.
   // Workers keep paying their evaluation here, at app creation, so the first /mcp or /docs request of an isolate
   // is served the same way as every later one.
-  await preloadOptionalServerModules();
   const secretCodec = await createSecretCodec(env.OOMOL_CONNECT_ENCRYPTION_KEY);
   return await createConnectApp({
     catalog: await loadCatalogOnce(assets),

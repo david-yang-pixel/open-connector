@@ -160,7 +160,8 @@ export function createCatalogStore(
  */
 function weakEtag(content: string): string {
   let hash = 0x811c_9dc5;
-  for (let index = 0; index < content.length; index++) {
+  const step = content.length > 8192 ? Math.floor(content.length / 4096) : 1;
+  for (let index = 0; index < content.length; index += step) {
     hash ^= content.charCodeAt(index);
     hash = Math.imul(hash, 0x0100_0193);
   }

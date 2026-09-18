@@ -25,19 +25,23 @@ export async function copyCatalogAssets(options: CopyCatalogAssetsOptions): Prom
   const entries = (await readdir(options.sourceDir, { withFileTypes: true }))
     .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-  const providers = await Promise.all(
+  const rawProviders = await Promise.all(
     entries.map(async (entry) => {
       const content = await readFile(join(options.sourceDir, entry.name), "utf8");
       try {
+        const parsed = JSON.parse(content) as any;
         return {
           filename: entry.name,
-          json: JSON.stringify(JSON.parse(content) as unknown),
+          provider: parsed,
+          json: JSON.stringify(parsed),
         };
       } catch (cause) {
         throw new Error(`Failed to parse catalog provider file: ${entry.name}`, { cause });
       }
     }),
   );
+
+  const providers = rawProviders.map((p) => ({ filename: p.filename, json: p.json }));
   const chunks = createChunks(providers, maxChunkBytes);
 
   await rm(options.targetDir, { recursive: true, force: true });
@@ -50,8 +54,33 @@ export async function copyCatalogAssets(options: CopyCatalogAssetsOptions): Prom
     chunks: chunkNames,
   };
 
+  const toActionSummary = (action: any) => {
+    const { inputSchema, outputSchema, ...rest } = action;
+    return rest;
+  };
+  const toProviderSummary = (provider: any) => ({
+    ...provider,
+    actions: Array.isArray(provider.actions) ? provider.actions.map(toActionSummary) : [],
+    setup: provider.auth,
+  });
+
+  const providerSummaries = rawProviders.map((p) => toProviderSummary(p.provider));
+  const providerSummariesJson = JSON.stringify(providerSummaries);
+
+  const coreServices = new Set([
+    "custom_mcp", "cloudflare_mcp", "feishu_app_bot", "github", "gmail", "linear",
+    "slack", "notion", "discord", "airtable", "stripe", "jira", "google_drive",
+    "google_docs", "google_sheets", "telegram", "resend", "sendgrid", "hubspot",
+    "cloudflare", "feishu",
+  ]);
+  const coreProviders = rawProviders
+    .map((p) => p.provider)
+    .filter((p) => coreServices.has(p.service) || (p.auth && p.auth.some((a: any) => a.type === "no_auth")));
+
   await Promise.all([
     writeFile(join(options.targetDir, "index.json"), `${JSON.stringify(index)}\n`),
+    writeFile(join(options.targetDir, "provider-summaries.json"), providerSummariesJson),
+    writeFile(join(options.targetDir, "core-providers.json"), JSON.stringify(coreProviders)),
     ...chunks.map((chunk, index) => writeFile(join(options.targetDir, chunkNames[index]!), chunk)),
   ]);
 

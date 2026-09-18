@@ -120,6 +120,7 @@ export class ActionRunner {
           }
         }
       } catch (error) {
+        console.error("Action execution caught error:", error);
         const missingConnectionPolicy =
           error instanceof ConnectionError && error.code === "connection_not_found"
             ? input.policy.evaluateConnection()

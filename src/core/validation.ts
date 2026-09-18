@@ -28,9 +28,13 @@ export function validateActionInput(action: ActionDefinition, input: unknown): A
 function validatorFor(action: ActionDefinition): Validator {
   let validator = validators.get(action);
   if (validator === undefined) {
+    const schema =
+      action.inputSchema && typeof action.inputSchema === "object"
+        ? (action.inputSchema as Schema)
+        : ({ type: "object" } as Schema);
     // shortCircuit: false so one response lists every invalid property. Stopping
     // at the first keeps a caller fixing input one field per round trip.
-    validator = new Validator(action.inputSchema as Schema, "2020-12", false);
+    validator = new Validator(schema, "2020-12", false);
     validators.set(action, validator);
   }
 

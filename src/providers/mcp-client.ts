@@ -24,11 +24,32 @@ export interface McpClientOptions {
   mapError?: (error: unknown) => unknown;
 }
 
+function toPlainHeaders(headers?: HeadersInit): Record<string, string> | undefined {
+  if (!headers) return undefined;
+  const result: Record<string, string> = {};
+  if (typeof (headers as any).entries === "function") {
+    for (const [key, value] of (headers as any).entries()) {
+      result[key.toLowerCase()] = String(value);
+    }
+  } else if (Array.isArray(headers)) {
+    for (const [key, value] of headers) {
+      result[key.toLowerCase()] = String(value);
+    }
+  } else if (typeof headers === "object") {
+    for (const [key, value] of Object.entries(headers)) {
+      if (value !== undefined && value !== null) {
+        result[key.toLowerCase()] = String(value);
+      }
+    }
+  }
+  return result;
+}
+
 export async function withMcpClient<T>(options: McpClientOptions, run: (client: Client) => Promise<T>): Promise<T> {
   const transportOptions = {
     fetch: options.fetcher,
     requestInit: {
-      headers: options.headers,
+      headers: toPlainHeaders(options.headers),
       redirect: options.redirect,
       signal: options.signal,
     },
