@@ -42,8 +42,16 @@ export interface OAuthAccessTokenRefreshInput {
   createError(message: string): Error;
 }
 
+export interface OAuthAuthorizationScopeResolutionInput {
+  clientConfig: OAuthClientConfig;
+  requestedScopes: string[];
+  fetcher: typeof fetch;
+  createError(message: string): Error;
+}
+
 /** Provider-local overrides for token protocols that do not follow the standard OAuth request shape. */
 export interface ProviderOAuthRuntime {
+  resolveAuthorizationScopes?(input: OAuthAuthorizationScopeResolutionInput): Promise<string[]>;
   exchangeCode?(input: OAuthCodeExchangeInput): Promise<OAuthTokenResult>;
   refreshAccessToken?(input: OAuthAccessTokenRefreshInput): Promise<OAuthTokenResult>;
 }

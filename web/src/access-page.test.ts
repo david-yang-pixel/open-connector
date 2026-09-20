@@ -7,8 +7,10 @@ import {
   AccessPage,
   allowedConnectionsFromDraft,
   ConnectionGrantEditor,
+  connectionPermissionsFromDraft,
   connectionGrantOptions,
   createConnectionGrantDraft,
+  createRecommendedConnectionGrantDraft,
   policyDraftFromRules,
   policyRulesFromDraft,
   runtimeTokenPolicyBody,
@@ -123,19 +125,26 @@ describe("AccessPage", () => {
   });
 
   it("treats omitted and empty allowedConnections as unrestricted token grants", () => {
-    expect(createConnectionGrantDraft()).toEqual({ mode: "unrestricted", ids: [] });
-    expect(createConnectionGrantDraft([])).toEqual({ mode: "unrestricted", ids: [] });
-    expect(allowedConnectionsFromDraft({ mode: "unrestricted", ids: [githubWorkId] })).toEqual([]);
+    expect(createConnectionGrantDraft()).toEqual({ mode: "unrestricted", ids: [], accessById: {} });
+    expect(createConnectionGrantDraft([])).toEqual({ mode: "unrestricted", ids: [], accessById: {} });
+    expect(
+      allowedConnectionsFromDraft({
+        mode: "unrestricted",
+        ids: [githubWorkId],
+        accessById: { [githubWorkId]: "read" },
+      }),
+    ).toEqual([]);
     expect(
       runtimeTokenPolicyBody(
         { allowedActions: ["github.*"], blockedActions: [], allowedProxies: [] },
-        { mode: "unrestricted", ids: [githubWorkId] },
+        { mode: "unrestricted", ids: [githubWorkId], accessById: { [githubWorkId]: "read" } },
       ),
     ).toEqual({
       allowedActions: ["github.*"],
       blockedActions: [],
       allowedProxies: [],
       allowedConnections: [],
+      connectionPermissions: [],
     });
   });
 
@@ -143,18 +152,43 @@ describe("AccessPage", () => {
     expect(createConnectionGrantDraft([githubWorkId, githubDefaultId])).toEqual({
       mode: "restricted",
       ids: [githubWorkId, githubDefaultId],
+      accessById: { [githubWorkId]: "full", [githubDefaultId]: "full" },
     });
     expect(
       runtimeTokenPolicyBody(
         { allowedActions: [], blockedActions: [], allowedProxies: ["github"] },
-        { mode: "restricted", ids: [githubWorkId] },
+        { mode: "restricted", ids: [githubWorkId], accessById: { [githubWorkId]: "read" } },
       ),
     ).toEqual({
       allowedActions: [],
       blockedActions: [],
       allowedProxies: ["github"],
       allowedConnections: [githubWorkId],
+      connectionPermissions: [{ connectionId: githubWorkId, access: "read" }],
     });
+  });
+
+  it("defaults new token grants to read-only for every current connection", () => {
+    const draft = createRecommendedConnectionGrantDraft([
+      { id: githubDefaultId, service: "github", name: "default", provider: "GitHub" },
+      { id: slackWorkId, service: "slack", name: "work", provider: "Slack" },
+    ]);
+
+    expect(draft).toEqual({
+      mode: "restricted",
+      ids: [githubDefaultId, slackWorkId],
+      accessById: { [githubDefaultId]: "read", [slackWorkId]: "read" },
+    });
+    expect(connectionPermissionsFromDraft(draft)).toEqual([
+      { connectionId: githubDefaultId, access: "read" },
+      { connectionId: slackWorkId, access: "read" },
+    ]);
+    expect(
+      runtimeTokenPolicyBody({ allowedActions: [], blockedActions: [], allowedProxies: [] }, draft, [
+        { id: githubDefaultId, service: "github", name: "default", provider: "GitHub" },
+        { id: slackWorkId, service: "slack", name: "work", provider: "Slack" },
+      ]),
+    ).toMatchObject({ allowedActions: ["github.*", "slack.*"] });
   });
 
   it("builds one token grant option for each current credential connection", () => {
@@ -177,9 +211,33 @@ describe("AccessPage", () => {
         { service: "github", displayName: "GitHub", categories: [], authTypes: [], auth: [], actions: [] },
       ]),
     ).toEqual([
-      { id: githubDefaultId, name: "default", provider: "GitHub" },
-      { id: githubWorkId, name: "work", provider: "GitHub" },
-      { id: slackWorkId, name: "work", provider: "slack" },
+      {
+        id: githubDefaultId,
+        service: "github",
+        name: "default",
+        displayName: undefined,
+        provider: "GitHub",
+        toolCount: undefined,
+        isDefault: true,
+      },
+      {
+        id: githubWorkId,
+        service: "github",
+        name: "work",
+        displayName: undefined,
+        provider: "GitHub",
+        toolCount: undefined,
+        isDefault: false,
+      },
+      {
+        id: slackWorkId,
+        service: "slack",
+        name: "work",
+        displayName: undefined,
+        provider: "slack",
+        toolCount: undefined,
+        isDefault: false,
+      },
     ]);
   });
 
@@ -188,9 +246,9 @@ describe("AccessPage", () => {
       createElement(ConnectionGrantEditor, {
         draft: createConnectionGrantDraft(),
         options: [
-          { id: githubDefaultId, name: "default", provider: "GitHub" },
-          { id: githubWorkId, name: "work", provider: "GitHub" },
-          { id: slackWorkId, name: "work", provider: "Slack" },
+          { id: githubDefaultId, service: "github", name: "default", provider: "GitHub" },
+          { id: githubWorkId, service: "github", name: "work", provider: "GitHub" },
+          { id: slackWorkId, service: "slack", name: "work", provider: "Slack" },
         ],
         onChange: vi.fn(),
       }),
@@ -199,9 +257,9 @@ describe("AccessPage", () => {
       createElement(ConnectionGrantEditor, {
         draft: createConnectionGrantDraft([githubWorkId]),
         options: [
-          { id: githubDefaultId, name: "default", provider: "GitHub" },
-          { id: githubWorkId, name: "work", provider: "GitHub" },
-          { id: slackWorkId, name: "work", provider: "Slack" },
+          { id: githubDefaultId, service: "github", name: "default", provider: "GitHub" },
+          { id: githubWorkId, service: "github", name: "work", provider: "GitHub" },
+          { id: slackWorkId, service: "slack", name: "work", provider: "Slack" },
         ],
         onChange: vi.fn(),
       }),
@@ -248,7 +306,7 @@ describe("AccessPage", () => {
         includeProxies: true,
         connectionEditor: createElement(ConnectionGrantEditor, {
           draft: createConnectionGrantDraft(),
-          options: [{ id: githubDefaultId, name: "default", provider: "GitHub" }],
+          options: [{ id: githubDefaultId, service: "github", name: "default", provider: "GitHub" }],
           onChange: vi.fn(),
         }),
         onChange: vi.fn(),

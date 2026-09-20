@@ -70,8 +70,9 @@ async function extractArchive(input: Record<string, unknown>, context: ApiKeyPro
   });
   const formData = await new Response(Uint8Array.from(bytes), { headers: { "content-type": contentType } }).formData();
   const files: ProviderTransitFile[] = [];
-  for (const value of formData.values()) {
-    if (!(value instanceof File)) continue;
+  // Bun's ambient FormData iterator narrows values to strings, while the web standard returns File | string.
+  for (const value of formData.values() as Iterable<FormDataEntryValue>) {
+    if (typeof value === "string") continue;
     if (files.length >= maxExtractedFiles)
       throw new ProviderRequestError(413, `ArchiveAPI extraction exceeds the ${maxExtractedFiles} file limit`);
     if (value.size > transitFiles.maxBytes)

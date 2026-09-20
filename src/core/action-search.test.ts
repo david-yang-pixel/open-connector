@@ -2,7 +2,12 @@ import type { ProviderDefinition } from "./types.ts";
 
 import { describe, expect, it } from "vitest";
 import { createCatalogStore } from "../catalog-store.ts";
-import { buildActionSearchIndex, searchActions } from "./action-search.ts";
+import {
+  buildActionSearchIndex,
+  decodeActionSearchCursor,
+  encodeActionSearchCursor,
+  searchActions,
+} from "./action-search.ts";
 
 const providers: ProviderDefinition[] = [
   {
@@ -85,5 +90,15 @@ describe("action search", () => {
     expect(searchActions(index, "create", { service: "github", limit: 10 }).map((action) => action.id)).toEqual([
       "github.create_issue",
     ]);
+  });
+
+  it("applies an offset after ranking and round-trips opaque cursors", () => {
+    const catalog = createCatalogStore(providers, { executableActionIds: [] });
+    const index = buildActionSearchIndex(catalog.actions);
+
+    expect(searchActions(index, "create send", { limit: 1, offset: 1 })).toHaveLength(1);
+    const cursor = encodeActionSearchCursor({ offset: 200, query: "create", service: "github" });
+    expect(decodeActionSearchCursor(cursor)).toEqual({ offset: 200, query: "create", service: "github" });
+    expect(decodeActionSearchCursor("oas1.invalid")).toBeUndefined();
   });
 });

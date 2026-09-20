@@ -1,4 +1,4 @@
-import type { TokenPolicy } from "../../core/action-policy.ts";
+import type { ConnectionPermissionGrant, TokenPolicy } from "../../core/action-policy.ts";
 import type { RuntimeLogger } from "../../core/types.ts";
 
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
@@ -11,6 +11,7 @@ export interface RuntimeTokenRecord {
   blockedActions: string[];
   allowedProxies: string[];
   allowedConnections: string[];
+  connectionPermissions?: ConnectionPermissionGrant[];
   createdAt: string;
   lastUsedAt?: string;
 }
@@ -22,6 +23,7 @@ export interface RuntimeTokenSummary {
   blockedActions: string[];
   allowedProxies: string[];
   allowedConnections: string[];
+  connectionPermissions?: ConnectionPermissionGrant[];
   createdAt: string;
   lastUsedAt?: string;
 }
@@ -62,18 +64,21 @@ export class RuntimeTokenService {
       blockedActions: [],
       allowedProxies: [],
       allowedConnections: [],
+      connectionPermissions: [],
     },
   ): Promise<RuntimeTokenCreation> {
     const token = `${tokenPrefix}${randomBytes(32).toString("base64url")}`;
     const now = new Date().toISOString();
+    const normalizedPolicy = normalizeTokenPolicy(policy);
     const record: RuntimeTokenRecord = {
       id: randomUUID(),
       name: name.trim(),
       tokenHash: hashRuntimeToken(token),
-      allowedActions: policy.allowedActions,
-      blockedActions: policy.blockedActions,
-      allowedProxies: policy.allowedProxies,
-      allowedConnections: policy.allowedConnections ?? [],
+      allowedActions: normalizedPolicy.allowedActions,
+      blockedActions: normalizedPolicy.blockedActions,
+      allowedProxies: normalizedPolicy.allowedProxies,
+      allowedConnections: normalizedPolicy.allowedConnections ?? [],
+      connectionPermissions: normalizedPolicy.connectionPermissions ?? [],
       createdAt: now,
     };
     await this.store.add(record);
@@ -89,7 +94,7 @@ export class RuntimeTokenService {
   }
 
   async updateTokenPolicy(id: string, policy: TokenPolicy): Promise<RuntimeTokenSummary | undefined> {
-    const record = await this.store.updatePolicy(id, policy);
+    const record = await this.store.updatePolicy(id, normalizeTokenPolicy(policy));
     return record ? summarizeRuntimeToken(record) : undefined;
   }
 
@@ -110,6 +115,7 @@ export class RuntimeTokenService {
       blockedActions: matched.blockedActions,
       allowedProxies: matched.allowedProxies,
       allowedConnections: matched.allowedConnections ?? [],
+      connectionPermissions: matched.connectionPermissions ?? [],
     };
   }
 
@@ -130,6 +136,18 @@ export class RuntimeTokenService {
   }
 }
 
+function normalizeTokenPolicy(policy: TokenPolicy): TokenPolicy {
+  const connectionPermissions = policy.connectionPermissions ?? [];
+  return {
+    ...policy,
+    allowedConnections:
+      connectionPermissions.length > 0
+        ? connectionPermissions.map((grant) => grant.connectionId)
+        : (policy.allowedConnections ?? []),
+    connectionPermissions,
+  };
+}
+
 export function hashRuntimeToken(token: string): string {
   return createHash("sha256").update(token).digest("base64url");
 }
@@ -142,6 +160,7 @@ export function summarizeRuntimeToken(record: RuntimeTokenRecord): RuntimeTokenS
     blockedActions: record.blockedActions,
     allowedProxies: record.allowedProxies,
     allowedConnections: record.allowedConnections,
+    connectionPermissions: record.connectionPermissions ?? [],
     createdAt: record.createdAt,
     lastUsedAt: record.lastUsedAt,
   };

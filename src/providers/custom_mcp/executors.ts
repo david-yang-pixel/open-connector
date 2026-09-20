@@ -9,7 +9,12 @@ import type { CustomMcpContext } from "./runtime.ts";
 
 import { isPrivateNetworkAccessAllowed } from "../../core/request.ts";
 import { createProviderFetch, defineProviderExecutors, requireCustomCredential } from "../provider-runtime.ts";
-import { callCustomMcpTool, createCustomMcpContext, listCustomMcpTools, validateCustomMcpCredential } from "./runtime.ts";
+import {
+  callCustomMcpTool,
+  createCustomMcpContext,
+  listCustomMcpTools,
+  validateCustomMcpCredential,
+} from "./runtime.ts";
 
 const service = "custom_mcp";
 
@@ -27,11 +32,10 @@ export const executors: ProviderExecutors = defineProviderExecutors<CustomMcpCon
   handlers: customMcpActionHandlers,
   async createContext(context: ExecutionContext, fetcher: typeof fetch): Promise<CustomMcpContext> {
     const credential = await requireCustomCredential(context, service);
-    return createCustomMcpContext(credential.values, fetcher, context.signal);
+    return createCustomMcpContext(credential.values, fetcher, context);
   },
   fallbackMessage: "Custom MCP request failed",
   allowPrivateNetwork: isPrivateNetworkAccessAllowed,
-  skipDnsValidation: true,
 });
 
 export const credentialValidators: CredentialValidators = {
@@ -39,7 +43,6 @@ export const credentialValidators: CredentialValidators = {
     const guardedFetcher = createProviderFetch({
       fetch: fetcher,
       allowPrivateNetwork: isPrivateNetworkAccessAllowed,
-      skipDnsValidation: true,
     });
     return validateCustomMcpCredential(input.values, guardedFetcher, signal);
   },

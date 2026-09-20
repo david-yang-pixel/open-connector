@@ -83,7 +83,7 @@ export class ActionRunner {
         const summary = await this.options.connections.getConnectionSummary(action.service, input.connectionName);
         input.signal?.throwIfAborted();
         const connectionPolicy =
-          summary?.authType === "no_auth" ? undefined : input.policy.evaluateConnection(summary?.id);
+          summary?.authType === "no_auth" ? undefined : input.policy.evaluateConnection(summary?.id, action);
         if (connectionPolicy && !connectionPolicy.allowed) {
           policy = connectionPolicy;
           result = { ok: false, error: { code: policy.code, message: policy.message } };
@@ -113,7 +113,12 @@ export class ActionRunner {
               ? (actionInput) => this.options.marketplace!.execute(action.id, actionInput, input.signal)
               : executor,
             input.input,
-            this.createExecutionContext(connection.getCredential, input.signal),
+            this.createExecutionContext(
+              connection.getCredential,
+              input.policy,
+              connection.summary?.authType === "no_auth" ? undefined : connection.summary?.id,
+              input.signal,
+            ),
           );
           if (input.signal?.aborted) {
             result = cancelledExecutionResult();
@@ -123,7 +128,7 @@ export class ActionRunner {
         console.error("Action execution caught error:", error);
         const missingConnectionPolicy =
           error instanceof ConnectionError && error.code === "connection_not_found"
-            ? input.policy.evaluateConnection()
+            ? input.policy.evaluateConnection(undefined, action)
             : undefined;
         if (input.signal?.aborted) {
           result = cancelledExecutionResult();
@@ -202,11 +207,23 @@ export class ActionRunner {
 
   private createExecutionContext(
     getCredential: ExecutionConnection["getCredential"],
+    policy: ActionPolicySnapshot,
+    connectionId: string | undefined,
     signal: AbortSignal | undefined,
   ): ExecutionContext {
     const context: ExecutionContext = {
       getCredential,
       signal,
+      authorizeAction(action) {
+        const decision = policy.evaluate(action);
+        if (!decision.allowed) {
+          return { allowed: false, code: decision.code, message: decision.message };
+        }
+        const connectionDecision = policy.evaluateConnection(connectionId, action);
+        return connectionDecision.allowed
+          ? { allowed: true }
+          : { allowed: false, code: connectionDecision.code, message: connectionDecision.message };
+      },
       logger: this.options.logger,
     };
     if (this.options.transitFiles) {

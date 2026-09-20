@@ -200,18 +200,31 @@ export class OAuthFlowService {
     const now = new Date();
     const state = crypto.randomUUID();
     const pkceCodeVerifier = auth.pkce ? createPkceCodeVerifier() : undefined;
-    const authorizationScopes = resolveAuthorizationScopes(
+    const requestedAuthorizationScopes = resolveAuthorizationScopes(
       auth,
       input.authorizationOptionIds,
       this.clientConfigs.getEffectiveScopes(service, config),
     );
+    const providerOAuth = await this.providerLoader.loadProviderOAuthRuntime?.(service);
+    const authorizationScopes = providerOAuth?.resolveAuthorizationScopes
+      ? normalizeResolvedAuthorizationScopes(
+          requestedAuthorizationScopes,
+          await providerOAuth.resolveAuthorizationScopes({
+            clientConfig: config,
+            requestedScopes: requestedAuthorizationScopes,
+            fetcher: providerFetch,
+            createError: (message) => new OAuthFlowError("oauth_scope_resolution_failed", message),
+          }),
+        )
+      : requestedAuthorizationScopes;
     const pending: OAuthAuthorizationState = {
       service,
       connectionName,
       state,
       createdAt: now.toISOString(),
       pkceCodeVerifier,
-      authorizationScopes: auth.authorizationOptions ? authorizationScopes : undefined,
+      authorizationScopes:
+        auth.authorizationOptions || providerOAuth?.resolveAuthorizationScopes ? authorizationScopes : undefined,
       clientConfig: input.clientConfig ? config : undefined,
     };
 
@@ -452,6 +465,19 @@ function resolveAuthorizationScopes(
     for (const required of option.requires ?? []) selected.add(required);
   }
   return options.filter((option) => selected.has(option.id)).map((option) => option.id);
+}
+
+function normalizeResolvedAuthorizationScopes(requestedScopes: string[], resolvedScopes: string[]): string[] {
+  const requested = new Set(requestedScopes);
+  const normalized = [...new Set(resolvedScopes.map((scope) => scope.trim()))];
+  const invalidScope = normalized.find((scope) => !scope || !requested.has(scope));
+  if (invalidScope !== undefined) {
+    throw new OAuthFlowError(
+      "oauth_scope_resolution_failed",
+      "The provider returned an invalid OAuth authorization scope selection.",
+    );
+  }
+  return requestedScopes.filter((scope) => normalized.includes(scope));
 }
 
 /**

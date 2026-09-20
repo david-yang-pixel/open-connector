@@ -51,6 +51,22 @@ describe("ActionPolicyService", () => {
     });
   });
 
+  it("matches action operation types without relying on action-name verbs", () => {
+    const snapshot = new ActionPolicyService({
+      blockedActions: ["@operation:write", "@operation:destructive"],
+    }).createSnapshot();
+
+    expect(snapshot.evaluate(action)).toMatchObject({
+      allowed: false,
+      code: "action_blocked",
+      checks: [{ source: "deployment", outcome: "block_match", rule: "@operation:write" }],
+    });
+    expect(snapshot.evaluate({ ...action, id: "github.publish_release", operationType: "read" })).toEqual({
+      allowed: true,
+      checks: [],
+    });
+  });
+
   it("blocks actions even when they are also allowed", () => {
     expect(
       new ActionPolicyService({
@@ -378,5 +394,49 @@ describe("ActionPolicyService", () => {
       code: "connection_not_allowed",
     });
     expect(snapshot.evaluateConnection(workConnectionId)).toMatchObject({ allowed: true });
+  });
+
+  it("enforces per-connection read, write, full, and proxy access", () => {
+    const readConnection = new ActionPolicyService().createSnapshot(undefined, {
+      allowedActions: [],
+      blockedActions: [],
+      allowedProxies: ["github"],
+      connectionPermissions: [{ connectionId: workConnectionId, access: "read" }],
+    });
+    const writeConnection = new ActionPolicyService().createSnapshot(undefined, {
+      allowedActions: [],
+      blockedActions: [],
+      allowedProxies: ["github"],
+      connectionPermissions: [{ connectionId: workConnectionId, access: "write" }],
+    });
+    const fullConnection = new ActionPolicyService().createSnapshot(undefined, {
+      allowedActions: [],
+      blockedActions: [],
+      allowedProxies: ["github"],
+      connectionPermissions: [{ connectionId: workConnectionId, access: "full" }],
+    });
+    const readAction = { ...action, operationType: "read" as const };
+    const destructiveAction = { ...action, operationType: "destructive" as const };
+
+    expect(readConnection.evaluateConnection(workConnectionId, readAction)).toMatchObject({ allowed: true });
+    expect(readConnection.evaluateConnection(workConnectionId, action)).toMatchObject({
+      allowed: false,
+      code: "connection_operation_not_allowed",
+    });
+    expect(writeConnection.evaluateConnection(workConnectionId, action)).toMatchObject({ allowed: true });
+    expect(writeConnection.evaluateConnection(workConnectionId, destructiveAction)).toMatchObject({
+      allowed: false,
+      code: "connection_operation_not_allowed",
+    });
+    expect(fullConnection.evaluateConnection(workConnectionId, destructiveAction)).toMatchObject({ allowed: true });
+    expect(readConnection.evaluateConnection(workConnectionId, "proxy")).toMatchObject({
+      allowed: false,
+      code: "connection_operation_not_allowed",
+    });
+    expect(fullConnection.evaluateConnection(workConnectionId, "proxy")).toMatchObject({ allowed: true });
+    expect(readConnection.evaluateConnection(otherConnectionId, readAction)).toMatchObject({
+      allowed: false,
+      code: "connection_not_allowed",
+    });
   });
 });

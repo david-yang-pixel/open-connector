@@ -19,7 +19,6 @@ import { isConsoleShellPath } from "./api/console-paths.ts";
 import { loadCatalogFromAssets } from "./cloudflare/catalog-assets.ts";
 import { readPositiveInteger, resolvePublicOrigin } from "./cloudflare/cloudflare-env.ts";
 import { createConnectApp } from "./connect-app.ts";
-import { preloadOptionalServerModules } from "./connect-server.ts";
 import { KVTransitFileService } from "./files/kv-transit-files.ts";
 import { R2TransitFileService } from "./files/r2-transit-files.ts";
 import { createWorkerSecretCodec } from "./secrets/worker-secret-codec.ts";
@@ -45,7 +44,7 @@ export default {
       const assetUrl = new URL("/catalog/provider-summaries.json", request.url);
       const assetResponse = await env.ASSETS.fetch(new Request(assetUrl));
       if (assetResponse.ok) {
-        const etag = assetResponse.headers.get("etag") || 'W/"provider-summaries";
+        const etag = assetResponse.headers.get("etag") || 'W/"provider-summaries"';
         const ifNoneMatch = request.headers.get("if-none-match");
         if (ifNoneMatch && (ifNoneMatch === etag || ifNoneMatch.includes(etag))) {
           return new Response(null, {
@@ -53,7 +52,7 @@ export default {
             headers: {
               "cache-control": "public, max-age=86400, stale-while-revalidate=86400",
               "cloudflare-cdn-cache-control": "public, max-age=31536000, stale-while-revalidate=86400",
-              "etag": etag,
+              etag: etag,
             },
           });
         }

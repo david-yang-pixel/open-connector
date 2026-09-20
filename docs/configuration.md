@@ -21,8 +21,8 @@ OpenConnector is configured with environment variables.
 | `OOMOL_CONNECT_JWKS_URI`                    | unset                     | Node-only JWKS endpoint for validating runtime JWT access tokens.                                                                                                           |
 | `OOMOL_CONNECT_JWT_ISSUER`                  | unset                     | Expected `iss` claim for runtime JWT access tokens.                                                                                                                         |
 | `OOMOL_CONNECT_JWT_AUDIENCE`                | unset                     | Expected API `aud` claim for runtime JWT access tokens.                                                                                                                     |
-| `OOMOL_CONNECT_ALLOWED_ACTIONS`             | unset                     | Comma-separated executable action allowlist. Supports `service.*` and `*`.                                                                                                  |
-| `OOMOL_CONNECT_BLOCKED_ACTIONS`             | unset                     | Comma-separated executable action denylist. Supports `service.*` and `*`.                                                                                                   |
+| `OOMOL_CONNECT_ALLOWED_ACTIONS`             | unset                     | Comma-separated executable action allowlist. Supports exact ids, `service.*`, `*`, and `@operation:<type>`.                                                                 |
+| `OOMOL_CONNECT_BLOCKED_ACTIONS`             | unset                     | Comma-separated executable action denylist. Supports exact ids, `service.*`, `*`, and `@operation:<type>`.                                                                  |
 | `OOMOL_CONNECT_ALLOWED_PROXIES`             | unset                     | Comma-separated provider proxy allowlist. Supports service names and `*`.                                                                                                   |
 | `OOMOL_CONNECT_BLOCKED_PROXIES`             | unset                     | Comma-separated provider proxy denylist. Supports service names and `*`.                                                                                                    |
 | `OOMOL_CONNECT_ALLOW_PRIVATE_NETWORK`       | `false`                   | Allow self-hosted provider connections to target private networks. See below.                                                                                               |
@@ -57,7 +57,9 @@ Create persistent runtime tokens from the web console Access tab or `POST /api/r
 Only token hashes are stored: the Node server stores persistent-token records in its selected SQLite
 or PostgreSQL database, while
 Cloudflare Workers store them in D1. Persistent tokens have independent Action rules, provider
-proxy grants, and optional connection grants. A new token has no proxy access until its
+proxy grants, and optional per-connection permission grants. The Web Console defaults each
+configured connection to read-only and lets operators choose disabled, read-only, read-write without
+destructive Actions, or full access independently. A new token has no proxy access until its
 `allowedProxies` includes a provider service or `*`; those grants can only narrow the deployment
 and runtime proxy policy. `allowedConnections` is omitted or `[]` for unrestricted connection
 access and is not a deployment setting: there is no `OOMOL_CONNECT_ALLOWED_CONNECTIONS` variable.
@@ -65,6 +67,11 @@ A non-empty list grants exact stable, opaque IDs returned by the connection APIs
 default connection's ID if unnamed HTTP, MCP, or proxy requests should succeed. Virtual `no_auth`
 connections do not require a grant. Create requests may omit the field; updates must send
 `allowedConnections` so a PUT cannot drop an existing restriction.
+API clients can send `connectionPermissions` entries shaped as
+`{"connectionId":"<id>","access":"read|write|full"}`. When present, they replace the legacy
+connection-only check with a risk-aware check and become the source for `allowedConnections`.
+Read and write grants cannot use raw provider proxies; proxy calls require both a matching
+`allowedProxies` entry and `full` access for the selected connection.
 `OOMOL_CONNECT_RUNTIME_TOKEN` remains available for bootstrap scripts and backward compatibility.
 Because the bootstrap token has no stored policy, its proxy access is controlled by the deployment
 and runtime rules, while its connection access remains unrestricted.

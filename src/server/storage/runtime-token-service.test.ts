@@ -31,6 +31,7 @@ describe("RuntimeTokenService", () => {
       blockedActions: ["github.delete_repository"],
       allowedProxies: ["github"],
       allowedConnections: ["example:work"],
+      connectionPermissions: [],
       createdAt: "2026-07-20T00:00:00.000Z",
     };
     const store: IRuntimeTokenStore = {
@@ -48,6 +49,7 @@ describe("RuntimeTokenService", () => {
       blockedActions: ["github.delete_repository"],
       allowedProxies: ["github"],
       allowedConnections: ["example:work"],
+      connectionPermissions: [],
     });
     expect(store.findByHash).toHaveBeenCalledWith(record.tokenHash);
     expect(store.list).not.toHaveBeenCalled();
@@ -64,6 +66,7 @@ describe("RuntimeTokenService", () => {
       blockedActions: [],
       allowedProxies: [],
       allowedConnections: [],
+      connectionPermissions: [],
       createdAt: "2026-07-20T00:00:00.000Z",
     };
     const store: IRuntimeTokenStore = {
@@ -84,6 +87,7 @@ describe("RuntimeTokenService", () => {
       blockedActions: [],
       allowedProxies: [],
       allowedConnections: [],
+      connectionPermissions: [],
     });
     expect(logger.warn).toHaveBeenCalledWith(
       { tokenId: "token-1", err: expect.any(Error) },
@@ -129,6 +133,33 @@ describe("RuntimeTokenService", () => {
       blockedActions: [],
       allowedProxies: [],
       allowedConnections: [],
+    });
+  });
+
+  it("keeps per-connection access grants and derives the compatible connection allowlist", async () => {
+    const service = new RuntimeTokenService(new MemoryRuntimeTokenStore());
+    const created = await service.createToken("Scoped bot", {
+      allowedActions: [],
+      blockedActions: [],
+      allowedProxies: [],
+      allowedConnections: [],
+      connectionPermissions: [
+        { connectionId: "example:readonly", access: "read" },
+        { connectionId: "example:writer", access: "write" },
+      ],
+    });
+
+    expect(created.record.allowedConnections).toEqual(["example:readonly", "example:writer"]);
+    expect(created.record.connectionPermissions).toEqual([
+      { connectionId: "example:readonly", access: "read" },
+      { connectionId: "example:writer", access: "write" },
+    ]);
+    await expect(service.resolveToken(created.token)).resolves.toMatchObject({
+      allowedConnections: ["example:readonly", "example:writer"],
+      connectionPermissions: [
+        { connectionId: "example:readonly", access: "read" },
+        { connectionId: "example:writer", access: "write" },
+      ],
     });
   });
 });

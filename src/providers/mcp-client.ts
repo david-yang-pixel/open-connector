@@ -19,6 +19,7 @@ export interface McpClientOptions {
   headers?: HeadersInit;
   redirect?: RequestRedirect;
   signal?: AbortSignal;
+  connectTimeoutMs?: number;
   protocolVersion?: McpProtocolVersion;
   terminateSession?: boolean;
   mapError?: (error: unknown) => unknown;
@@ -67,7 +68,10 @@ export async function withMcpClient<T>(options: McpClientOptions, run: (client: 
   );
 
   try {
-    await client.connect(transport, { timeout: mcpConnectTimeoutMs, signal: options.signal });
+    await client.connect(transport, {
+      timeout: options.connectTimeoutMs ?? mcpConnectTimeoutMs,
+      signal: options.signal,
+    });
     return await run(client);
   } catch (error) {
     throw options.mapError ? options.mapError(error) : error;

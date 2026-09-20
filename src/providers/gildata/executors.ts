@@ -297,7 +297,7 @@ function buildGildataMcpInput(
   return {
     endpoint: endpoint.toString(),
     service: "Gildata Data Map",
-    fetcher: async (request, init) => {
+    fetcher: (async (request, init) => {
       const response = await fetcher(request, init);
       if (response.status === 401) {
         await response.body?.cancel().catch(() => undefined);
@@ -313,7 +313,7 @@ function buildGildataMcpInput(
         );
       }
       return response;
-    },
+    }) as ProviderFetch,
     redirect: "error",
     terminateSession: true,
     signal: parentSignal,

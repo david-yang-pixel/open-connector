@@ -39,6 +39,31 @@ describe("provider error codes", () => {
     expect(providerErrorCodes).not.toContain("oauth_token_expired");
     expect(actionStatusFor("oauth_token_expired")).toBe(409);
   });
+
+  it("returns conflict for a provider invalid-input error with upstream status 409", () => {
+    expect(
+      serializeRuntimeActionResult({
+        actionId: "example.update",
+        executionId: "execution-1",
+        auditPersisted: false,
+        result: {
+          ok: false,
+          error: {
+            code: "invalid_input",
+            message: "Refresh before updating.",
+            details: { status: 409, details: { remoteCode: "STALE_TICKET_SNAPSHOT" } },
+          },
+        },
+      }),
+    ).toMatchObject({
+      status: 409,
+      body: {
+        success: false,
+        errorCode: "invalid_input",
+        data: { status: 409, details: { remoteCode: "STALE_TICKET_SNAPSHOT" } },
+      },
+    });
+  });
 });
 
 describe("runtime action metadata", () => {
@@ -96,6 +121,16 @@ describe("runtime connected apps", () => {
       marketplace: { id: "oomol", pricing: "metered" },
     });
   });
+
+  it("projects the safe discovered tool count without exposing provider metadata", () => {
+    const mcpConnection: ConnectionSummary = {
+      ...connection,
+      discoveredToolCount: 4,
+    };
+    expect(serializeRuntimeConnectedApp(mcpConnection)).toMatchObject({
+      discoveredToolCount: 4,
+    });
+  });
 });
 
 describe("runtime action HTTP results", () => {
@@ -125,6 +160,7 @@ describe("runtime action HTTP results", () => {
   it.each([
     ["authorization_failed", 403],
     ["connection_not_allowed", 403],
+    ["connection_operation_not_allowed", 403],
     ["connection_not_found", 404],
     ["unknown_action", 404],
     ["rate_limited", 429],

@@ -115,7 +115,7 @@ export class ProxyRunner {
     try {
       const connection = await this.options.connections.getConnectionSummary(provider.service, input.connectionName);
       const connectionDecision =
-        connection?.authType === "no_auth" ? undefined : input.policy.evaluateConnection(connection?.id);
+        connection?.authType === "no_auth" ? undefined : input.policy.evaluateConnection(connection?.id, "proxy");
       if (connectionDecision && !connectionDecision.allowed) {
         return {
           ok: false,
@@ -157,7 +157,7 @@ export class ProxyRunner {
       const durationMs = Date.now() - startedAtMs;
       if (error instanceof ConnectionError) {
         const missingConnectionDecision =
-          error.code === "connection_not_found" ? input.policy.evaluateConnection() : undefined;
+          error.code === "connection_not_found" ? input.policy.evaluateConnection(undefined, "proxy") : undefined;
         if (missingConnectionDecision && !missingConnectionDecision.allowed) {
           return {
             ok: false,

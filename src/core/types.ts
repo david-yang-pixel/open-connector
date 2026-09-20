@@ -345,6 +345,9 @@ export interface TransitFileStore {
 
 export type TransitFileWriter = TransitFileStore;
 
+/** Result of applying the request-scoped action policy to a dynamically discovered action. */
+export type DynamicActionAuthorization = { allowed: true } | { allowed: false; code: string; message: string };
+
 /**
  * Runtime services available to action executors.
  *
@@ -358,6 +361,8 @@ export interface ExecutionContext {
   transitFiles?: TransitFileWriter;
   /** Optional cancellation signal propagated from the HTTP request or runner. */
   signal?: AbortSignal;
+  /** Re-apply the request policy to a provider-owned action discovered only at execution time. */
+  authorizeAction?(action: ActionDefinition): DynamicActionAuthorization;
   /** Host logger for provider diagnostics, absent when the host supplies none. */
   logger?: RuntimeLogger;
 }

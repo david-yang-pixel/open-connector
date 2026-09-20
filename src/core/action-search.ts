@@ -2,6 +2,7 @@ import type { ActionDefinition } from "./types.ts";
 import type { Options, SearchResult } from "minisearch";
 
 import MiniSearch from "minisearch";
+import { Buffer } from "node:buffer";
 
 /**
  * The subset of an action that is indexed and returned in search results.
@@ -17,8 +18,15 @@ type ActionSearchField = "service" | "name" | "description";
 
 export interface ActionSearchOptions {
   limit?: number;
+  offset?: number;
   fuzzy?: number;
   prefix?: boolean;
+  service?: string;
+}
+
+export interface ActionSearchCursor {
+  offset: number;
+  query?: string;
   service?: string;
 }
 
@@ -36,6 +44,9 @@ const DEFAULT_ACTION_SEARCH_BOOST: Record<ActionSearchField, number> = {
 };
 export const DEFAULT_ACTION_SEARCH_FUZZY = 0.1;
 export const DEFAULT_ACTION_SEARCH_LIMIT = 20;
+export const MAX_ACTION_SEARCH_LIMIT = 200;
+
+const actionSearchCursorPrefix = "oas1.";
 
 const stopWords = new Set([
   "i",
@@ -233,7 +244,13 @@ export function searchActions(
   query: string,
   options: ActionSearchOptions = {},
 ): ActionSearchDocument[] {
-  const { limit = DEFAULT_ACTION_SEARCH_LIMIT, fuzzy = DEFAULT_ACTION_SEARCH_FUZZY, prefix = true, service } = options;
+  const {
+    limit = DEFAULT_ACTION_SEARCH_LIMIT,
+    offset = 0,
+    fuzzy = DEFAULT_ACTION_SEARCH_FUZZY,
+    prefix = true,
+    service,
+  } = options;
   const results = index.search(query, {
     fuzzy,
     prefix,
@@ -243,7 +260,36 @@ export function searchActions(
     processTerm: searchProcessTerm,
     filter: service ? (result) => result.service === service : undefined,
   });
-  return results.slice(0, limit).map(toActionSearchResult);
+  return results.slice(offset, offset + limit).map(toActionSearchResult);
+}
+
+/** Encode the next immutable-catalog offset together with the query it belongs to. */
+export function encodeActionSearchCursor(cursor: ActionSearchCursor): string {
+  return `${actionSearchCursorPrefix}${Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url")}`;
+}
+
+/** Decode an action-search cursor, rejecting malformed or oversized shapes. */
+export function decodeActionSearchCursor(value: string): ActionSearchCursor | undefined {
+  if (!value.startsWith(actionSearchCursorPrefix) || value.length > 1024) return undefined;
+  try {
+    const parsed = JSON.parse(
+      Buffer.from(value.slice(actionSearchCursorPrefix.length), "base64url").toString("utf8"),
+    ) as {
+      offset?: unknown;
+      query?: unknown;
+      service?: unknown;
+    };
+    if (!Number.isSafeInteger(parsed.offset) || (parsed.offset as number) < 0) return undefined;
+    if (parsed.query !== undefined && typeof parsed.query !== "string") return undefined;
+    if (parsed.service !== undefined && typeof parsed.service !== "string") return undefined;
+    return {
+      offset: parsed.offset as number,
+      query: parsed.query as string | undefined,
+      service: parsed.service as string | undefined,
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 function normalizeTerm(term: string): string {

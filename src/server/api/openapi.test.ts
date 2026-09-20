@@ -211,13 +211,20 @@ describe("action execution OpenAPI", () => {
     expect(tokenSummary.required).toEqual(
       expect.arrayContaining(["allowedActions", "blockedActions", "allowedProxies", "allowedConnections"]),
     );
-    expect(tokenPolicy.required).toEqual(["allowedActions", "blockedActions", "allowedProxies", "allowedConnections"]);
+    expect(tokenPolicy.required).toEqual([
+      "allowedActions",
+      "blockedActions",
+      "allowedProxies",
+      "allowedConnections",
+      "connectionPermissions",
+    ]);
     expect(policyDecision.properties.code.enum).toEqual([
       "action_not_allowed",
       "action_blocked",
       "proxy_not_allowed",
       "proxy_blocked",
       "connection_not_allowed",
+      "connection_operation_not_allowed",
     ]);
     expect(runLog.properties).toHaveProperty("policy");
     expect(runLog.properties).toHaveProperty("runtimeTokenId");

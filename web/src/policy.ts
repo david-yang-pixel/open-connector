@@ -116,10 +116,18 @@ export function policyLayers(policy: RuntimePolicyState, token?: RuntimeTokenSum
   return layers;
 }
 
-export function evaluatePolicy(value: string, resource: PolicyResource, layers: PolicyLayer[]): PolicyEvaluation {
+export function evaluatePolicy(
+  value: string,
+  resource: PolicyResource,
+  layers: PolicyLayer[],
+  operationType?: ProviderDefinition["actions"][number]["operationType"],
+): PolicyEvaluation {
   const allowedField = resource === "action" ? "allowedActions" : "allowedProxies";
   const blockedField = resource === "action" ? "blockedActions" : "blockedProxies";
-  const matches = resource === "action" ? matchesActionRule : matchesProxyRule;
+  const matches =
+    resource === "action"
+      ? (rule: string, candidate: string) => matchesActionRule(rule, candidate, operationType)
+      : matchesProxyRule;
   const trace = layers.map((layer): PolicyTrace => {
     const blocked = layer.rules[blockedField].find((rule) => matches(rule, value));
     if (blocked) {
@@ -147,7 +155,8 @@ export function evaluatePolicy(value: string, resource: PolicyResource, layers: 
 export function countAllowedActions(providers: ProviderDefinition[], layers: PolicyLayer[]): PolicyCount {
   const actions = providers.flatMap((provider) => provider.actions);
   return {
-    allowed: actions.filter((action) => evaluatePolicy(action.id, "action", layers).allowed).length,
+    allowed: actions.filter((action) => evaluatePolicy(action.id, "action", layers, action.operationType).allowed)
+      .length,
     total: actions.length,
   };
 }
@@ -208,6 +217,9 @@ export function isKnownPolicyRule(rule: string, resource: PolicyResource, provid
   if (resource === "proxy") {
     return providers.some((provider) => provider.service === rule);
   }
+  if (isOperationRule(rule)) {
+    return true;
+  }
   if (rule.endsWith(".*")) {
     const service = rule.slice(0, -2);
     return providers.some((provider) => provider.service === service);
@@ -238,6 +250,9 @@ export function policyRuleIssue(rule: string, resource: PolicyResource): "invali
   if (resource === "proxy") {
     return rule.includes("*") || /\s/.test(rule) ? "invalid" : undefined;
   }
+  if (isOperationRule(rule)) {
+    return undefined;
+  }
   if (/^[^\s.*]+\.\*$/.test(rule)) {
     return undefined;
   }
@@ -247,11 +262,22 @@ export function policyRuleIssue(rule: string, resource: PolicyResource): "invali
     : undefined;
 }
 
-function matchesActionRule(pattern: string, actionId: string): boolean {
+function matchesActionRule(
+  pattern: string,
+  actionId: string,
+  operationType?: ProviderDefinition["actions"][number]["operationType"],
+): boolean {
+  if (isOperationRule(pattern)) {
+    return operationType === pattern.slice("@operation:".length);
+  }
   if (pattern === "*") {
     return true;
   }
   return pattern.endsWith(".*") ? actionId.startsWith(pattern.slice(0, -1)) : actionId === pattern;
+}
+
+function isOperationRule(rule: string): boolean {
+  return rule === "@operation:read" || rule === "@operation:write" || rule === "@operation:destructive";
 }
 
 function matchesProxyRule(pattern: string, service: string): boolean {

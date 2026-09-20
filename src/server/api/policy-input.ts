@@ -1,8 +1,8 @@
-import type { PolicyRules, TokenPolicy } from "../../core/action-policy.ts";
+import type { ConnectionPermissionGrant, PolicyRules, TokenPolicy } from "../../core/action-policy.ts";
 import type { JsonRequestBody } from "./http-utils.ts";
 
 import { Buffer } from "node:buffer";
-import { requiredStringArray } from "../../core/cast.ts";
+import { objectArray, requiredString, requiredStringArray } from "../../core/cast.ts";
 import { HttpRequestError } from "./http-utils.ts";
 
 export const policyRequestMaxBytes: number = 256 * 1024;
@@ -27,7 +27,34 @@ export function readTokenPolicy(body: JsonRequestBody, allowOmitted = false): To
     blockedActions: readRules(body.blockedActions, "blockedActions", "action", allowOmitted),
     allowedProxies: readRules(body.allowedProxies, "allowedProxies", "proxy", allowOmitted),
     allowedConnections: readConnectionIds(body.allowedConnections, "allowedConnections", allowOmitted),
+    connectionPermissions: readConnectionPermissions(body.connectionPermissions),
   };
+}
+
+function readConnectionPermissions(value: unknown): ConnectionPermissionGrant[] {
+  if (value === undefined) return [];
+  const items = objectArray(value, "connectionPermissions", invalidInput);
+  if (items.length > policyRuleListMaxItems) {
+    throw invalidInput(`connectionPermissions must not contain more than ${policyRuleListMaxItems} grants.`);
+  }
+  const grants: ConnectionPermissionGrant[] = [];
+  const seen = new Set<string>();
+  for (const item of items) {
+    const connectionId = requiredString(item.connectionId, "connectionPermissions.connectionId", invalidInput);
+    if (Buffer.byteLength(connectionId, "utf8") > policyRuleMaxBytes) {
+      throw invalidInput(`connectionPermissions connection IDs must not exceed ${policyRuleMaxBytes} UTF-8 bytes.`);
+    }
+    const access = requiredString(item.access, "connectionPermissions.access", invalidInput);
+    if (access !== "read" && access !== "write" && access !== "full") {
+      throw invalidInput("connectionPermissions.access must be read, write, or full.");
+    }
+    if (seen.has(connectionId)) {
+      throw invalidInput(`connectionPermissions contains a duplicate connection ID: ${connectionId}.`);
+    }
+    seen.add(connectionId);
+    grants.push({ connectionId, access });
+  }
+  return grants;
 }
 
 function readRules(value: unknown, fieldName: string, kind: "action" | "proxy", allowOmitted = false): string[] {
@@ -91,6 +118,9 @@ function assertRuleSyntax(rule: string, fieldName: string, kind: "action" | "pro
     if (rule.includes("*") || /\s/.test(rule)) {
       throw invalidInput(`${fieldName} contains an invalid proxy rule: ${rule}.`);
     }
+    return;
+  }
+  if (rule === "@operation:read" || rule === "@operation:write" || rule === "@operation:destructive") {
     return;
   }
   if (/^[^\s.*]+\.\*$/.test(rule)) {

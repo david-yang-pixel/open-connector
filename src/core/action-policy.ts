@@ -7,7 +7,8 @@ export type PolicyErrorCode =
   | "action_blocked"
   | "proxy_not_allowed"
   | "proxy_blocked"
-  | "connection_not_allowed";
+  | "connection_not_allowed"
+  | "connection_operation_not_allowed";
 
 export interface PolicyCheck {
   source: PolicySource;
@@ -31,11 +32,19 @@ export interface PolicyRules {
   blockedProxies: string[];
 }
 
+export type ConnectionAccessLevel = "read" | "write" | "full";
+
+export interface ConnectionPermissionGrant {
+  connectionId: string;
+  access: ConnectionAccessLevel;
+}
+
 export interface TokenPolicy {
   allowedActions: string[];
   blockedActions: string[];
   allowedProxies: string[];
   allowedConnections?: string[];
+  connectionPermissions?: ConnectionPermissionGrant[];
 }
 
 export interface RuntimePolicyState {
@@ -56,10 +65,15 @@ interface CompiledRule {
   matches(value: string): boolean;
 }
 
+interface CompiledActionRule {
+  pattern: string;
+  matches(action: ActionDefinition): boolean;
+}
+
 interface CompiledLayer {
   source: PolicySource;
-  allowedActions: CompiledRule[];
-  blockedActions: CompiledRule[];
+  allowedActions: CompiledActionRule[];
+  blockedActions: CompiledActionRule[];
   allowedProxies: CompiledRule[];
   blockedProxies: CompiledRule[];
 }
@@ -73,6 +87,7 @@ export class ActionPolicySnapshot {
   private readonly proxyLayers: CompiledLayer[];
   private readonly tokenProxyRules?: CompiledRule[];
   private readonly allowedConnections: readonly string[];
+  private readonly connectionPermissions: ReadonlyMap<string, ConnectionAccessLevel>;
 
   constructor(deployment: PolicyRules, runtime: PolicyRules, token?: TokenPolicy, updatedAt?: string) {
     const deploymentRules = immutablePolicyRules(deployment);
@@ -81,6 +96,9 @@ export class ActionPolicySnapshot {
     this.proxyLayers = [compileLayer("deployment", deploymentRules), compileLayer("runtime", runtimeRules)];
     this.layers = [...this.proxyLayers];
     this.allowedConnections = Object.freeze([...(token?.allowedConnections ?? [])]);
+    this.connectionPermissions = new Map(
+      (token?.connectionPermissions ?? []).map((grant) => [grant.connectionId, grant.access]),
+    );
     if (token) {
       const tokenRules = immutablePolicyRules({
         allowedActions: token.allowedActions,
@@ -96,7 +114,7 @@ export class ActionPolicySnapshot {
 
   evaluate(action: ActionDefinition): ActionPolicyDecision {
     for (const layer of this.layers) {
-      const blocked = layer.blockedActions.find((rule) => rule.matches(action.id));
+      const blocked = layer.blockedActions.find((rule) => rule.matches(action));
       if (blocked) {
         return {
           allowed: false,
@@ -112,7 +130,7 @@ export class ActionPolicySnapshot {
       if (layer.allowedActions.length === 0) {
         continue;
       }
-      const allowed = layer.allowedActions.find((rule) => rule.matches(action.id));
+      const allowed = layer.allowedActions.find((rule) => rule.matches(action));
       if (!allowed) {
         return {
           allowed: false,
@@ -173,7 +191,28 @@ export class ActionPolicySnapshot {
     return { allowed: true, checks };
   }
 
-  evaluateConnection(connectionId?: string): ActionPolicyDecision {
+  evaluateConnection(connectionId?: string, operation?: ActionDefinition | "proxy"): ActionPolicyDecision {
+    if (this.connectionPermissions.size > 0) {
+      const access = connectionId ? this.connectionPermissions.get(connectionId) : undefined;
+      if (!connectionId || !access) {
+        return connectionDenied(connectionId);
+      }
+      if (!connectionAccessAllows(access, operation)) {
+        return {
+          allowed: false,
+          code: "connection_operation_not_allowed",
+          message:
+            operation === "proxy"
+              ? `${connectionId} connection requires full access before it can receive proxy requests.`
+              : `${connectionId} connection does not grant ${operation?.operationType ?? "unclassified"} operations.`,
+          checks: [{ source: "token", outcome: "allow_miss", rule: `${connectionId}:${access}` }],
+        };
+      }
+      return {
+        allowed: true,
+        checks: [{ source: "token", outcome: "allow_match", rule: `${connectionId}:${access}` }],
+      };
+    }
     if (this.allowedConnections.length === 0) {
       return { allowed: true, checks: [] };
     }
@@ -185,15 +224,29 @@ export class ActionPolicySnapshot {
       };
     }
 
-    return {
-      allowed: false,
-      code: "connection_not_allowed",
-      message: connectionId
-        ? `${connectionId} connection is not granted to this runtime token.`
-        : "The selected connection is not granted to this runtime token.",
-      checks: [{ source: "token", outcome: "allow_miss" }],
-    };
+    return connectionDenied(connectionId);
   }
+}
+
+function connectionDenied(connectionId?: string): ActionPolicyDecision {
+  return {
+    allowed: false,
+    code: "connection_not_allowed",
+    message: connectionId
+      ? `${connectionId} connection is not granted to this runtime token.`
+      : "The selected connection is not granted to this runtime token.",
+    checks: [{ source: "token", outcome: "allow_miss" }],
+  };
+}
+
+function connectionAccessAllows(
+  access: ConnectionAccessLevel,
+  operation: ActionDefinition | "proxy" | undefined,
+): boolean {
+  if (access === "full") return true;
+  if (!operation || operation === "proxy" || !operation.operationType) return false;
+  if (access === "read") return operation.operationType === "read";
+  return operation.operationType === "read" || operation.operationType === "write";
 }
 
 /**
@@ -264,15 +317,19 @@ function compileLayer(source: PolicySource, rules: PolicyRules): CompiledLayer {
   };
 }
 
-function compileActionRule(pattern: string): CompiledRule {
+function compileActionRule(pattern: string): CompiledActionRule {
+  if (pattern.startsWith("@operation:")) {
+    const operationType = pattern.slice("@operation:".length);
+    return { pattern, matches: (action) => action.operationType === operationType };
+  }
   if (pattern === "*") {
     return { pattern, matches: () => true };
   }
   if (pattern.endsWith(".*")) {
     const prefix = pattern.slice(0, -1);
-    return { pattern, matches: (actionId) => actionId.startsWith(prefix) };
+    return { pattern, matches: (action) => action.id.startsWith(prefix) };
   }
-  return { pattern, matches: (actionId) => actionId === pattern };
+  return { pattern, matches: (action) => action.id === pattern };
 }
 
 function compileProxyRule(pattern: string): CompiledRule {

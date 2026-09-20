@@ -251,10 +251,20 @@ export function createOpenApiDocument(
       type: "array",
       items: { $ref: "#/components/schemas/ActionDefinition" },
     }),
-    "/api/actions/search": getOperation("Catalog", "Fuzzy keyword search over the action catalog.", {
-      type: "array",
-      items: { $ref: "#/components/schemas/ActionSearchResult" },
-    }),
+    "/api/actions/search": getOperation(
+      "Catalog",
+      "Fuzzy keyword search over the action catalog.",
+      {
+        type: "array",
+        items: { $ref: "#/components/schemas/ActionSearchResult" },
+      },
+      {
+        description:
+          "The response keeps the legacy array body and returns pagination in x-openconnector-total, x-openconnector-has-more, and x-openconnector-next-cursor headers.",
+        parameters: actionSearchParameters(20),
+        errorStatuses: [400],
+      },
+    ),
     "/v1/providers": runtimeGetOperation("Catalog", "List public provider catalog entries.", {
       description: "Closest HTTP analog of MCP list_apps. Categories are objects; MCP list_apps returns strings.",
       parameters: [
@@ -278,17 +288,8 @@ export function createOpenApiDocument(
       ]),
     }),
     "/v1/actions/search": runtimeGetOperation("Catalog", "Fuzzy keyword search over the action catalog.", {
-      parameters: [
-        queryParameter("q", "Search text. Provide either q or query."),
-        queryParameter("query", "Alias for q. Provide either q or query."),
-        queryParameter("service", "Optional provider service id."),
-        queryParameter("limit", "Maximum actions to return. Defaults to 10. Maximum 50.", {
-          type: "integer",
-          minimum: 1,
-          maximum: 50,
-          default: 10,
-        }),
-      ],
+      description: "Pagination metadata is returned in the runtime envelope meta object.",
+      parameters: actionSearchParameters(10),
       data: jsonSchema.array({ $ref: "#/components/schemas/ActionSearchResult" }),
       errorStatuses: [400],
     }),
@@ -337,6 +338,7 @@ export function createOpenApiDocument(
       items: { $ref: "#/components/schemas/ConnectionSummary" },
     }),
     "/api/connections/{service}": createConnectionPath(),
+    "/api/connections/{service}/settings": createConnectionSettingsPath(),
     "/api/oauth/configs": getOperation("OAuth", "List local OAuth client configurations.", {
       type: "array",
       items: { $ref: "#/components/schemas/OAuthClientConfigSummary" },
@@ -570,6 +572,7 @@ export function createOpenApiDocument(
         ),
         ErrorResponse: errorResponseSchema,
         ConnectionUpsertRequest: createConnectionUpsertRequestSchema(),
+        ConnectionPatchRequest: createConnectionPatchRequestSchema(),
         OAuthClientConfigSummary: jsonSchema.object(
           {
             service: jsonSchema.string({ description: "Provider service identifier." }),
@@ -620,6 +623,9 @@ export function createOpenApiDocument(
             allowedConnections: connectionIdArraySchema(
               "Stable connection IDs granted to this stored runtime token. An empty list is unrestricted connection access. IDs are opaque values returned by the connection APIs. Virtual no_auth connections do not require grants.",
             ),
+            connectionPermissions: connectionPermissionArraySchema(
+              "Per-connection action access. read permits read actions, write also permits non-destructive writes, and full also permits destructive actions and raw proxy requests.",
+            ),
             createdAt: jsonSchema.string({ description: "Creation timestamp." }),
             lastUsedAt: jsonSchema.string({ description: "Last successful use timestamp." }),
           },
@@ -631,6 +637,7 @@ export function createOpenApiDocument(
               "blockedActions",
               "allowedProxies",
               "allowedConnections",
+              "connectionPermissions",
               "createdAt",
             ],
             description: "Runtime API token summary. Plaintext tokens and token hashes are not returned.",
@@ -646,6 +653,9 @@ export function createOpenApiDocument(
             ),
             allowedConnections: connectionIdArraySchema(
               "Optional stable connection IDs granted to the new token. Omit or leave empty for unrestricted connection access. A non-empty list matches exact opaque IDs returned by the connection APIs. Virtual no_auth connections do not require grants.",
+            ),
+            connectionPermissions: connectionPermissionArraySchema(
+              "Optional per-connection action access grants. When present, their connection IDs become the token connection allowlist.",
             ),
           },
           {
@@ -663,9 +673,18 @@ export function createOpenApiDocument(
             allowedConnections: connectionIdArraySchema(
               "Stable connection IDs granted to this stored token. An empty list is unrestricted connection access. A non-empty list matches exact opaque IDs returned by the connection APIs. Virtual no_auth connections do not require grants.",
             ),
+            connectionPermissions: connectionPermissionArraySchema(
+              "Per-connection action access grants. When present, their connection IDs become the token connection allowlist.",
+            ),
           },
           {
-            required: ["allowedActions", "blockedActions", "allowedProxies", "allowedConnections"],
+            required: [
+              "allowedActions",
+              "blockedActions",
+              "allowedProxies",
+              "allowedConnections",
+              "connectionPermissions",
+            ],
             description:
               "Complete replacement of one stored runtime token's action, proxy, and connection permissions.",
           },
@@ -704,6 +723,7 @@ export function createOpenApiDocument(
                 "proxy_not_allowed",
                 "proxy_blocked",
                 "connection_not_allowed",
+                "connection_operation_not_allowed",
               ],
             },
             message: jsonSchema.string({ description: "Policy denial message." }),
@@ -1030,6 +1050,29 @@ function connectionIdArraySchema(description: string): JsonSchema {
   };
 }
 
+function connectionPermissionArraySchema(description: string): JsonSchema {
+  return {
+    type: "array",
+    maxItems: policyRuleListMaxItems,
+    items: jsonSchema.object(
+      {
+        connectionId: jsonSchema.string({
+          minLength: 1,
+          maxLength: policyRuleMaxBytes,
+          description: "Opaque stable connection ID returned by a connection API.",
+        }),
+        access: {
+          type: "string",
+          enum: ["read", "write", "full"],
+          description: "Maximum operation risk granted to this connection.",
+        },
+      },
+      { required: ["connectionId", "access"] },
+    ),
+    description,
+  };
+}
+
 function createMcpPath(): unknown {
   return {
     post: {
@@ -1259,6 +1302,25 @@ function createConnectionPath(): Record<string, unknown> {
         404: jsonResponse({ $ref: "#/components/schemas/ErrorResponse" }),
       },
     },
+    patch: {
+      tags: ["Connections"],
+      summary: "Patch optional non-secret custom credential settings.",
+      description:
+        "Retains required fields and secrets, revalidates the merged credential, and rejects secret, required, or undeclared fields.",
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: { $ref: "#/components/schemas/ConnectionPatchRequest" },
+          },
+        },
+      },
+      responses: {
+        200: jsonResponse({ $ref: "#/components/schemas/ConnectionSummary" }),
+        400: jsonResponse({ $ref: "#/components/schemas/ErrorResponse" }),
+        404: jsonResponse({ $ref: "#/components/schemas/ErrorResponse" }),
+      },
+    },
     delete: {
       tags: ["Connections"],
       summary: "Disconnect a provider.",
@@ -1278,6 +1340,34 @@ function createConnectionPath(): Record<string, unknown> {
             ),
           ],
         }),
+        404: jsonResponse({ $ref: "#/components/schemas/ErrorResponse" }),
+      },
+    },
+  };
+}
+
+function createConnectionSettingsPath(): Record<string, unknown> {
+  return {
+    get: {
+      tags: ["Connections"],
+      summary: "Read configured optional non-secret custom credential settings.",
+      parameters: [queryParameter("connectionName", "Optional local connection name. Defaults to default.")],
+      responses: {
+        200: jsonResponse(
+          jsonSchema.object(
+            {
+              service: jsonSchema.string(),
+              connectionName: jsonSchema.string(),
+              values: {
+                type: "object",
+                additionalProperties: { type: "string" },
+                description: "Configured optional fields declared non-secret by the provider.",
+              },
+            },
+            { required: ["service", "connectionName", "values"] },
+          ),
+        ),
+        400: jsonResponse({ $ref: "#/components/schemas/ErrorResponse" }),
         404: jsonResponse({ $ref: "#/components/schemas/ErrorResponse" }),
       },
     },
@@ -1395,15 +1485,32 @@ function createOAuthConfigPath(): Record<string, unknown> {
   };
 }
 
-function getOperation(tag: string, summary: string, schema: JsonSchema): Record<string, unknown> {
+interface GetOperationOptions {
+  description?: string;
+  parameters?: unknown[];
+  errorStatuses?: Array<400 | 401 | 403 | 404>;
+}
+
+function getOperation(
+  tag: string,
+  summary: string,
+  schema: JsonSchema,
+  options: GetOperationOptions = {},
+): Record<string, unknown> {
+  const responses: Record<string, unknown> = {
+    200: jsonResponse(schema),
+    404: jsonResponse({ $ref: "#/components/schemas/ErrorResponse" }),
+  };
+  for (const status of options.errorStatuses ?? []) {
+    responses[String(status)] = jsonResponse({ $ref: "#/components/schemas/ErrorResponse" });
+  }
   return {
     get: {
       tags: [tag],
       summary,
-      responses: {
-        200: jsonResponse(schema),
-        404: jsonResponse({ $ref: "#/components/schemas/ErrorResponse" }),
-      },
+      description: options.description,
+      parameters: options.parameters,
+      responses,
     },
   };
 }
@@ -1445,6 +1552,21 @@ function queryParameter(name: string, description: string, schema: JsonSchema = 
     schema,
     description,
   };
+}
+
+function actionSearchParameters(defaultLimit: number): unknown[] {
+  return [
+    queryParameter("q", "Search text. Provide q or service on the first page."),
+    queryParameter("query", "Alias for q."),
+    queryParameter("service", "Optional provider service id. May be used without q to enumerate one provider."),
+    queryParameter("limit", `Maximum actions to return per page. Defaults to ${defaultLimit}. Maximum 200.`, {
+      type: "integer",
+      minimum: 1,
+      maximum: 200,
+      default: defaultLimit,
+    }),
+    queryParameter("cursor", "Opaque next cursor returned by the previous page."),
+  ];
 }
 
 function actionRunBody(input: JsonSchema, description: string): Record<string, unknown> {
@@ -1497,6 +1619,28 @@ function createConnectionUpsertRequestSchema(): JsonSchema {
     {
       required: ["authType"],
       description: "Connection upsert request.",
+    },
+  );
+}
+
+function createConnectionPatchRequestSchema(): JsonSchema {
+  return jsonSchema.object(
+    {
+      connectionName: jsonSchema.string({
+        description: "Optional local connection name. Defaults to default.",
+      }),
+      values: {
+        type: "object",
+        minProperties: 1,
+        additionalProperties: {
+          anyOf: [{ type: "string" }, { type: "null" }],
+        },
+        description: "Optional non-secret credential fields to set; null or an empty string removes a field.",
+      },
+    },
+    {
+      required: ["values"],
+      description: "Connection settings patch that never accepts required fields or secrets.",
     },
   );
 }

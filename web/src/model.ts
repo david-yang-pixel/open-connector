@@ -62,6 +62,7 @@ export interface ActionDefinition {
   service: string;
   name: string;
   description: string;
+  operationType?: "read" | "write" | "destructive";
   requiredScopes: string[];
   inputSchema?: JsonSchema;
   outputSchema?: JsonSchema;
@@ -103,6 +104,7 @@ export interface ConnectionRecord {
   default?: boolean;
   profile?: Record<string, unknown> | null;
   metadata: Record<string, unknown>;
+  discoveredToolCount?: number;
 }
 
 export interface MarketplaceState {
@@ -141,8 +143,16 @@ export interface RuntimeTokenSummary {
   blockedActions: string[];
   allowedProxies: string[];
   allowedConnections: string[];
+  connectionPermissions?: ConnectionPermissionGrant[];
   createdAt: string;
   lastUsedAt?: string;
+}
+
+export type ConnectionAccessLevel = "read" | "write" | "full";
+
+export interface ConnectionPermissionGrant {
+  connectionId: string;
+  access: ConnectionAccessLevel;
 }
 
 export interface PolicyRules {
@@ -362,6 +372,11 @@ export function resolveProviderConnectionStatus(
 
 export function usableConnectionsForService(connections: ConnectionRecord[], service: string): ConnectionRecord[] {
   return connections.filter((connection) => connection.service === service && isUsableCredentialConnection(connection));
+}
+
+export function connectionDiscoveredToolCount(connection: ConnectionRecord): number | undefined {
+  const count = connection.discoveredToolCount;
+  return typeof count === "number" ? count : undefined;
 }
 
 export function isNoAuthOnlyProvider(provider: ProviderDefinition): boolean {

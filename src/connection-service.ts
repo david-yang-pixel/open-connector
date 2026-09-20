@@ -34,6 +34,8 @@ export interface ConnectionSummary {
   virtual: boolean;
   default: boolean;
   profile: CredentialProfile;
+  /** Safe capability metadata explicitly projected for public connection APIs. */
+  discoveredToolCount?: number;
   marketplace?: { id: string; pricing: MarketplacePricing };
 }
 
@@ -49,6 +51,20 @@ export interface ConnectWithCredentialInput {
   signal?: AbortSignal;
   expectedConnection?: StoredConnection;
   comment?: string | null;
+}
+
+/** Patch optional, non-secret custom credential settings while retaining connection secrets. */
+export interface PatchCustomCredentialInput {
+  connectionName?: string;
+  values: Record<string, unknown>;
+  signal?: AbortSignal;
+}
+
+/** Admin-only view of configured optional fields that the provider marks non-secret. */
+export interface CustomCredentialSettingsSummary {
+  service: string;
+  connectionName: string;
+  values: Record<string, string>;
 }
 
 export interface ConnectWithoutAuthInput {
@@ -373,6 +389,83 @@ export class ConnectionService {
     return this.saveCredential(provider, credential, input);
   }
 
+  async patchCustomCredentialValues(service: string, input: PatchCustomCredentialInput): Promise<ConnectionSummary> {
+    const provider = this.getAvailableProvider(service);
+    if (!this.supportsAuth(provider, "custom_credential")) {
+      throw new ConnectionError("unsupported_auth_type", `${service} does not support custom_credential.`);
+    }
+
+    const connectionName = normalizeConnectionName(input.connectionName);
+    const stored = await this.store.get(service, connectionName);
+    if (!stored) {
+      throw new ConnectionError("connection_not_found", `${service} connection not found: ${connectionName}.`);
+    }
+    if (stored.credential.authType !== "custom_credential") {
+      throw new ConnectionError("unsupported_auth_type", `${service} connection does not use custom_credential.`);
+    }
+
+    const auth = this.getCustomCredentialDefinition(provider);
+    const patchableFields = new Map(
+      auth.fields.filter((field) => !field.required && !field.secret).map((field) => [field.key, field]),
+    );
+    if (Object.keys(input.values).length === 0) {
+      throw new ConnectionError("invalid_input", "values must include at least one patchable credential field.");
+    }
+
+    const values = { ...stored.credential.values };
+    for (const [key, value] of Object.entries(input.values)) {
+      if (!patchableFields.has(key)) {
+        throw new ConnectionError(
+          "invalid_input",
+          `Credential field ${key} cannot be patched; only optional non-secret fields are allowed.`,
+        );
+      }
+      if (value === null || (typeof value === "string" && !value.trim())) {
+        delete values[key];
+      } else if (typeof value === "string") {
+        values[key] = value.trim();
+      } else {
+        throw new ConnectionError("invalid_input", `Credential field ${key} must be a string or null.`);
+      }
+    }
+
+    return this.connectWithCustomCredential(service, {
+      connectionName,
+      values,
+      signal: input.signal,
+      expectedConnection: stored,
+    });
+  }
+
+  async getCustomCredentialSettings(
+    service: string,
+    connectionNameInput?: string,
+  ): Promise<CustomCredentialSettingsSummary> {
+    const provider = this.getProvider(service);
+    if (!this.supportsAuth(provider, "custom_credential")) {
+      throw new ConnectionError("unsupported_auth_type", `${service} does not support custom_credential.`);
+    }
+    const connectionName = normalizeConnectionName(connectionNameInput);
+    const stored = await this.store.get(service, connectionName);
+    if (!stored) {
+      throw new ConnectionError("connection_not_found", `${service} connection not found: ${connectionName}.`);
+    }
+    if (stored.credential.authType !== "custom_credential") {
+      throw new ConnectionError("unsupported_auth_type", `${service} connection does not use custom_credential.`);
+    }
+
+    const visibleFields = new Set(
+      this.getCustomCredentialDefinition(provider)
+        .fields.filter((field) => !field.required && !field.secret)
+        .map((field) => field.key),
+    );
+    return {
+      service,
+      connectionName,
+      values: Object.fromEntries(Object.entries(stored.credential.values).filter(([key]) => visibleFields.has(key))),
+    };
+  }
+
   async setOAuthCredential(
     service: string,
     credential: Extract<ResolvedCredential, { authType: "oauth2" }>,
@@ -516,6 +609,7 @@ export class ConnectionService {
       virtual: false,
       default: connectionName === defaultConnectionName,
       profile: credential.profile,
+      discoveredToolCount: readDiscoveredToolCount(credential.metadata),
     };
   }
 
@@ -856,6 +950,11 @@ function isOAuthCredentialExpired(credential: Extract<ResolvedCredential, { auth
 
   const expiresAt = Date.parse(credential.expiresAt);
   return Number.isFinite(expiresAt) && expiresAt <= Date.now() + 60_000;
+}
+
+function readDiscoveredToolCount(metadata: Record<string, unknown>): number | undefined {
+  const value = metadata.discoveredToolCount;
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 }
 
 export function normalizeConnectionName(value: string | undefined): string {

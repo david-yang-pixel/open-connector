@@ -331,7 +331,10 @@ Create runtime tokens for `/v1` and `/mcp` callers from the web console Access t
 `POST /api/runtime-tokens`. The token is shown once when created; only a hash is stored in the
 selected runtime database.
 Runtime clients should send `Authorization: Bearer oct_...`. Persistent tokens configure Action
-rules, provider proxy grants, and optional connection grants independently. Their `allowedProxies`
+rules, provider proxy grants, and optional per-connection permission grants independently. In the
+Web Console, each configured connector or Custom MCP can be disabled, read-only, read-write without
+destructive Actions, or fully accessible. New tokens default all configured connections to read-only.
+Their `allowedProxies`
 list is empty by default, which denies `/v1/proxy/:service`; add a provider service or `*` only when
 that client needs proxy access. Omit `allowedConnections` or send `[]` on create for unrestricted
 connection access. Updates must send the field so a PUT cannot drop an existing restriction. A
@@ -340,6 +343,14 @@ requests select the provider's default connection and are denied unless its ID i
 `no_auth` connections do not require a grant. HTTP, MCP, and proxy callers receive
 `connection_not_allowed` before lookup. Runtime discovery is filtered; `GET /api/connections` and
 Action `agent.md` guides are not.
+
+Programmatic clients should prefer `connectionPermissions`, for example
+`[{"connectionId":"<id>","access":"read"}]`. The access value is the maximum operation risk for
+that connection: `read` permits only read Actions, `write` also permits non-destructive writes, and
+`full` also permits destructive Actions and makes the connection eligible for an independently
+granted raw proxy. If the field is absent or empty, legacy `allowedConnections` semantics are kept.
+Remote Custom MCP tools are checked again using their dynamic tool identity and operation annotation,
+so the generic dispatcher cannot bypass a read-only connection grant.
 
 `OOMOL_CONNECT_RUNTIME_TOKEN` is still accepted for bootstrap scripts and backward compatibility.
 
@@ -395,5 +406,10 @@ npm run dev
 ```
 
 Action policy entries are comma-separated action ids. A provider-wide wildcard such as `gmail.*`
-matches all actions for that provider, and a bare `*` matches every action. Proxy policy entries are
-comma-separated provider service names, or `*` for all provider proxies.
+matches all actions for that provider, and a bare `*` matches every action. The operation rules
+`@operation:read`, `@operation:write`, and `@operation:destructive` match catalog metadata directly;
+for example, blocking the latter two creates a true read-only policy without guessing from action names.
+Custom remote MCP tools receive live dynamic ids such as `custom_mcp.remote.query_logs`; their annotation-derived
+operation type is evaluated again at call time. This allows an exact tool rule or `@operation:*` rule to distinguish
+read-only discovery from remote writes even though both use the `custom_mcp.call_tool` dispatcher.
+Proxy policy entries are comma-separated provider service names, or `*` for all provider proxies.

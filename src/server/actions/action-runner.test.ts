@@ -385,6 +385,63 @@ describe("ActionRunner", () => {
     expect(denied?.result).toMatchObject({ ok: false, error: { code: "connection_not_allowed" } });
     expect(resolveConnection).toHaveBeenCalledTimes(2);
   });
+
+  it("rechecks nested dynamic actions against the selected connection access level", async () => {
+    const store = new MemoryConnectionStore();
+    const connection = await store.set("example", "work", credential);
+    const providerLoader = new TestProviderLoader(async (_input, context) => {
+      const decision = context.authorizeAction?.({
+        ...echoAction,
+        id: "example.dynamic_write",
+        name: "dynamic_write",
+        operationType: "write",
+      });
+      return decision?.allowed
+        ? { ok: true, output: { message: "written" } }
+        : {
+            ok: false,
+            error: { code: decision?.code ?? "authorization_failed", message: decision?.message ?? "denied" },
+          };
+    });
+    const runner = createRunner({
+      runs: new MemoryRunLogStore(),
+      logger: createTestLogger().logger,
+      providerLoader,
+      provider: authenticatedProvider,
+      store,
+    });
+
+    const readOnly = await runner.run({
+      actionId: "example.echo",
+      input: {},
+      caller: "mcp",
+      connectionName: "work",
+      policy: new ActionPolicyService().createSnapshot(undefined, {
+        allowedActions: [],
+        blockedActions: [],
+        allowedProxies: [],
+        connectionPermissions: [{ connectionId: connection.id, access: "read" }],
+      }),
+    });
+    const full = await runner.run({
+      actionId: "example.echo",
+      input: {},
+      caller: "mcp",
+      connectionName: "work",
+      policy: new ActionPolicyService().createSnapshot(undefined, {
+        allowedActions: [],
+        blockedActions: [],
+        allowedProxies: [],
+        connectionPermissions: [{ connectionId: connection.id, access: "full" }],
+      }),
+    });
+
+    expect(readOnly?.result).toMatchObject({
+      ok: false,
+      error: { code: "connection_operation_not_allowed" },
+    });
+    expect(full?.result).toMatchObject({ ok: true, output: { message: "written" } });
+  });
 });
 
 function createRunner(options: {

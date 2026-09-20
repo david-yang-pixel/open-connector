@@ -16,10 +16,14 @@ afterEach(async () => {
 describe("copyCatalogAssets", () => {
   it("writes deterministic, size-bounded chunks in provider filename order", async () => {
     const { sourceDir, targetDir } = await fixture();
-    await writeFile(join(sourceDir, "zulu.json"), JSON.stringify({ service: "zulu", label: "中中" }));
-    await writeFile(join(sourceDir, "alpha.json"), JSON.stringify({ service: "alpha", label: "中中" }));
+    const zulu = providerDefinition("zulu", "中中");
+    const alpha = providerDefinition("alpha", "中中");
+    await writeFile(join(sourceDir, "zulu.json"), JSON.stringify(zulu));
+    await writeFile(join(sourceDir, "alpha.json"), JSON.stringify(alpha));
+    const maxChunkBytes =
+      Math.max(Buffer.byteLength(JSON.stringify(alpha)), Buffer.byteLength(JSON.stringify(zulu))) + 3;
 
-    const index = await copyCatalogAssets({ sourceDir, targetDir, maxChunkBytes: 45 });
+    const index = await copyCatalogAssets({ sourceDir, targetDir, maxChunkBytes });
 
     expect(index).toEqual({
       version: 1,
@@ -27,34 +31,37 @@ describe("copyCatalogAssets", () => {
       chunks: ["apps-0000.json", "apps-0001.json"],
     });
     expect(JSON.parse(await readFile(join(targetDir, "index.json"), "utf8"))).toEqual(index);
-    expect(JSON.parse(await readFile(join(targetDir, "apps-0000.json"), "utf8"))).toEqual([
-      { service: "alpha", label: "中中" },
-    ]);
-    expect(JSON.parse(await readFile(join(targetDir, "apps-0001.json"), "utf8"))).toEqual([
-      { service: "zulu", label: "中中" },
-    ]);
+    expect(JSON.parse(await readFile(join(targetDir, "apps-0000.json"), "utf8"))).toEqual([alpha]);
+    expect(JSON.parse(await readFile(join(targetDir, "apps-0001.json"), "utf8"))).toEqual([zulu]);
     for (const chunk of index.chunks) {
-      expect(Buffer.byteLength(await readFile(join(targetDir, chunk), "utf8"))).toBeLessThanOrEqual(45);
+      expect(Buffer.byteLength(await readFile(join(targetDir, chunk), "utf8"))).toBeLessThanOrEqual(maxChunkBytes);
     }
-    expect((await readdir(targetDir)).sort()).toEqual(["apps-0000.json", "apps-0001.json", "index.json"]);
+    expect((await readdir(targetDir)).sort()).toEqual([
+      "apps-0000.json",
+      "apps-0001.json",
+      "core-providers.json",
+      "index.json",
+      "provider-summaries.json",
+    ]);
   });
 
   // Production chunks hold ~170 providers each, so the greedy fill and its separator accounting —
   // not the one-provider-per-chunk degenerate case above — are what the byte cap actually rests on.
   it("packs as many providers into a chunk as the byte cap allows", async () => {
     const { sourceDir, targetDir } = await fixture();
-    // Each provider serializes to 9 bytes, so three of them plus two commas and `[`, `]`, `\n`
-    // fill a 32-byte chunk exactly and the fourth must start the next one.
+    const definitions = ["a", "b", "c", "d"].map((service) => providerDefinition(service));
     for (const s of ["a", "b", "c", "d"]) {
-      await writeFile(join(sourceDir, `${s}.json`), JSON.stringify({ s }));
+      await writeFile(join(sourceDir, `${s}.json`), JSON.stringify(providerDefinition(s)));
     }
+    const providerBytes = Buffer.byteLength(JSON.stringify(definitions[0]));
+    const maxChunkBytes = providerBytes * 3 + 5;
 
-    const index = await copyCatalogAssets({ sourceDir, targetDir, maxChunkBytes: 32 });
+    const index = await copyCatalogAssets({ sourceDir, targetDir, maxChunkBytes });
 
     expect(index.chunks).toEqual(["apps-0000.json", "apps-0001.json"]);
-    expect(await readFile(join(targetDir, "apps-0000.json"), "utf8")).toBe('[{"s":"a"},{"s":"b"},{"s":"c"}]\n');
-    expect(await readFile(join(targetDir, "apps-0001.json"), "utf8")).toBe('[{"s":"d"}]\n');
-    expect(Buffer.byteLength(await readFile(join(targetDir, "apps-0000.json"), "utf8"))).toBe(32);
+    expect(JSON.parse(await readFile(join(targetDir, "apps-0000.json"), "utf8"))).toEqual(definitions.slice(0, 3));
+    expect(JSON.parse(await readFile(join(targetDir, "apps-0001.json"), "utf8"))).toEqual(definitions.slice(3));
+    expect(Buffer.byteLength(await readFile(join(targetDir, "apps-0000.json"), "utf8"))).toBe(maxChunkBytes);
   });
 
   it("replaces chunks left behind by an earlier build", async () => {
@@ -62,19 +69,26 @@ describe("copyCatalogAssets", () => {
     await mkdir(targetDir, { recursive: true });
     await writeFile(join(targetDir, "apps-0007.json"), "[]\n");
     await writeFile(join(targetDir, "apps.json"), "[]\n");
-    await writeFile(join(sourceDir, "alpha.json"), JSON.stringify({ service: "alpha" }));
+    await writeFile(join(sourceDir, "alpha.json"), JSON.stringify(providerDefinition("alpha")));
 
     await copyCatalogAssets({ sourceDir, targetDir });
 
-    expect((await readdir(targetDir)).sort()).toEqual(["apps-0000.json", "index.json"]);
+    expect((await readdir(targetDir)).sort()).toEqual([
+      "apps-0000.json",
+      "core-providers.json",
+      "index.json",
+      "provider-summaries.json",
+    ]);
   });
 
   it("accounts for UTF-8 bytes when rejecting an oversized provider", async () => {
     const { sourceDir, targetDir } = await fixture();
-    await writeFile(join(sourceDir, "unicode.json"), JSON.stringify({ label: "中中" }));
+    const provider = providerDefinition("unicode", "中中");
+    const providerBytes = Buffer.byteLength(JSON.stringify(provider));
+    await writeFile(join(sourceDir, "unicode.json"), JSON.stringify(provider));
 
-    await expect(copyCatalogAssets({ sourceDir, targetDir, maxChunkBytes: 19 })).rejects.toThrow(
-      "unicode.json requires 21 bytes",
+    await expect(copyCatalogAssets({ sourceDir, targetDir, maxChunkBytes: providerBytes + 2 })).rejects.toThrow(
+      `unicode.json requires ${providerBytes + 3} bytes`,
     );
   });
 
@@ -94,7 +108,7 @@ describe("copyCatalogAssets", () => {
     const index = await copyCatalogAssets({ sourceDir, targetDir });
 
     expect(index).toEqual({ version: 1, providerCount: 0, chunks: [] });
-    expect(await readdir(targetDir)).toEqual(["index.json"]);
+    expect((await readdir(targetDir)).sort()).toEqual(["core-providers.json", "index.json", "provider-summaries.json"]);
   });
 
   // The index shape and the `apps-NNNN.json` naming are declared once here and once in the worker
@@ -110,6 +124,9 @@ describe("copyCatalogAssets", () => {
 
     expect(index.chunks.length).toBeGreaterThan(1);
     expect(catalog.providers.map((entry) => entry.service)).toEqual(["alpha", "zulu"]);
+    expect(JSON.parse(await readFile(join(targetDir, "provider-summaries.json"), "utf8"))).toEqual(
+      catalog.providers.map((provider) => ({ ...provider, actions: [], setup: [{ type: "no_auth" }] })),
+    );
   });
 });
 
@@ -131,10 +148,10 @@ function directoryAssets(directory: string): AssetsBinding {
   };
 }
 
-function providerDefinition(service: string): Record<string, unknown> {
+function providerDefinition(service: string, displayName = service): Record<string, unknown> {
   return {
     service,
-    displayName: service,
+    displayName,
     categories: ["Developer Tools"],
     authTypes: ["no_auth"],
     auth: [{ type: "no_auth" }],

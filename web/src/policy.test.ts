@@ -56,6 +56,18 @@ describe("web policy evaluation", () => {
     expect(countAllowedActions([githubProvider()], policyLayers(policy))).toEqual({ allowed: 1, total: 2 });
   });
 
+  it("evaluates operation rules using catalog metadata instead of action-name guesses", () => {
+    const policy: RuntimePolicyState = {
+      deployment: emptyRules,
+      runtime: { ...emptyRules, blockedActions: ["@operation:write", "@operation:destructive"] },
+    };
+
+    expect(countAllowedActions([githubProvider()], policyLayers(policy))).toEqual({ allowed: 0, total: 2 });
+    expect(evaluatePolicy("github.publish_release", "action", policyLayers(policy), "read")).toMatchObject({
+      allowed: true,
+    });
+  });
+
   it("treats runtime token proxy grants as explicit permissions", () => {
     const policy: RuntimePolicyState = {
       deployment: { ...emptyRules, allowedProxies: ["github"] },
@@ -144,6 +156,7 @@ function githubProvider(): ProviderDefinition {
       service: "github",
       name,
       description: name,
+      operationType: name === "delete_repository" ? "destructive" : "write",
       requiredScopes: [],
       inputSchema: {},
       outputSchema: {},

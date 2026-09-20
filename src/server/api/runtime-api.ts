@@ -75,6 +75,7 @@ export interface RuntimeConnectedApp {
   accountLabel: string;
   isDefault: boolean;
   scopes: string[];
+  discoveredToolCount?: number;
   marketplace?: ConnectionSummary["marketplace"];
 }
 
@@ -147,6 +148,7 @@ export function serializeRuntimeConnectedApp(connection: ConnectionSummary): Run
     accountLabel: connection.profile.displayName,
     isDefault: connection.default,
     scopes: connection.profile.grantedScopes,
+    discoveredToolCount: connection.discoveredToolCount,
     marketplace: connection.marketplace,
   };
 }
@@ -285,6 +287,9 @@ function mapExecutionErrorStatus(code: string | undefined, details?: unknown): R
   if (code === "invalid_input" && upstreamStatus === 404) {
     return 404;
   }
+  if (code === "invalid_input" && upstreamStatus === 409) {
+    return 409;
+  }
   if (code === "internal_error" || code === "provider_error" || code === "executor_unavailable") {
     return 500;
   }
@@ -294,7 +299,11 @@ function mapExecutionErrorStatus(code: string | undefined, details?: unknown): R
   if (code === "connection_not_found" || code === "unknown_service" || code === "unknown_action") {
     return 404;
   }
-  if (code === "authorization_failed" || code === "connection_not_allowed") {
+  if (
+    code === "authorization_failed" ||
+    code === "connection_not_allowed" ||
+    code === "connection_operation_not_allowed"
+  ) {
     return 403;
   }
   if (code === "rate_limited") {

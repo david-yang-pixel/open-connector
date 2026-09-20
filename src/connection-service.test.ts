@@ -65,6 +65,13 @@ const customCredentialProvider: ProviderDefinition = {
           required: true,
           secret: true,
         },
+        {
+          key: "queryOptions",
+          label: "Query Options",
+          inputType: "json",
+          required: false,
+          secret: false,
+        },
       ],
     },
   ],
@@ -331,6 +338,45 @@ describe("ConnectionService", () => {
         host: "localhost",
         password: "secret",
       },
+    });
+  });
+
+  it("patches optional public custom credential fields while retaining secrets", async () => {
+    const service = createService([customCredentialProvider]);
+    await service.connectWithCustomCredential("database", {
+      values: { host: "localhost", password: "secret", queryOptions: '{"limit":10}' },
+    });
+
+    await service.patchCustomCredentialValues("database", {
+      values: { queryOptions: ' {"limit":50} ' },
+    });
+
+    await expect(service.getCredential("database")).resolves.toMatchObject({
+      authType: "custom_credential",
+      values: {
+        host: "localhost",
+        password: "secret",
+        queryOptions: '{"limit":50}',
+      },
+    });
+    await expect(service.getCustomCredentialSettings("database")).resolves.toEqual({
+      service: "database",
+      connectionName: "default",
+      values: { queryOptions: '{"limit":50}' },
+    });
+  });
+
+  it("rejects secret and required fields in custom credential patches", async () => {
+    const service = createService([customCredentialProvider]);
+    await service.connectWithCustomCredential("database", {
+      values: { host: "localhost", password: "secret" },
+    });
+
+    await expect(
+      service.patchCustomCredentialValues("database", { values: { password: "replacement" } }),
+    ).rejects.toMatchObject({ code: "invalid_input" });
+    await expect(service.patchCustomCredentialValues("database", { values: { host: "other" } })).rejects.toMatchObject({
+      code: "invalid_input",
     });
   });
 

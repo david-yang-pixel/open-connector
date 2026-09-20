@@ -98,5 +98,5 @@ function createInvestodayFetch(fetcher: ProviderFetch, apiKey: string): Provider
       response.status === 429 ? "rate_limited" : "provider_error",
     );
   };
-  return request;
+  return request as ProviderFetch;
 }

@@ -455,7 +455,7 @@ class PostgresRuntimeTokenStore implements IRuntimeTokenStore {
         insert into runtime_tokens (
           ${runtimeTokenColumns}
         )
-        values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       `,
       [
         record.id,
@@ -465,6 +465,7 @@ class PostgresRuntimeTokenStore implements IRuntimeTokenStore {
         JSON.stringify(record.blockedActions),
         JSON.stringify(record.allowedProxies),
         JSON.stringify(record.allowedConnections ?? []),
+        JSON.stringify(record.connectionPermissions ?? []),
         record.createdAt,
         record.lastUsedAt ?? null,
       ],
@@ -497,8 +498,8 @@ class PostgresRuntimeTokenStore implements IRuntimeTokenStore {
     const result = await this.pool.query<RuntimeRow>(
       `
         update runtime_tokens
-        set allowed_actions = $1, blocked_actions = $2, allowed_proxies = $3, allowed_connections = $4
-        where id = $5
+        set allowed_actions = $1, blocked_actions = $2, allowed_proxies = $3, allowed_connections = $4, connection_permissions = $5
+        where id = $6
         returning ${runtimeTokenColumns}
       `,
       [
@@ -506,6 +507,7 @@ class PostgresRuntimeTokenStore implements IRuntimeTokenStore {
         JSON.stringify(policy.blockedActions),
         JSON.stringify(policy.allowedProxies),
         JSON.stringify(policy.allowedConnections ?? []),
+        JSON.stringify(policy.connectionPermissions ?? []),
         id,
       ],
     );

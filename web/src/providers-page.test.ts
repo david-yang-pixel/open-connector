@@ -11,9 +11,12 @@ import {
   configurableConnectionsForProvider,
   connectionDeletePath,
   connectionDisplayLabel,
+  connectionSettingsPath,
   connectionSubmitLabel,
   createOAuthPopupFeatures,
+  customCredentialSettingsPatchBody,
   credentialConnectionRequestBody,
+  editableCustomCredentialFields,
   isProviderLocallyAvailable,
   oauthAuthorizationRequestBody,
   oauthConfigForProvider,
@@ -38,6 +41,41 @@ describe("shouldShowConnectionActions", () => {
   it("shows connection actions when credentials or OAuth are required", () => {
     expect(shouldShowConnectionActions({ type: "api_key" })).toBe(true);
     expect(shouldShowConnectionActions({ type: "oauth2", scopes: [] })).toBe(true);
+  });
+});
+
+describe("custom credential settings", () => {
+  const auth: AuthDefinition = {
+    type: "custom_credential",
+    fields: [
+      { key: "serverUrl", label: "URL", inputType: "text", required: true, secret: false },
+      { key: "token", label: "Token", inputType: "password", required: false, secret: true },
+      { key: "requestTimeoutMs", label: "Timeout", inputType: "text", required: false, secret: false },
+      { key: "fallbackServerUrls", label: "Fallbacks", inputType: "json", required: false, secret: false },
+    ],
+  };
+
+  it("only exposes optional non-secret fields for in-place editing", () => {
+    expect(editableCustomCredentialFields(auth).map((field) => field.key)).toEqual([
+      "requestTimeoutMs",
+      "fallbackServerUrls",
+    ]);
+  });
+
+  it("builds named settings paths and clears blank values explicitly", () => {
+    const fields = editableCustomCredentialFields(auth);
+    expect(connectionSettingsPath("custom_mcp", "dify signoz")).toBe(
+      "/api/connections/custom_mcp/settings?connectionName=dify%20signoz",
+    );
+    expect(
+      customCredentialSettingsPatchBody("dify signoz", fields, {
+        requestTimeoutMs: " 180000 ",
+        fallbackServerUrls: "",
+      }),
+    ).toEqual({
+      connectionName: "dify signoz",
+      values: { requestTimeoutMs: "180000", fallbackServerUrls: null },
+    });
   });
 });
 

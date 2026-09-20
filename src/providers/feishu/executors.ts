@@ -16,6 +16,7 @@ import {
   ProviderRequestError,
 } from "../provider-runtime.ts";
 import { feishuActions } from "./actions.ts";
+import { oauth } from "./oauth.ts";
 import { feishuActionHandlers, feishuOpenBaseUrl, fetchFeishuUserInfo } from "./runtime.ts";
 import { createFeishuApplicationActionHandlers } from "./shared/application-runtime.ts";
 import { createFeishuApprovalActionHandlers } from "./shared/approval-runtime.ts";
@@ -73,6 +74,8 @@ const allFeishuActionHandlers = mapProviderActionHandlers(
 );
 
 export const executors: ProviderExecutors = defineOAuthProviderExecutors(service, allFeishuActionHandlers);
+
+export { oauth };
 
 export const proxy: ProviderProxyExecutor = defineProviderProxy({
   service,

@@ -2,6 +2,7 @@ import type {
   AppData,
   AuthDefinition,
   ConnectionRecord,
+  CredentialField,
   OAuthConfig,
   ProviderConnectionStatus,
   ProviderDefinition,
@@ -34,9 +35,11 @@ import {
 } from "lucide-react";
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
-import { apiDelete, apiPost, apiPut } from "./api";
+import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "./api";
 import { CredentialInput } from "./credential-input";
+import { McpToolsDialog } from "./mcp-tools-dialog";
 import {
+  connectionDiscoveredToolCount,
   credentialFieldsFor,
   filterProviders,
   filterProvidersByCategory,
@@ -131,6 +134,12 @@ interface ConnectionFormProps {
   onConfigureOAuthClient(): void;
   onOAuthClientModeChange(mode: OAuthClientMode): void;
   onConnectionPendingChange?(connectionName?: string): void;
+}
+
+interface CustomCredentialSettingsResponse {
+  service: string;
+  connectionName: string;
+  values: Record<string, string>;
 }
 
 interface ConnectionManagerProps {
@@ -1225,6 +1234,27 @@ export function connectionDeletePath(service: string, connectionName: string): s
   return `/api/connections/${encodeURIComponent(service)}?connectionName=${encodeURIComponent(connectionName)}`;
 }
 
+export function connectionSettingsPath(service: string, connectionName: string): string {
+  return `/api/connections/${encodeURIComponent(service)}/settings?connectionName=${encodeURIComponent(connectionName)}`;
+}
+
+export function editableCustomCredentialFields(auth: AuthDefinition): CredentialField[] {
+  return auth.type === "custom_credential"
+    ? (auth.fields ?? []).filter((field) => !field.required && !field.secret)
+    : [];
+}
+
+export function customCredentialSettingsPatchBody(
+  connectionName: string,
+  fields: CredentialField[],
+  values: Record<string, string>,
+): { connectionName: string; values: Record<string, string | null> } {
+  return {
+    connectionName,
+    values: Object.fromEntries(fields.map((field) => [field.key, values[field.key]?.trim() || null])),
+  };
+}
+
 export function credentialConnectionRequestBody(
   authType: "no_auth" | "api_key" | "custom_credential",
   connectionName: string,
@@ -1257,6 +1287,7 @@ function ConnectionManager(props: ConnectionManagerProps): ReactNode {
   const t = useTranslate();
   const inputId = "provider-connection-name";
   const errorId = `${inputId}-error`;
+  const [viewingToolsConnection, setViewingToolsConnection] = useState<ConnectionRecord | null>(null);
 
   return (
     <div className="connection-manager">
@@ -1265,11 +1296,22 @@ function ConnectionManager(props: ConnectionManagerProps): ReactNode {
           {props.connections.map((connection) => {
             const connectionName = connectionNameOf(connection);
             const selected = !props.creating && connectionName === props.selectedConnectionName;
+            const toolCount = connectionDiscoveredToolCount(connection);
             return (
               <div key={connection.id ?? `${connection.service}:${connectionName}`} className="connection-list-item">
                 <div className="connection-list-copy">
                   <div className="connection-list-title">
                     <strong>{connectionDisplayLabel(connection)}</strong>
+                    {toolCount !== undefined ? (
+                      <button
+                        type="button"
+                        onClick={() => setViewingToolsConnection(connection)}
+                        className="inline-flex cursor-pointer transition-all hover:scale-105 active:scale-95 text-left"
+                        title={t("providers.viewTools")}
+                      >
+                        <Badge>{t("providers.toolCount", { count: toolCount })}</Badge>
+                      </button>
+                    ) : null}
                     {connectionName === defaultConnectionName ? (
                       <Badge>{t("providers.defaultConnection")}</Badge>
                     ) : null}
@@ -1290,6 +1332,18 @@ function ConnectionManager(props: ConnectionManagerProps): ReactNode {
             );
           })}
         </div>
+      ) : null}
+
+      {viewingToolsConnection ? (
+        <McpToolsDialog
+          connection={viewingToolsConnection}
+          open={Boolean(viewingToolsConnection)}
+          onOpenChange={(open) => {
+            if (!open) {
+              setViewingToolsConnection(null);
+            }
+          }}
+        />
       ) : null}
 
       {props.creating ? (
@@ -1397,9 +1451,13 @@ function ConnectionForm(props: ConnectionFormProps): ReactNode {
     initialClientConfigFieldValues(manualClientConfigFields, undefined),
   );
   const [status, setStatus] = useState<string | null>(null);
+  const [customSettingsLoaded, setCustomSettingsLoaded] = useState(false);
   const stopOAuthRefreshPolling = useRef<(() => void) | undefined>(undefined);
   const authDescription = props.auth.type === "custom_credential" ? props.auth.description : undefined;
-  const fields = credentialFieldsFor(props.auth);
+  const connectedCustomCredential = props.connection != null && props.auth.type === "custom_credential";
+  const fields = connectedCustomCredential
+    ? editableCustomCredentialFields(props.auth)
+    : credentialFieldsFor(props.auth);
   const showActions = shouldShowConnectionActions(props.auth);
   const connected = props.connection != null;
   const customOAuthClientAvailable =
@@ -1414,14 +1472,16 @@ function ConnectionForm(props: ConnectionFormProps): ReactNode {
   const canSubmit =
     props.connectionName.length > 0 &&
     props.connectionNameValid &&
+    (!connectedCustomCredential || customSettingsLoaded) &&
     (props.oauthClientMode !== "manual" || customOAuthClientAvailable) &&
     shouldEnableConnectionSubmit(
       props.auth,
       props.oauthConfig,
       props.oauthClientMode === "manual" ? manualValues : undefined,
     );
-  const submitLabel =
-    props.auth.type === "oauth2"
+  const submitLabel = connectedCustomCredential
+    ? t("providers.buttons.saveAdvancedSettings")
+    : props.auth.type === "oauth2"
       ? t(connected ? "providers.buttons.reconnectProvider" : "providers.buttons.connectProvider", {
           name: props.provider.displayName,
         })
@@ -1440,6 +1500,33 @@ function ConnectionForm(props: ConnectionFormProps): ReactNode {
       stopOAuthRefreshPolling.current = undefined;
     }
   }, [props.connection]);
+
+  useEffect(() => {
+    if (!connectedCustomCredential) {
+      setCustomSettingsLoaded(false);
+      return;
+    }
+    let active = true;
+    setValues({});
+    setCustomSettingsLoaded(false);
+    setStatus(t("providers.connectionMessages.loadingAdvancedSettings"));
+    void apiGet<CustomCredentialSettingsResponse>(connectionSettingsPath(props.provider.service, props.connectionName))
+      .then((response) => {
+        if (!active) return;
+        setValues(response.values);
+        setCustomSettingsLoaded(true);
+        setStatus(null);
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        setStatus(
+          error instanceof Error ? error.message : t("providers.connectionMessages.loadAdvancedSettingsFailed"),
+        );
+      });
+    return () => {
+      active = false;
+    };
+  }, [connectedCustomCredential, props.connectionName, props.provider.service, t]);
 
   useEffect(() => {
     if (!customOAuthClientAvailable && props.oauthClientMode === "manual") {
@@ -1475,10 +1562,17 @@ function ConnectionForm(props: ConnectionFormProps): ReactNode {
           credentialConnectionRequestBody("api_key", connectionName, values),
         );
       } else if (props.auth.type === "custom_credential") {
-        await apiPut(
-          `/api/connections/${props.provider.service}`,
-          credentialConnectionRequestBody("custom_credential", connectionName, values),
-        );
+        if (connectedCustomCredential) {
+          await apiPatch(
+            `/api/connections/${props.provider.service}`,
+            customCredentialSettingsPatchBody(connectionName, fields, values),
+          );
+        } else {
+          await apiPut(
+            `/api/connections/${props.provider.service}`,
+            credentialConnectionRequestBody("custom_credential", connectionName, values),
+          );
+        }
       } else {
         const result = await apiPost<{ authorizationUrl?: string }>(
           `/api/oauth/authorizations`,
@@ -1636,6 +1730,12 @@ function ConnectionForm(props: ConnectionFormProps): ReactNode {
         </div>
       ) : null}
       {authDescription ? <small className="block text-muted-foreground">{authDescription}</small> : null}
+      {connectedCustomCredential ? (
+        <Alert>
+          <Settings size={16} />
+          <AlertDescription>{t("providers.connectionMessages.advancedSettingsDescription")}</AlertDescription>
+        </Alert>
+      ) : null}
       {fields.map((field) => (
         <CredentialInput
           key={field.key}

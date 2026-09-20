@@ -19,7 +19,14 @@ import { Hono } from "hono";
 import { compress } from "hono/compress";
 import { ConnectionError, defaultConnectionName } from "../connection-service.ts";
 import { ActionPolicyService, emptyPolicyRules } from "../core/action-policy.ts";
-import { DEFAULT_ACTION_SEARCH_LIMIT, createActionSearchIndexProvider, searchActions } from "../core/action-search.ts";
+import {
+  DEFAULT_ACTION_SEARCH_LIMIT,
+  MAX_ACTION_SEARCH_LIMIT,
+  createActionSearchIndexProvider,
+  decodeActionSearchCursor,
+  encodeActionSearchCursor,
+  searchActions,
+} from "../core/action-search.ts";
 import { optionalRecord, optionalString, requiredString, requiredStringArray } from "../core/cast.ts";
 import { PromiseCache } from "../core/promise-cache.ts";
 import { MarketplaceError } from "../marketplace/marketplace-service.ts";
@@ -247,7 +254,11 @@ export class ConnectServer {
     });
 
     app.get("/api/connections", (context) => this.listConnections(context));
+    app.get("/api/connections/:service/settings", (context) =>
+      this.getConnectionSettings(context, context.req.param("service")),
+    );
     app.put("/api/connections/:service", (context) => this.upsertConnection(context, context.req.param("service")));
+    app.patch("/api/connections/:service", (context) => this.patchConnection(context, context.req.param("service")));
     app.delete("/api/connections/:service", (context) => this.disconnect(context, context.req.param("service")));
 
     app.get("/api/runs", (context) => this.listRuns(context));
@@ -441,15 +452,11 @@ export class ConnectServer {
       return jsonError(context, 400, "invalid_input", query.message);
     }
 
-    const index = await this.actionSearch.get();
-    return context.json(
-      await this.serializeSearchResults(
-        searchActions(index, query.q, {
-          service: query.service,
-          limit: query.limit,
-        }),
-      ),
-    );
+    const page = await this.searchActionPage(query);
+    context.header("x-openconnector-total", String(page.total));
+    context.header("x-openconnector-has-more", String(page.hasMore));
+    if (page.nextCursor) context.header("x-openconnector-next-cursor", page.nextCursor);
+    return context.json(await this.serializeSearchResults(page.results));
   }
 
   private async getActionMarkdown(context: Context, actionId: string): Promise<Response> {
@@ -532,12 +539,41 @@ export class ConnectServer {
       });
     }
 
-    const index = await this.actionSearch.get();
-    const results = searchActions(index, query.q, {
-      service: query.service,
-      limit: query.limit,
+    const page = await this.searchActionPage(query);
+    return writeRuntimeSuccess(context, await this.serializeSearchResults(page.results), {
+      total: page.total,
+      count: page.results.length,
+      hasMore: page.hasMore,
+      nextCursor: page.nextCursor ?? null,
     });
-    return writeRuntimeSuccess(context, await this.serializeSearchResults(results));
+  }
+
+  private async searchActionPage(query: Extract<SearchQuery, { ok: true }>): Promise<ActionSearchPage> {
+    const ranked = query.q
+      ? searchActions(await this.actionSearch.get(), query.q, {
+          service: query.service,
+          limit: Number.MAX_SAFE_INTEGER,
+        })
+      : this.options.catalog.actions
+          .filter((action) => action.service === query.service)
+          .map((action) => ({
+            id: action.id,
+            service: action.service,
+            name: action.name,
+            description: action.description,
+          }));
+    const valid = ranked.filter((result) => this.options.catalog.actionsById.has(result.id));
+    const results = valid.slice(query.offset, query.offset + query.limit);
+    const nextOffset = query.offset + results.length;
+    const hasMore = nextOffset < valid.length;
+    return {
+      results,
+      total: valid.length,
+      hasMore,
+      nextCursor: hasMore
+        ? encodeActionSearchCursor({ offset: nextOffset, query: query.q, service: query.service })
+        : undefined,
+    };
   }
 
   private async serializeSearchResults(results: ActionSearchDocument[]): Promise<RuntimeActionSearchResult[]> {
@@ -883,6 +919,14 @@ export class ConnectServer {
     return context.json(await this.options.connections.listConnections());
   }
 
+  private async getConnectionSettings(context: Context, service: string): Promise<Response> {
+    const connectionName = readConnectionName(context);
+    return this.writeConnectionResult(
+      context,
+      this.options.connections.getCustomCredentialSettings(service, connectionName),
+    );
+  }
+
   private async upsertConnection(context: Context, service: string): Promise<Response> {
     const body = await readJsonBody(context);
     const authType = optionalString(body.authType);
@@ -963,6 +1007,34 @@ export class ConnectServer {
     return this.writeConnectionResult(
       context,
       this.options.connections.disconnect(service, connectionName),
+      logContext,
+    );
+  }
+
+  private async patchConnection(context: Context, service: string): Promise<Response> {
+    const body = await readJsonBody(context);
+    const values = optionalRecord(body.values);
+    const connectionName = readConnectionName(context, body);
+    const logContext: ConnectionLogContext = {
+      operation: "connect",
+      path: context.req.path,
+      service,
+      authType: "custom_credential",
+      connectionName,
+    };
+    if (!values) {
+      this.options.logger?.warn({ ...logContext, errorCode: "invalid_input" }, "connection patch rejected");
+      return jsonError(context, 400, "invalid_input", "values must be an object.");
+    }
+
+    this.options.logger?.info(logContext, "connection patch started");
+    return this.writeConnectionResult(
+      context,
+      this.options.connections.patchCustomCredentialValues(service, {
+        connectionName,
+        values,
+        signal: context.req.raw.signal,
+      }),
       logContext,
     );
   }
@@ -1206,7 +1278,8 @@ export class ConnectServer {
                 : "connection failed",
           );
         }
-        return jsonError(context, error.code === "unknown_service" ? 404 : 400, error.code, error.message);
+        const status = error.code === "unknown_service" || error.code === "connection_not_found" ? 404 : 400;
+        return jsonError(context, status, error.code, error.message);
       }
 
       throw error;
@@ -1324,14 +1397,22 @@ function readConnectionName(context: Context, body?: Record<string, unknown>): s
 type SearchQuery =
   | {
       ok: true;
-      q: string;
+      q?: string;
       service?: string;
       limit: number;
+      offset: number;
     }
   | {
       ok: false;
       message: string;
     };
+
+interface ActionSearchPage {
+  results: ActionSearchDocument[];
+  total: number;
+  hasMore: boolean;
+  nextCursor?: string;
+}
 
 type RunLogListQuery =
   | {
@@ -1425,9 +1506,21 @@ function isRunLogCaller(value: string): value is RunLogCaller {
 }
 
 function readSearchQuery(context: Context, defaultLimit = DEFAULT_ACTION_SEARCH_LIMIT): SearchQuery {
-  const q = optionalString(context.req.query("q") ?? context.req.query("query"));
-  if (!q || q.length > 256) {
-    return { ok: false, message: "q must be a non-empty string of at most 256 characters." };
+  const requestedQuery = optionalString(context.req.query("q") ?? context.req.query("query"));
+  const requestedService = optionalString(context.req.query("service"));
+  const rawCursor = optionalString(context.req.query("cursor"));
+  const cursor = rawCursor ? decodeActionSearchCursor(rawCursor) : undefined;
+  if (rawCursor && !cursor) return { ok: false, message: "cursor is invalid or expired." };
+  if (cursor && requestedQuery !== undefined && requestedQuery !== cursor.query) {
+    return { ok: false, message: "q must match the query encoded in cursor." };
+  }
+  if (cursor && requestedService !== undefined && requestedService !== cursor.service) {
+    return { ok: false, message: "service must match the service encoded in cursor." };
+  }
+  const q = requestedQuery ?? cursor?.query;
+  const service = requestedService ?? cursor?.service;
+  if ((!q && !service) || (q?.length ?? 0) > 256) {
+    return { ok: false, message: "Provide q (at most 256 characters) or service." };
   }
 
   const rawLimit = optionalString(context.req.query("limit"));
@@ -1435,20 +1528,22 @@ function readSearchQuery(context: Context, defaultLimit = DEFAULT_ACTION_SEARCH_
     return {
       ok: true,
       q,
-      service: optionalString(context.req.query("service")),
+      service,
       limit: defaultLimit,
+      offset: cursor?.offset ?? 0,
     };
   }
 
   const limit = Number(rawLimit);
-  if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
-    return { ok: false, message: "limit must be an integer between 1 and 50." };
+  if (!Number.isInteger(limit) || limit < 1 || limit > MAX_ACTION_SEARCH_LIMIT) {
+    return { ok: false, message: `limit must be an integer between 1 and ${MAX_ACTION_SEARCH_LIMIT}.` };
   }
 
   return {
     ok: true,
     q,
-    service: optionalString(context.req.query("service")),
+    service,
     limit,
+    offset: cursor?.offset ?? 0,
   };
 }

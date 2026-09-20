@@ -1,4 +1,6 @@
 import type {
+  ConnectionAccessLevel,
+  ConnectionPermissionGrant,
   ConnectionRecord,
   PolicyRules,
   ProviderDefinition,
@@ -31,7 +33,8 @@ import {
 } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { apiDelete, apiPost, apiPut } from "./api";
-import { formatDate } from "./model";
+import { McpToolsDialog } from "./mcp-tools-dialog";
+import { connectionDiscoveredToolCount, formatDate } from "./model";
 import {
   countAllowedActions,
   countAllowedProxies,
@@ -47,6 +50,7 @@ import {
 } from "./policy";
 import { PolicyEditor } from "./policy-editor";
 import { PolicySuggestionInput } from "./policy-suggestion-input";
+import { ProviderGroupSection } from "./provider-group-section";
 import { Badge, EmptyState, FormStatus } from "./shared-ui";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -67,12 +71,17 @@ interface AccessPageProps {
 export interface ConnectionGrantDraft {
   mode: "unrestricted" | "restricted";
   ids: string[];
+  accessById: Record<string, ConnectionAccessLevel>;
 }
 
-interface ConnectionGrantOption {
+export interface ConnectionGrantOption {
   id: string;
+  service: string;
   name: string;
+  displayName?: string;
   provider: string;
+  toolCount?: number;
+  isDefault?: boolean;
 }
 
 interface CreateTokenDialogProps {
@@ -163,7 +172,7 @@ export function AccessPage(props: AccessPageProps): ReactNode {
     try {
       const result = await apiPost<RuntimeTokenCreation>("/api/runtime-tokens", {
         name,
-        ...runtimeTokenPolicyBody(rules, createConnections),
+        ...runtimeTokenPolicyBody(rules, createConnections, connectionOptions),
       });
       setCreated(result);
       setName("");
@@ -212,7 +221,10 @@ export function AccessPage(props: AccessPageProps): ReactNode {
     const rules = policyRulesFromEditorDraft(editTokenDraft);
     setTokenStatus(t("access.policy.saving"));
     try {
-      await apiPut(`/api/runtime-tokens/${editingToken.id}`, runtimeTokenPolicyBody(rules, editConnections));
+      await apiPut(
+        `/api/runtime-tokens/${editingToken.id}`,
+        runtimeTokenPolicyBody(rules, editConnections, connectionOptions),
+      );
       setEditingToken(null);
       setTokenStatus(t("access.policy.saved"));
       props.onRefresh();
@@ -235,7 +247,7 @@ export function AccessPage(props: AccessPageProps): ReactNode {
   function openCreate(): void {
     setName("");
     setCreateDraft(createPolicyEditorDraft(emptyPolicyRules()));
-    setCreateConnections(createConnectionGrantDraft());
+    setCreateConnections(createRecommendedConnectionGrantDraft(connectionOptions));
     setCreated(null);
     setTokenStatus(null);
     setCreateOpen(true);
@@ -260,7 +272,7 @@ export function AccessPage(props: AccessPageProps): ReactNode {
         blockedProxies: [],
       }),
     );
-    setEditConnections(createConnectionGrantDraft(token.allowedConnections ?? []));
+    setEditConnections(createConnectionGrantDraft(token.allowedConnections ?? [], token.connectionPermissions));
     setTokenStatus(null);
   }
 
@@ -526,7 +538,11 @@ function PolicyTester(props: {
   );
   const token = props.tokens.find((item) => item.id === tokenId);
   const layers = policyLayers(props.policy, token);
-  const result = testedValue ? evaluatePolicy(testedValue, resource, layers) : null;
+  const testedAction =
+    resource === "action"
+      ? props.providers.flatMap((provider) => provider.actions).find((action) => action.id === testedValue)
+      : undefined;
+  const result = testedValue ? evaluatePolicy(testedValue, resource, layers, testedAction?.operationType) : null;
   const listId = `policy-tester-${props.compact ? "compact" : "default"}-${resource}`;
 
   function changeResource(next: PolicyResource): void {
@@ -971,13 +987,24 @@ function tokenConnectionSummary(
   }
 
   const labels = allowedConnections.map((id) => connectionLabels.get(id) ?? id);
+  const permissionById = new Map(
+    (token.connectionPermissions ?? []).map((grant) => [grant.connectionId, grant.access]),
+  );
+  const labelsWithAccess = allowedConnections.map((id, index) => {
+    const access = permissionById.get(id);
+    return access ? `${labels[index]} (${t(`access.policy.editor.access${capitalize(access)}`)})` : labels[index];
+  });
   const remaining = labels.length - 2;
   return {
     preview: t("access.policy.connectionsRestricted", {
       names: `${labels.slice(0, 2).join(", ")}${remaining > 0 ? ` +${remaining}` : ""}`,
     }),
-    title: labels.join(", "),
+    title: labelsWithAccess.join(", "),
   };
+}
+
+function capitalize(value: string): string {
+  return `${value.slice(0, 1).toUpperCase()}${value.slice(1)}`;
 }
 
 function policyLayerSummary(rules: PolicyRules, t: NonNullable<ReturnType<typeof useTranslate>>): string {
@@ -1020,10 +1047,24 @@ function emptyPolicyRules(): PolicyRules {
 const defaultConnectionName = "default";
 const connectionListMaxItems = 128;
 
-export function createConnectionGrantDraft(ids: string[] = []): ConnectionGrantDraft {
+export function createConnectionGrantDraft(
+  ids: string[] = [],
+  permissions: ConnectionPermissionGrant[] = [],
+): ConnectionGrantDraft {
+  const permissionById = new Map(permissions.map((grant) => [grant.connectionId, grant.access]));
   return {
     mode: ids.length > 0 ? "restricted" : "unrestricted",
     ids: [...ids],
+    accessById: Object.fromEntries(ids.map((id) => [id, permissionById.get(id) ?? "full"])),
+  };
+}
+
+export function createRecommendedConnectionGrantDraft(options: ConnectionGrantOption[]): ConnectionGrantDraft {
+  if (options.length === 0) return createConnectionGrantDraft();
+  return {
+    mode: "restricted",
+    ids: options.map((option) => option.id),
+    accessById: Object.fromEntries(options.map((option) => [option.id, "read"])),
   };
 }
 
@@ -1031,21 +1072,41 @@ export function allowedConnectionsFromDraft(draft: ConnectionGrantDraft): string
   return draft.mode === "restricted" ? [...draft.ids] : [];
 }
 
+export function connectionPermissionsFromDraft(draft: ConnectionGrantDraft): ConnectionPermissionGrant[] {
+  return draft.mode === "restricted"
+    ? draft.ids.map((connectionId) => ({ connectionId, access: draft.accessById[connectionId] ?? "read" }))
+    : [];
+}
+
 export function runtimeTokenPolicyBody(
   rules: Pick<PolicyRules, "allowedActions" | "blockedActions" | "allowedProxies">,
   connections: ConnectionGrantDraft,
+  options: ConnectionGrantOption[] = [],
 ): {
   allowedActions: string[];
   blockedActions: string[];
   allowedProxies: string[];
   allowedConnections: string[];
+  connectionPermissions: ConnectionPermissionGrant[];
 } {
   return {
-    allowedActions: rules.allowedActions,
+    allowedActions: connectionScopedAllowedActions(rules.allowedActions, connections, options),
     blockedActions: rules.blockedActions,
     allowedProxies: rules.allowedProxies,
     allowedConnections: allowedConnectionsFromDraft(connections),
+    connectionPermissions: connectionPermissionsFromDraft(connections),
   };
+}
+
+function connectionScopedAllowedActions(
+  allowedActions: string[],
+  connections: ConnectionGrantDraft,
+  options: ConnectionGrantOption[],
+): string[] {
+  if (connections.mode !== "restricted" || allowedActions.length > 0) return allowedActions;
+  const selected = new Set(connections.ids);
+  const services = options.filter((option) => selected.has(option.id)).map((option) => `${option.service}.*`);
+  return [...new Set(services)];
 }
 
 export function connectionGrantOptions(
@@ -1057,11 +1118,19 @@ export function connectionGrantOptions(
     if (!connection.id || connection.virtual || connection.authType === "no_auth") {
       return [];
     }
+    const displayName =
+      typeof connection.profile?.displayName === "string" ? connection.profile.displayName : undefined;
+    const connectionName = connection.connectionName?.trim() || defaultConnectionName;
+    const toolCount = connectionDiscoveredToolCount(connection);
     return [
       {
         id: connection.id,
-        name: connection.connectionName?.trim() || defaultConnectionName,
+        service: connection.service,
+        name: connectionName,
+        displayName,
         provider: providerNames.get(connection.service) ?? connection.service,
+        toolCount,
+        isDefault: connection.default ?? connectionName === defaultConnectionName,
       },
     ];
   });
@@ -1087,19 +1156,94 @@ export function ConnectionGrantEditor(props: ConnectionGrantEditorProps): ReactN
     ...props.options,
     ...props.draft.ids
       .filter((id) => !props.options.some((option) => option.id === id))
-      .map((id) => ({ id, name: id, provider: t("access.policy.editor.unknownRule") })),
+      .map((id) => ({ id, service: "unknown", name: id, provider: t("access.policy.editor.unknownRule") })),
   ];
   const issue = connectionGrantIssue(props.draft);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [expandedServices, setExpandedServices] = useState<Set<string>>(() => new Set(options.map((o) => o.service)));
+  const [viewingToolsOption, setViewingToolsOption] = useState<ConnectionGrantOption | null>(null);
 
   function setMode(mode: ConnectionGrantDraft["mode"]): void {
     props.onChange({
       mode,
       ids: mode === "unrestricted" ? [] : props.draft.ids,
+      accessById: mode === "unrestricted" ? {} : props.draft.accessById,
     });
   }
 
+  function toggleServiceExpand(service: string): void {
+    setExpandedServices((prev) => {
+      const next = new Set(prev);
+      if (next.has(service)) {
+        next.delete(service);
+      } else {
+        next.add(service);
+      }
+      return next;
+    });
+  }
+
+  function toggleGroup(groupOptions: ConnectionGrantOption[]): void {
+    const groupIds = groupOptions.map((o) => o.id);
+    const allChecked = groupIds.every((id) => props.draft.ids.includes(id));
+    const nextIds = allChecked
+      ? props.draft.ids.filter((id) => !groupIds.includes(id))
+      : Array.from(new Set([...props.draft.ids, ...groupIds]));
+    const accessById = { ...props.draft.accessById };
+    for (const id of groupIds) {
+      if (allChecked) delete accessById[id];
+      else accessById[id] ??= "read";
+    }
+    props.onChange({ mode: "restricted", ids: nextIds, accessById });
+  }
+
+  function setGroupAccess(groupOptions: ConnectionGrantOption[], access: ConnectionAccessLevel | "disabled"): void {
+    const groupIds = groupOptions.map((option) => option.id);
+    const accessById = { ...props.draft.accessById };
+    if (access === "disabled") {
+      for (const id of groupIds) delete accessById[id];
+      props.onChange({ mode: "restricted", ids: props.draft.ids.filter((id) => !groupIds.includes(id)), accessById });
+      return;
+    }
+    for (const id of groupIds) accessById[id] = access;
+    props.onChange({ mode: "restricted", ids: Array.from(new Set([...props.draft.ids, ...groupIds])), accessById });
+  }
+
+  const filteredOptions = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return options;
+    return options.filter((option) => {
+      return (
+        option.name.toLowerCase().includes(q) ||
+        option.provider.toLowerCase().includes(q) ||
+        (option.displayName && option.displayName.toLowerCase().includes(q))
+      );
+    });
+  }, [options, searchQuery]);
+
+  const groups = useMemo(() => {
+    const map = new Map<
+      string,
+      { service: string; provider: string; options: ConnectionGrantOption[]; toolCount: number }
+    >();
+    for (const option of filteredOptions) {
+      const key = option.service;
+      let group = map.get(key);
+      if (!group) {
+        group = { service: option.service, provider: option.provider, options: [], toolCount: 0 };
+        map.set(key, group);
+      }
+      group.options.push(option);
+      if (typeof option.toolCount === "number") {
+        group.toolCount += option.toolCount;
+      }
+    }
+    return Array.from(map.values());
+  }, [filteredOptions]);
+
   return (
     <div className="policy-resource-editor">
+      <p className="mb-3 text-sm text-muted-foreground">{t("access.policy.editor.accessHint")}</p>
       <fieldset className="policy-allow-mode">
         <legend>{t("access.policy.editor.connectionsTitle")}</legend>
         <label>
@@ -1135,37 +1279,75 @@ export function ConnectionGrantEditor(props: ConnectionGrantEditorProps): ReactN
             <div>
               <h4>{t("access.policy.editor.connectionsList")}</h4>
             </div>
-            <span>{t("access.policy.editor.connectionCount", { count: props.draft.ids.length })}</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="text-xs text-primary hover:underline"
+                onClick={() =>
+                  props.onChange({
+                    mode: "restricted",
+                    ids: options.map((option) => option.id),
+                    accessById: Object.fromEntries(options.map((option) => [option.id, "read"])),
+                  })
+                }
+              >
+                {t("access.policy.editor.selectAll")}
+              </button>
+              <span className="text-muted-foreground">·</span>
+              <button
+                type="button"
+                className="text-xs text-muted-foreground hover:underline"
+                onClick={() => props.onChange({ mode: "restricted", ids: [], accessById: {} })}
+              >
+                {t("access.policy.editor.deselectAll")}
+              </button>
+              <span className="text-muted-foreground">·</span>
+              <span>{t("access.policy.editor.connectionCount", { count: props.draft.ids.length })}</span>
+            </div>
           </div>
           <p>{t("access.policy.editor.connectionsDefaultHint")}</p>
-          {options.length > 0 ? (
-            <div className="connection-grant-list">
-              {options.map((option, index) => {
-                const checked = props.draft.ids.includes(option.id);
-                return (
-                  <label className="connection-grant-option" htmlFor={`${listId}-${index}`} key={option.id}>
-                    <input
-                      id={`${listId}-${index}`}
-                      type="checkbox"
-                      value={option.id}
-                      checked={checked}
-                      disabled={!checked && props.draft.ids.length >= connectionListMaxItems}
-                      onChange={(event) =>
-                        props.onChange({
-                          mode: "restricted",
-                          ids: event.target.checked
-                            ? [...props.draft.ids, option.id]
-                            : props.draft.ids.filter((id) => id !== option.id),
-                        })
-                      }
-                    />
-                    <span>
-                      <code>{option.name}</code>
-                      <small>{option.provider}</small>
-                    </span>
-                  </label>
-                );
-              })}
+          <div className="mb-2">
+            <input
+              type="search"
+              className="w-full rounded border px-2 py-1 text-sm bg-background"
+              placeholder={t("access.policy.editor.searchConnectionsPlaceholder")}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+          {groups.length > 0 ? (
+            <div className="connection-grant-groups max-h-[380px] overflow-y-auto pr-1">
+              {groups.map((group) => (
+                <ProviderGroupSection
+                  key={group.service}
+                  group={group}
+                  listId={listId}
+                  isExpanded={expandedServices.has(group.service)}
+                  selectedIds={props.draft.ids}
+                  accessById={props.draft.accessById}
+                  maxItems={connectionListMaxItems}
+                  onToggleExpand={toggleServiceExpand}
+                  onToggleGroup={toggleGroup}
+                  onSetGroupAccess={setGroupAccess}
+                  onToggleOption={(id, checked) =>
+                    props.onChange({
+                      mode: "restricted",
+                      ids: checked ? [...props.draft.ids, id] : props.draft.ids.filter((item) => item !== id),
+                      accessById: checked
+                        ? { ...props.draft.accessById, [id]: props.draft.accessById[id] ?? "read" }
+                        : Object.fromEntries(Object.entries(props.draft.accessById).filter(([item]) => item !== id)),
+                    })
+                  }
+                  onSetOptionAccess={(id, access) =>
+                    props.onChange({
+                      mode: "restricted",
+                      ids: props.draft.ids.includes(id) ? props.draft.ids : [...props.draft.ids, id],
+                      accessById: { ...props.draft.accessById, [id]: access },
+                    })
+                  }
+                  onViewTools={(option) => setViewingToolsOption(option)}
+                />
+              ))}
             </div>
           ) : (
             <p className="policy-rule-empty">{t("access.policy.editor.noConnections")}</p>
@@ -1180,6 +1362,24 @@ export function ConnectionGrantEditor(props: ConnectionGrantEditorProps): ReactN
             </p>
           ) : null}
         </section>
+      ) : null}
+
+      {viewingToolsOption ? (
+        <McpToolsDialog
+          connection={{
+            id: viewingToolsOption.id,
+            service: viewingToolsOption.service,
+            connectionName: viewingToolsOption.name,
+            authType: "custom_credential",
+            metadata: {},
+            discoveredToolCount: viewingToolsOption.toolCount,
+            profile: viewingToolsOption.displayName ? { displayName: viewingToolsOption.displayName } : null,
+          }}
+          open={Boolean(viewingToolsOption)}
+          onOpenChange={(open) => {
+            if (!open) setViewingToolsOption(null);
+          }}
+        />
       ) : null}
     </div>
   );

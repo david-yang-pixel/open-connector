@@ -1,5 +1,9 @@
+import type { ProviderDefinition } from "../src/core/types.ts";
+
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { createCatalogStore, resolveExecutableActionIds } from "../src/catalog-store.ts";
+import { executorModules } from "../src/providers/registry.cloudflare.generated.ts";
 
 export const defaultCatalogChunkBytes = 4 * 1024 * 1024;
 
@@ -54,28 +58,40 @@ export async function copyCatalogAssets(options: CopyCatalogAssetsOptions): Prom
     chunks: chunkNames,
   };
 
-  const toActionSummary = (action: any) => {
-    const { inputSchema, outputSchema, ...rest } = action;
-    return rest;
-  };
-  const toProviderSummary = (provider: any) => ({
-    ...provider,
-    actions: Array.isArray(provider.actions) ? provider.actions.map(toActionSummary) : [],
-    setup: provider.auth,
-  });
-
-  const providerSummaries = rawProviders.map((p) => toProviderSummary(p.provider));
-  const providerSummariesJson = JSON.stringify(providerSummaries);
-
   const coreServices = new Set([
-    "custom_mcp", "cloudflare_mcp", "feishu_app_bot", "github", "gmail", "linear",
-    "slack", "notion", "discord", "airtable", "stripe", "jira", "google_drive",
-    "google_docs", "google_sheets", "telegram", "resend", "sendgrid", "hubspot",
-    "cloudflare", "feishu",
+    "custom_mcp",
+    "cloudflare_mcp",
+    "feishu_app_bot",
+    "github",
+    "gmail",
+    "linear",
+    "slack",
+    "notion",
+    "discord",
+    "airtable",
+    "stripe",
+    "jira",
+    "googledrive",
+    "googledocs",
+    "googlesheets",
+    "telegram",
+    "resend",
+    "sendgrid",
+    "hubspot",
+    "feishu",
   ]);
-  const coreProviders = rawProviders
-    .map((p) => p.provider)
-    .filter((p) => coreServices.has(p.service) || (p.auth && p.auth.some((a: any) => a.type === "no_auth")));
+  const catalogProviders = rawProviders.map((entry) => entry.provider as ProviderDefinition);
+  const coreProviders = catalogProviders.filter(
+    (provider) => coreServices.has(provider.service) || provider.auth.some((auth) => auth.type === "no_auth"),
+  );
+  const cloudflareServices = new Set(Object.keys(executorModules));
+  const executableServices = coreProviders
+    .map((provider) => provider.service)
+    .filter((service) => cloudflareServices.has(service));
+  const catalog = createCatalogStore(catalogProviders, {
+    executableActionIds: resolveExecutableActionIds(catalogProviders, { executableServices }),
+  });
+  const providerSummariesJson = new TextDecoder().decode(catalog.providerSummariesJson);
 
   await Promise.all([
     writeFile(join(options.targetDir, "index.json"), `${JSON.stringify(index)}\n`),

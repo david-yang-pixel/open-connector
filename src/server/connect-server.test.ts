@@ -57,6 +57,42 @@ const apiKeyProvider: ProviderDefinition = {
   actions: [],
 };
 
+const customCredentialProvider: ProviderDefinition = {
+  service: "custom",
+  displayName: "Custom",
+  categories: ["Developer Tools"],
+  authTypes: ["custom_credential"],
+  auth: [
+    {
+      type: "custom_credential",
+      fields: [
+        {
+          key: "endpoint",
+          label: "Endpoint",
+          inputType: "text",
+          required: true,
+          secret: false,
+        },
+        {
+          key: "token",
+          label: "Token",
+          inputType: "password",
+          required: true,
+          secret: true,
+        },
+        {
+          key: "settings",
+          label: "Settings",
+          inputType: "json",
+          required: false,
+          secret: false,
+        },
+      ],
+    },
+  ],
+  actions: [],
+};
+
 const requestDatabases: SqliteRuntimeDatabase[] = [];
 afterEach(() => {
   for (const database of requestDatabases.splice(0)) database.close();
@@ -463,6 +499,42 @@ describe("ConnectServer", () => {
         message: "apiKey is required.",
       },
     });
+  });
+
+  it("patches optional public connection settings without accepting secrets", async () => {
+    const app = createTestServer([customCredentialProvider]).createApp();
+    const connected = await app.request("/api/connections/custom", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        authType: "custom_credential",
+        values: { endpoint: "https://example.com/mcp", token: "secret" },
+      }),
+    });
+    expect(connected.status).toBe(200);
+
+    const patched = await app.request("/api/connections/custom", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ values: { settings: '{"risk":"read"}' } }),
+    });
+    expect(patched.status).toBe(200);
+
+    const settings = await app.request("/api/connections/custom/settings");
+    expect(settings.status).toBe(200);
+    await expect(settings.json()).resolves.toEqual({
+      service: "custom",
+      connectionName: "default",
+      values: { settings: '{"risk":"read"}' },
+    });
+
+    const rejected = await app.request("/api/connections/custom", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ values: { token: "replacement" } }),
+    });
+    expect(rejected.status).toBe(400);
+    await expect(rejected.json()).resolves.toMatchObject({ error: { code: "invalid_input" } });
   });
 
   it("rejects malformed JSON request bodies", async () => {
@@ -2748,6 +2820,49 @@ describe("ConnectServer", () => {
     expect(runtimeBody.data.map((result) => result.id)).toEqual(["example.echo"]);
     expect(runtimeBody.data[0]).toMatchObject({ authenticated: false });
     expect(runtimeBody.data[0]?.outputSchema).toEqual({ type: "object" });
+  });
+
+  it("paginates complete action discovery without changing the admin array body", async () => {
+    const actions = Array.from(
+      { length: 205 },
+      (_, index): ActionDefinition => ({
+        ...echoAction,
+        id: `bulk.action_${String(index).padStart(3, "0")}`,
+        service: "bulk",
+        name: `action_${String(index).padStart(3, "0")}`,
+        description: `Bulk action ${index}.`,
+      }),
+    );
+    const app = createTestServer([{ ...apiKeyProvider, service: "bulk", actions }]).createApp();
+
+    const first = await app.request("/api/actions/search?service=bulk&limit=200");
+    expect(first.status).toBe(200);
+    expect(first.headers.get("x-openconnector-total")).toBe("205");
+    expect(first.headers.get("x-openconnector-has-more")).toBe("true");
+    const cursor = first.headers.get("x-openconnector-next-cursor");
+    expect(cursor).toBeTruthy();
+    expect(await first.json()).toHaveLength(200);
+
+    const second = await app.request(`/v1/actions/search?cursor=${encodeURIComponent(cursor!)}`);
+    expect(second.status).toBe(200);
+    const secondBody = (await second.json()) as {
+      data: Array<{ id: string }>;
+      meta: { total: number; count: number; hasMore: boolean; nextCursor: string | null };
+    };
+    expect(secondBody).toMatchObject({
+      success: true,
+      meta: { total: 205, count: 5, hasMore: false, nextCursor: null },
+    });
+    expect(secondBody.data.map((action) => action.id)).toEqual([
+      "bulk.action_200",
+      "bulk.action_201",
+      "bulk.action_202",
+      "bulk.action_203",
+      "bulk.action_204",
+    ]);
+
+    const tooLarge = await app.request("/v1/actions/search?service=bulk&limit=201");
+    expect(tooLarge.status).toBe(400);
   });
 
   it("serves v1 apps and authenticated service views without leaking credentials", async () => {

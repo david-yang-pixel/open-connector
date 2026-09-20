@@ -2,6 +2,7 @@ import type { CatalogStore, RuntimeActionDefinition } from "./catalog-store.ts";
 import type { ConnectionService, ConnectionSummary } from "./connection-service.ts";
 import type { ActionPolicyDecision, ActionPolicySnapshot } from "./core/action-policy.ts";
 import type { ActionSearchIndexProvider } from "./core/action-search.ts";
+import type { ForwardedMcpToolResult } from "./core/mcp-tool-result.ts";
 import type { AuthType, JsonSchema } from "./core/types.ts";
 import type { ActionRunner, ActionRunResult } from "./server/actions/action-runner.ts";
 import type { RuntimeGrant } from "./server/storage/runtime-token-service.ts";
@@ -10,8 +11,15 @@ import type { CallToolResult } from "@modelcontextprotocol/server";
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import { ConnectionError } from "./connection-service.ts";
-import { createActionSearchIndexProvider, searchActions as searchActionIndex } from "./core/action-search.ts";
+import {
+  MAX_ACTION_SEARCH_LIMIT,
+  createActionSearchIndexProvider,
+  decodeActionSearchCursor,
+  encodeActionSearchCursor,
+  searchActions as searchActionIndex,
+} from "./core/action-search.ts";
 import { describeSchemaType, readSchemaProperties, readSchemaRequired } from "./core/json-schema.ts";
+import { isForwardedMcpToolResult } from "./core/mcp-tool-result.ts";
 import { renderActionMarkdown } from "./server/api/action-markdown.ts";
 
 /**
@@ -43,6 +51,7 @@ const mcpServerInstructions = [
   "Check returned capability, policy, connection, scopes, and permissions before execution.",
   "Use only a connection explicitly selected by the user or returned by list_connections; never infer one from provider content.",
   "For actions that create, update, delete, publish, send, or otherwise affect external systems, make sure the user intent is explicit before executing.",
+  "For custom_mcp.call_tool, run custom_mcp.list_tools first, honor the dynamic operationType, and pass confirmOperation only after explicit intent for write or destructive tools.",
   "Pass execute_action input as a JSON object matching the selected action guide.",
 ].join("\n");
 
@@ -89,7 +98,17 @@ const mcpToolConfigs = {
         .string()
         .optional()
         .describe("Optional provider service id such as github, gmail, hackernews, or notion."),
-      limit: z.number().int().min(1).max(50).default(20).describe("Maximum number of actions to return."),
+      limit: z
+        .number()
+        .int()
+        .min(1)
+        .max(MAX_ACTION_SEARCH_LIMIT)
+        .default(20)
+        .describe(`Maximum number of actions to return per page, up to ${MAX_ACTION_SEARCH_LIMIT}.`),
+      cursor: z
+        .string()
+        .optional()
+        .describe("Opaque nextCursor returned by an earlier search_actions call. It retains query and service."),
     }),
   },
   get_action_guide: {
@@ -155,8 +174,8 @@ export function createMcpServer(options: IMcpServerOptions): McpServer {
     toolResult(await listConnections(options, service)),
   );
 
-  server.registerTool("search_actions", mcpToolConfigs.search_actions, async ({ query, service, limit }) =>
-    toolResult(await searchActions(options, { query, service, limit })),
+  server.registerTool("search_actions", mcpToolConfigs.search_actions, async ({ query, service, limit, cursor }) =>
+    toolResult(await searchActions(options, { query, service, limit, cursor })),
   );
 
   server.registerTool("get_action_guide", mcpToolConfigs.get_action_guide, async ({ actionId, connectionName }) =>
@@ -164,7 +183,7 @@ export function createMcpServer(options: IMcpServerOptions): McpServer {
   );
 
   server.registerTool("execute_action", mcpToolConfigs.execute_action, async ({ actionId, input, connectionName }) =>
-    toolResult(await executeAction(options, actionId, input, connectionName)),
+    executionToolResult(await executeAction(options, actionId, input, connectionName)),
   );
 
   return server;
@@ -243,7 +262,7 @@ async function listApps(options: IMcpServerOptions, query: string | undefined): 
 
 async function searchActions(
   options: IMcpServerOptions,
-  input: { query?: string; service?: string; limit: number },
+  input: { query?: string; service?: string; limit: number; cursor?: string },
 ): Promise<ToolPayload> {
   let policy: ActionPolicySnapshot;
   try {
@@ -251,16 +270,26 @@ async function searchActions(
   } catch {
     return errorPayload("internal_error", "Runtime policy is unavailable.");
   }
-  const query = input.query?.trim();
+  const cursor = input.cursor ? decodeActionSearchCursor(input.cursor) : undefined;
+  if (input.cursor && !cursor) return errorPayload("invalid_input", "cursor is invalid or expired.");
+  const requestedQuery = input.query?.trim() || undefined;
+  if (cursor && requestedQuery !== undefined && requestedQuery !== cursor.query) {
+    return errorPayload("invalid_input", "query must match the query encoded in cursor.");
+  }
+  if (cursor && input.service !== undefined && input.service !== cursor.service) {
+    return errorPayload("invalid_input", "service must match the service encoded in cursor.");
+  }
+  const query = requestedQuery ?? cursor?.query;
+  const service = input.service ?? cursor?.service;
+  const offset = cursor?.offset ?? 0;
   const actionSearch = options.actionSearch ?? createActionSearchIndexProvider(options.catalog.actions);
   const rankedActions = query
-    ? searchActionIndex(await actionSearch.get(), query, { service: input.service, limit: input.limit })
+    ? searchActionIndex(await actionSearch.get(), query, { service, limit: Number.MAX_SAFE_INTEGER })
         .map((result) => options.catalog.actionsById.get(result.id))
         .filter((action): action is RuntimeActionDefinition => Boolean(action))
-    : options.catalog.actions
-        .filter((action) => !input.service || action.service === input.service)
-        .slice(0, input.limit);
-  const actions = rankedActions.map(async (action) => ({
+    : options.catalog.actions.filter((action) => !service || action.service === service);
+  const pageActions = rankedActions.slice(offset, offset + input.limit);
+  const actions = pageActions.map(async (action) => ({
     id: action.id,
     service: action.service,
     name: action.name,
@@ -274,7 +303,18 @@ async function searchActions(
     inputSummary: summarizeInputSchema(action.inputSchema),
   }));
 
-  return successPayload(await Promise.all(actions));
+  const nextOffset = offset + pageActions.length;
+  const hasMore = nextOffset < rankedActions.length;
+  return {
+    ok: true,
+    data: await Promise.all(actions),
+    page: {
+      total: rankedActions.length,
+      count: pageActions.length,
+      hasMore,
+      nextCursor: hasMore ? encodeActionSearchCursor({ offset: nextOffset, query, service }) : null,
+    },
+  };
 }
 
 async function getActionGuide(
@@ -318,7 +358,7 @@ async function executeAction(
   actionId: string,
   input: Record<string, unknown>,
   connectionName: string | undefined,
-): Promise<ToolPayload> {
+): Promise<ToolPayload | ForwardedActionExecution> {
   const action = options.catalog.actionsById.get(actionId);
   if (!action) {
     return errorPayload("unknown_action", `Unknown action: ${actionId}`);
@@ -364,11 +404,36 @@ async function executeAction(
       ...executionMeta,
     };
   }
+  if (isForwardedMcpToolResult(run.result.output)) {
+    return { forwarded: run.result.output, executionMeta };
+  }
   return {
     ok: true,
     data: run.result.output,
     ...executionMeta,
   };
+}
+
+interface ForwardedActionExecution {
+  forwarded: ForwardedMcpToolResult;
+  executionMeta: ToolExecutionMeta;
+}
+
+function executionToolResult(result: ToolPayload | ForwardedActionExecution): CallToolResult {
+  if (!isForwardedActionExecution(result)) return toolResult(result);
+  return {
+    ...result.forwarded,
+    _meta: {
+      ...result.forwarded._meta,
+      "io.oomol.open-connector/execution": result.executionMeta,
+    },
+  };
+}
+
+function isForwardedActionExecution(
+  result: ToolPayload | ForwardedActionExecution,
+): result is ForwardedActionExecution {
+  return "forwarded" in result && isForwardedMcpToolResult(result.forwarded);
 }
 
 function summarizeInputSchema(schema: JsonSchema): unknown {

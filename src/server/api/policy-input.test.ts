@@ -24,8 +24,26 @@ describe("policy input", () => {
       blockedActions: [],
       allowedProxies: [],
       allowedConnections: [],
+      connectionPermissions: [],
     });
     expect(() => readTokenPolicy({})).toThrow("allowedActions must be an array of strings");
+  });
+
+  it("accepts action operation rules and rejects unknown operation names", () => {
+    expect(
+      readTokenPolicy({
+        allowedActions: ["@operation:read"],
+        blockedActions: ["@operation:write", "@operation:destructive"],
+        allowedProxies: [],
+        allowedConnections: [],
+      }),
+    ).toMatchObject({
+      allowedActions: ["@operation:read"],
+      blockedActions: ["@operation:write", "@operation:destructive"],
+    });
+    expect(() =>
+      readTokenPolicy({ allowedActions: ["@operation:unknown"], blockedActions: [], allowedProxies: [] }),
+    ).toThrow("contains an invalid action rule");
   });
 
   it("treats omitted and empty allowedConnections as unrestricted on create", () => {
@@ -34,6 +52,7 @@ describe("policy input", () => {
       blockedActions: [],
       allowedProxies: [],
       allowedConnections: [],
+      connectionPermissions: [],
     });
     expect(
       readTokenPolicy({ allowedActions: [], blockedActions: [], allowedProxies: [], allowedConnections: [] }),
@@ -42,6 +61,7 @@ describe("policy input", () => {
       blockedActions: [],
       allowedProxies: [],
       allowedConnections: [],
+      connectionPermissions: [],
     });
   });
 
@@ -64,7 +84,49 @@ describe("policy input", () => {
       blockedActions: [],
       allowedProxies: [],
       allowedConnections: ["connection-work", "01J0CONNECTIONPERSONAL"],
+      connectionPermissions: [],
     });
+  });
+
+  it("validates per-connection access levels and rejects duplicate grants", () => {
+    expect(
+      readTokenPolicy({
+        allowedActions: [],
+        blockedActions: [],
+        allowedProxies: [],
+        allowedConnections: [],
+        connectionPermissions: [
+          { connectionId: " work ", access: "read" },
+          { connectionId: "personal", access: "full" },
+        ],
+      }),
+    ).toMatchObject({
+      connectionPermissions: [
+        { connectionId: "work", access: "read" },
+        { connectionId: "personal", access: "full" },
+      ],
+    });
+    expect(() =>
+      readTokenPolicy({
+        allowedActions: [],
+        blockedActions: [],
+        allowedProxies: [],
+        allowedConnections: [],
+        connectionPermissions: [
+          { connectionId: "work", access: "read" },
+          { connectionId: "work", access: "write" },
+        ],
+      }),
+    ).toThrow("duplicate connection ID");
+    expect(() =>
+      readTokenPolicy({
+        allowedActions: [],
+        blockedActions: [],
+        allowedProxies: [],
+        allowedConnections: [],
+        connectionPermissions: [{ connectionId: "work", access: "admin" }],
+      }),
+    ).toThrow("must be read, write, or full");
   });
 
   it.each(["", " "])("rejects empty allowedConnections value %s", (connectionId) => {

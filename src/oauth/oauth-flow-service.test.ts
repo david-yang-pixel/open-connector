@@ -279,6 +279,46 @@ describe("OAuthFlowService", () => {
     expect(new URL(started.authorizationUrl).searchParams.get("scope")).toBe("read");
   });
 
+  it("lets a provider narrow authorization to scopes enabled on its OAuth app", async () => {
+    const resolveAuthorizationScopes = vi.fn(async () => ["read"]);
+    const services = createServices([oauthProvider], {
+      oauthRuntime: { resolveAuthorizationScopes },
+    });
+    await services.clientConfigs.upsertConfig({
+      service: "example",
+      clientId: "client-id",
+      clientSecret: "client-secret",
+      extra: { tenant: "default" },
+    });
+
+    const started = await services.flow.startAuthorization({ service: "example" });
+
+    expect(new URL(started.authorizationUrl).searchParams.get("scope")).toBe("read");
+    expect(resolveAuthorizationScopes).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clientConfig: expect.objectContaining({ clientId: "client-id", clientSecret: "client-secret" }),
+        requestedScopes: ["read", "write"],
+      }),
+    );
+    expect(await services.states.take(started.state)).toMatchObject({ authorizationScopes: ["read"] });
+  });
+
+  it("rejects scopes added by a provider authorization preflight", async () => {
+    const services = createServices([oauthProvider], {
+      oauthRuntime: { resolveAuthorizationScopes: async () => ["admin"] },
+    });
+    await services.clientConfigs.upsertConfig({
+      service: "example",
+      clientId: "client-id",
+      clientSecret: "client-secret",
+      extra: { tenant: "default" },
+    });
+
+    await expect(services.flow.startAuthorization({ service: "example" })).rejects.toMatchObject({
+      code: "oauth_scope_resolution_failed",
+    });
+  });
+
   it("resolves transitive option requirements and preserves the selected scopes", async () => {
     const services = createServices([selectableOAuthProvider]);
     await services.clientConfigs.upsertConfig({

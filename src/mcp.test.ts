@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createCatalogStore } from "./catalog-store.ts";
 import { ConnectionService } from "./connection-service.ts";
 import { ActionPolicyService, emptyPolicyRules } from "./core/action-policy.ts";
+import { forwardedMcpToolResult } from "./core/mcp-tool-result.ts";
 import { createMcpServer, listMcpToolSummaries } from "./mcp.ts";
 import { ActionRunner } from "./server/actions/action-runner.ts";
 
@@ -171,6 +172,92 @@ describe("MCP server", () => {
         },
       });
     });
+  });
+
+  it("returns stable action-search cursors until a provider is fully enumerated", async () => {
+    const bulkProvider: ProviderDefinition = {
+      ...exampleProvider,
+      service: "bulk",
+      actions: Array.from(
+        { length: 205 },
+        (_, index): ActionDefinition => ({
+          ...echoAction,
+          id: `bulk.action_${String(index).padStart(3, "0")}`,
+          service: "bulk",
+          name: `action_${String(index).padStart(3, "0")}`,
+        }),
+      ),
+    };
+    await withMcpClient(
+      async (client) => {
+        const first = await client.callTool({
+          name: "search_actions",
+          arguments: { service: "bulk", limit: 200 },
+        });
+        const firstPayload = first.structuredContent as {
+          data: unknown[];
+          page: { total: number; count: number; hasMore: boolean; nextCursor: string };
+        };
+        expect(firstPayload.data).toHaveLength(200);
+        expect(firstPayload.page).toMatchObject({ total: 205, count: 200, hasMore: true });
+
+        const second = await client.callTool({
+          name: "search_actions",
+          arguments: { cursor: firstPayload.page.nextCursor },
+        });
+        const secondPayload = second.structuredContent as {
+          data: Array<{ id: string }>;
+          page: { total: number; count: number; hasMore: boolean; nextCursor: string | null };
+        };
+        expect(secondPayload).toMatchObject({
+          page: { total: 205, count: 5, hasMore: false, nextCursor: null },
+        });
+        expect(secondPayload.data.map((action) => action.id)).toEqual([
+          "bulk.action_200",
+          "bulk.action_201",
+          "bulk.action_202",
+          "bulk.action_203",
+          "bulk.action_204",
+        ]);
+      },
+      {},
+      bulkProvider,
+    );
+  });
+
+  it("forwards native remote MCP content blocks without wrapping them as JSON text", async () => {
+    const action: ActionDefinition = {
+      ...echoAction,
+      id: "forward.native",
+      service: "forward",
+      name: "native",
+      operationType: "read",
+      inputSchema: { type: "object", additionalProperties: false },
+    };
+    const provider: ProviderDefinition = {
+      ...exampleProvider,
+      service: "forward",
+      actions: [action],
+    };
+    await withMcpClient(
+      async (client) => {
+        const result = await client.callTool({
+          name: "execute_action",
+          arguments: { actionId: "forward.native", input: {} },
+        });
+        expect(result.content).toEqual([
+          { type: "text", text: "native text" },
+          { type: "image", data: "cG5n", mimeType: "image/png" },
+        ]);
+        expect(result.structuredContent).toEqual({ native: true });
+        expect(result._meta?.["io.oomol.open-connector/execution"]).toMatchObject({
+          executionId: expect.any(String),
+          auditPersisted: true,
+        });
+      },
+      {},
+      provider,
+    );
   });
 
   it("renders an execute_action example in action guides instead of HTTP requests", async () => {
@@ -672,9 +759,10 @@ function policySnapshotFor(policy: McpPolicyOptions): () => Promise<ActionPolicy
 async function withMcpClient(
   run: (client: Client) => Promise<void>,
   policy: McpPolicyOptions & { signal?: AbortSignal } = {},
+  provider: ProviderDefinition = exampleProvider,
 ): Promise<void> {
-  const catalog = createCatalogStore([exampleProvider], {
-    executableActionIds: ["example.echo"],
+  const catalog = createCatalogStore([provider], {
+    executableActionIds: provider.actions.map((action) => action.id),
   });
   const providerLoader = new EchoProviderLoader();
   const connections = new ConnectionService({
@@ -766,6 +854,18 @@ class EchoProviderLoader implements IProviderLoader {
           output: { accountId: credential?.authType === "api_key" ? credential.profile.accountId : undefined },
         };
       };
+    }
+    if (actionId === "forward.native") {
+      return async () => ({
+        ok: true,
+        output: forwardedMcpToolResult({
+          content: [
+            { type: "text", text: "native text" },
+            { type: "image", data: "cG5n", mimeType: "image/png" },
+          ],
+          structuredContent: { native: true },
+        }),
+      });
     }
     return async (input) => ({ ok: true, output: input });
   }

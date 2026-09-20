@@ -42,8 +42,14 @@ export function PolicyEditor(props: PolicyEditorProps): ReactNode {
   return (
     <div className="structured-policy-editor">
       {props.includeProxies ? (
-        <Tabs defaultValue="action">
+        <Tabs defaultValue={props.connectionEditor ? "connection" : "action"}>
           <TabsList variant="line" aria-label={t("access.policy.editor.resourceLabel")}>
+            {props.connectionEditor ? (
+              <TabsTrigger value="connection">
+                {t("access.policy.editor.connectionsTitle")}
+                {props.connectionInvalid ? <CircleAlert className="policy-tab-issue" aria-hidden /> : null}
+              </TabsTrigger>
+            ) : null}
             <TabsTrigger value="action">
               {t("access.policy.editor.actionsTab")}
               {actionIssue ? <CircleAlert className="policy-tab-issue" aria-hidden /> : null}
@@ -52,13 +58,8 @@ export function PolicyEditor(props: PolicyEditorProps): ReactNode {
               {t("access.policy.editor.proxiesTab")}
               {proxyIssue ? <CircleAlert className="policy-tab-issue" aria-hidden /> : null}
             </TabsTrigger>
-            {props.connectionEditor ? (
-              <TabsTrigger value="connection">
-                {t("access.policy.editor.connectionsTitle")}
-                {props.connectionInvalid ? <CircleAlert className="policy-tab-issue" aria-hidden /> : null}
-              </TabsTrigger>
-            ) : null}
           </TabsList>
+          {props.connectionEditor ? <TabsContent value="connection">{props.connectionEditor}</TabsContent> : null}
           <TabsContent value="action">
             {actionEditor}
             {actionIssue ? <PolicyEditorError issue={actionIssue} /> : null}
@@ -73,7 +74,6 @@ export function PolicyEditor(props: PolicyEditorProps): ReactNode {
             />
             {proxyIssue ? <PolicyEditorError issue={proxyIssue} /> : null}
           </TabsContent>
-          {props.connectionEditor ? <TabsContent value="connection">{props.connectionEditor}</TabsContent> : null}
         </Tabs>
       ) : (
         <>
@@ -103,6 +103,9 @@ interface PolicyResourceEditorProps {
   onChange(draft: PolicyEditorDraft): void;
 }
 
+const destructiveOperationRules = ["@operation:destructive"];
+const readOnlyOperationRules = ["@operation:write", "@operation:destructive"];
+
 function PolicyResourceEditor(props: PolicyResourceEditorProps): ReactNode {
   const t = useTranslate();
   const fields = resourceFields(props.resource);
@@ -127,8 +130,91 @@ function PolicyResourceEditor(props: PolicyResourceEditorProps): ReactNode {
     });
   }
 
+  const blockedRules = props.draft.rules[fields.blocked] || [];
+  const isFullAccess = allowMode === "unrestricted" && blockedRules.length === 0;
+  const isNoDelete = allowMode === "unrestricted" && sameRules(blockedRules, destructiveOperationRules);
+  const isReadOnly = allowMode === "unrestricted" && sameRules(blockedRules, readOnlyOperationRules);
+
+  const applyFullAccess = () => {
+    props.onChange({
+      ...props.draft,
+      [fields.allowMode]: "unrestricted",
+      rules: { ...props.draft.rules, [fields.allowed]: [], [fields.blocked]: [] },
+    });
+  };
+
+  const applyNoDelete = () => {
+    props.onChange({
+      ...props.draft,
+      [fields.allowMode]: "unrestricted",
+      rules: {
+        ...props.draft.rules,
+        [fields.allowed]: [],
+        [fields.blocked]: destructiveOperationRules,
+      },
+    });
+  };
+
+  const applyReadOnly = () => {
+    props.onChange({
+      ...props.draft,
+      [fields.allowMode]: "unrestricted",
+      rules: {
+        ...props.draft.rules,
+        [fields.allowed]: [],
+        [fields.blocked]: readOnlyOperationRules,
+      },
+    });
+  };
+
+  const toggleBlockedRule = (rule: string) => {
+    const next = blockedRules.includes(rule) ? blockedRules.filter((r) => r !== rule) : [...blockedRules, rule];
+    setRules(fields.blocked, next);
+  };
+
   return (
     <div className="policy-resource-editor">
+      {props.resource === "action" ? (
+        <div className="space-y-1.5 mb-2">
+          <div className="text-xs font-medium text-muted-foreground">{t("access.policy.editor.quickPresets")}</div>
+          <div className="grid grid-cols-3 gap-2">
+            <button
+              type="button"
+              className={`p-2 rounded border text-left text-xs transition-all ${isFullAccess ? "border-primary bg-primary/10 font-medium" : "hover:bg-accent/40"}`}
+              onClick={applyFullAccess}
+            >
+              <div className="font-semibold text-foreground">🟢 {t("access.policy.editor.presetFull")}</div>
+              <div className="text-[11px] text-muted-foreground truncate">
+                {t("access.policy.editor.presetFullHint")}
+              </div>
+            </button>
+            <button
+              type="button"
+              className={`p-2 rounded border text-left text-xs transition-all ${isNoDelete ? "border-amber-500 bg-amber-500/10 font-medium" : "hover:bg-accent/40"}`}
+              onClick={applyNoDelete}
+            >
+              <div className="font-semibold text-amber-600 dark:text-amber-400">
+                🛡️ {t("access.policy.editor.presetNoDelete")}
+              </div>
+              <div className="text-[11px] text-muted-foreground truncate">
+                {t("access.policy.editor.presetNoDeleteHint")}
+              </div>
+            </button>
+            <button
+              type="button"
+              className={`p-2 rounded border text-left text-xs transition-all ${isReadOnly ? "border-blue-500 bg-blue-500/10 font-medium" : "hover:bg-accent/40"}`}
+              onClick={applyReadOnly}
+            >
+              <div className="font-semibold text-blue-600 dark:text-blue-400">
+                🔒 {t("access.policy.editor.presetReadOnly")}
+              </div>
+              <div className="text-[11px] text-muted-foreground truncate">
+                {t("access.policy.editor.presetReadOnlyHint")}
+              </div>
+            </button>
+          </div>
+        </div>
+      ) : null}
       {!grantsProxy ? (
         <fieldset className="policy-allow-mode">
           <legend>{t("access.policy.editor.allowMode")}</legend>
@@ -172,13 +258,38 @@ function PolicyResourceEditor(props: PolicyResourceEditorProps): ReactNode {
       ) : null}
 
       {!grantsProxy ? (
-        <RuleListEditor
-          resource={props.resource}
-          effect="block"
-          values={props.draft.rules[fields.blocked]}
-          providers={props.providers}
-          onChange={(values) => setRules(fields.blocked, values)}
-        />
+        <>
+          {props.resource === "action" ? (
+            <div className="flex items-center gap-1.5 flex-wrap my-1.5">
+              <span className="text-xs text-muted-foreground">{t("access.policy.editor.quickChips")}:</span>
+              {[
+                { label: t("access.policy.editor.chipDelete"), rule: "*.delete*" },
+                { label: t("access.policy.editor.chipRemove"), rule: "*.remove*" },
+                { label: t("access.policy.editor.chipCreate"), rule: "*.create*" },
+                { label: t("access.policy.editor.chipUpdate"), rule: "*.update*" },
+              ].map((chip) => {
+                const hasRule = blockedRules.includes(chip.rule);
+                return (
+                  <button
+                    key={chip.rule}
+                    type="button"
+                    className={`text-[11px] px-2 py-0.5 rounded border transition-colors ${hasRule ? "bg-destructive/15 text-destructive border-destructive/40 font-medium" : "hover:bg-accent"}`}
+                    onClick={() => toggleBlockedRule(chip.rule)}
+                  >
+                    {hasRule ? `✓ ${chip.label}` : `+ ${chip.label}`}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+          <RuleListEditor
+            resource={props.resource}
+            effect="block"
+            values={props.draft.rules[fields.blocked]}
+            providers={props.providers}
+            onChange={(values) => setRules(fields.blocked, values)}
+          />
+        </>
       ) : null}
 
       <details className="policy-advanced-editor">
@@ -214,6 +325,10 @@ function PolicyResourceEditor(props: PolicyResourceEditorProps): ReactNode {
       </details>
     </div>
   );
+}
+
+function sameRules(left: string[], right: readonly string[]): boolean {
+  return left.length === right.length && right.every((rule) => left.includes(rule));
 }
 
 interface RuleListEditorProps {

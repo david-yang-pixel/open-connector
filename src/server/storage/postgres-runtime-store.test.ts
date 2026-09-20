@@ -53,6 +53,7 @@ describe("PostgreSQL migrations with PGlite", () => {
           { name: "0011_runtime_token_connection_scope.sql" },
           { name: "0012_marketplace.sql" },
           { name: "0013_connection_requests.sql" },
+          { name: "0014_runtime_token_connection_permissions.sql" },
         ],
       });
 
@@ -112,6 +113,7 @@ describe("PostgreSQL migrations with a custom migration source", () => {
           { name: "0011_runtime_token_connection_scope.sql" },
           { name: "0012_marketplace.sql" },
           { name: "0013_connection_requests.sql" },
+          { name: "0014_runtime_token_connection_permissions.sql" },
           { name: "9998_custom.sql" },
         ],
       });

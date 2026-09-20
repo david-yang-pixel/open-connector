@@ -23,8 +23,13 @@ Authorization: Bearer <runtime-token-or-jwt>
 ```
 
 Persistent runtime tokens carry independent Action rules, provider proxy grants, and optional
-connection grants. Their `allowedProxies` list is empty by default, so a persistent token cannot call
-`/v1/proxy/:service` until a provider service or `*` is explicitly granted.
+per-connection permission grants. The Web Console makes each configured connector or remote MCP
+`read`, `write`, `full`, or disabled; newly created tokens default configured connections to `read`.
+`write` includes read and non-destructive write Actions, while `full` also permits destructive
+Actions. Their `allowedProxies` list is empty by default, so a persistent token cannot call
+`/v1/proxy/:service` until a provider service or `*` is explicitly granted. A raw provider proxy also
+requires `full` access for the selected connection because OpenConnector cannot classify an arbitrary
+proxy request as read-only.
 
 `allowedConnections` belongs only to stored tokens, not to deployment or Runtime policy. Omit the
 field on create, or send `[]`, for unrestricted connection access. Updates must send the field so a
@@ -35,6 +40,30 @@ credential lookup with HTTP `403` / MCP `connection_not_allowed`. Runtime discov
 granted credential connections; virtual `no_auth` connections do not require grants. Admin `GET /api/connections` and
 `GET /api/actions/:actionId/agent.md` stay unfiltered. Bootstrap runtime tokens and JWTs have no
 stored connection grant, so they remain unrestricted.
+
+New clients should send `connectionPermissions` to grant both the connection and its maximum risk
+level. `allowedConnections` is derived from those connection IDs and retained for older clients. If
+`connectionPermissions` is absent or empty, the legacy `allowedConnections` behavior above remains
+unchanged.
+
+```json
+{
+  "name": "support-reader",
+  "allowedActions": ["custom_mcp.*", "zendesk.*"],
+  "blockedActions": [],
+  "allowedProxies": [],
+  "allowedConnections": ["<signoz-connection-id>", "<zendesk-connection-id>"],
+  "connectionPermissions": [
+    { "connectionId": "<signoz-connection-id>", "access": "read" },
+    { "connectionId": "<zendesk-connection-id>", "access": "write" }
+  ]
+}
+```
+
+For Custom Remote MCP, OpenConnector re-evaluates the discovered remote tool's dynamic Action and
+annotation-derived operation type against the selected connection grant at call time. A token that
+can invoke the static `custom_mcp.call_tool` dispatcher therefore still cannot use a remote write tool
+through a read-only MCP connection.
 
 Example: two GitHub connections (`default` and `work`) and two tokens:
 
@@ -88,6 +117,12 @@ The MCP server exposes a small discovery-oriented tool set:
 - `get_action_guide`
 - `execute_action`
 
+`search_actions` returns at most 200 actions per page. Pass its opaque `page.nextCursor` back as `cursor` until
+`page.hasMore` is false. The cursor retains the original query and service, so a service with hundreds of actions can
+be enumerated without depending on keyword ranking. The HTTP `/v1/actions/search` endpoint returns the same pagination
+facts in its `meta` object. The legacy `/api/actions/search` array body is unchanged; its pagination values are in the
+`x-openconnector-total`, `x-openconnector-has-more`, and `x-openconnector-next-cursor` response headers.
+
 Use `list_connections` to discover configured accounts before selecting one. Both
 `get_action_guide` and `execute_action` accept an optional `connectionName`:
 
@@ -125,6 +160,9 @@ Preview MCP tool metadata:
 ```bash
 curl -s http://localhost:3000/mcp/tools
 ```
+
+Custom remote MCP result forwarding, dynamic tool policy, pagination rules, and large-result behavior are documented
+in [Custom Remote MCP Bridge](custom-mcp.md).
 
 ## HTTP Runtime API
 
@@ -324,7 +362,9 @@ These endpoints power the Web Console, examples, and setup scripts:
 - `GET /api/files/:fileId`
 - `DELETE /api/files/:fileId`
 - `GET /api/connections`
+- `GET /api/connections/:service/settings` (configured optional non-secret custom credential fields)
 - `PUT /api/connections/:service`
+- `PATCH /api/connections/:service` (optional non-secret custom credential fields only)
 - `DELETE /api/connections/:service`
 - `GET /api/oauth/configs`
 - `PUT /api/oauth/configs/:service`

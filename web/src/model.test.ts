@@ -3,6 +3,7 @@ import type { AppData, FullActionDefinition, ProviderDefinition, RunLog } from "
 import { describe, expect, it } from "vitest";
 import {
   buildActionExamples,
+  connectionDiscoveredToolCount,
   createOverviewSummary,
   filterProvidersByCategory,
   providerCategoryCounts,
@@ -370,6 +371,24 @@ describe("resolveProviderConnectionStatus", () => {
       connected: true,
       marketplaceConnection: { id: "marketplace:community:slack" },
     });
+  });
+
+  it("extracts discovered tool count from connection metadata", () => {
+    expect(
+      connectionDiscoveredToolCount({
+        service: "custom_mcp",
+        authType: "custom_credential",
+        metadata: {},
+        discoveredToolCount: 4,
+      }),
+    ).toBe(4);
+    expect(
+      connectionDiscoveredToolCount({
+        service: "github",
+        authType: "oauth2",
+        metadata: {},
+      }),
+    ).toBeUndefined();
   });
 });
 

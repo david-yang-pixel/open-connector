@@ -313,7 +313,7 @@ export class D1RuntimeTokenStore implements IRuntimeTokenStore {
         insert into runtime_tokens (
           ${runtimeTokenColumns}
         )
-        values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       )
       .bind(
@@ -324,6 +324,7 @@ export class D1RuntimeTokenStore implements IRuntimeTokenStore {
         JSON.stringify(record.blockedActions),
         JSON.stringify(record.allowedProxies),
         JSON.stringify(record.allowedConnections ?? []),
+        JSON.stringify(record.connectionPermissions ?? []),
         record.createdAt,
         record.lastUsedAt ?? null,
       )
@@ -362,7 +363,7 @@ export class D1RuntimeTokenStore implements IRuntimeTokenStore {
       .prepare(
         `
         update runtime_tokens
-        set allowed_actions = ?, blocked_actions = ?, allowed_proxies = ?, allowed_connections = ?
+        set allowed_actions = ?, blocked_actions = ?, allowed_proxies = ?, allowed_connections = ?, connection_permissions = ?
         where id = ?
         returning ${runtimeTokenColumns}
       `,
@@ -372,6 +373,7 @@ export class D1RuntimeTokenStore implements IRuntimeTokenStore {
         JSON.stringify(policy.blockedActions),
         JSON.stringify(policy.allowedProxies),
         JSON.stringify(policy.allowedConnections ?? []),
+        JSON.stringify(policy.connectionPermissions ?? []),
         id,
       )
       .first<RuntimeRow>();
