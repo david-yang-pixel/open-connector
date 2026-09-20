@@ -741,6 +741,48 @@ describe("MCP server", () => {
       },
     );
   });
+
+  it("discovers and executes read actions through read-only connection grants", async () => {
+    const policy = new ActionPolicyService().createSnapshot(emptyPolicyRules(), {
+      allowedActions: ["example_auth.*"],
+      blockedActions: [],
+      allowedProxies: [],
+      connectionPermissions: [{ connectionId: "connection-secondary", access: "read" }],
+    });
+    await withAuthenticatedMcpClient(
+      async (client) => {
+        const connections = await client.callTool({
+          name: "list_connections",
+          arguments: { service: "example_auth" },
+        });
+        expect(connections.structuredContent).toMatchObject({
+          ok: true,
+          data: [{ connectionName: "secondary" }],
+        });
+
+        const guide = await client.callTool({
+          name: "get_action_guide",
+          arguments: { actionId: "example_auth.get_account", connectionName: "secondary" },
+        });
+        expect(guide.structuredContent).toMatchObject({
+          ok: true,
+          data: { capability: { connection: { connectionName: "secondary" } } },
+        });
+
+        const result = await client.callTool({
+          name: "execute_action",
+          arguments: { actionId: "example_auth.get_account", input: {}, connectionName: "secondary" },
+        });
+        expect(result.structuredContent).toMatchObject({
+          ok: true,
+          data: { accountId: "account-secondary" },
+          connection: { connectionName: "secondary" },
+        });
+      },
+      new MemoryRunLogStore(),
+      { getPolicySnapshot: async () => policy },
+    );
+  });
 });
 
 interface McpPolicyOptions {

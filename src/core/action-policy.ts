@@ -191,7 +191,10 @@ export class ActionPolicySnapshot {
     return { allowed: true, checks };
   }
 
-  evaluateConnection(connectionId?: string, operation?: ActionDefinition | "proxy"): ActionPolicyDecision {
+  evaluateConnection(
+    connectionId?: string,
+    operation?: ActionDefinition | "proxy" | "discovery",
+  ): ActionPolicyDecision {
     if (this.connectionPermissions.size > 0) {
       const access = connectionId ? this.connectionPermissions.get(connectionId) : undefined;
       if (!connectionId || !access) {
@@ -204,7 +207,9 @@ export class ActionPolicySnapshot {
           message:
             operation === "proxy"
               ? `${connectionId} connection requires full access before it can receive proxy requests.`
-              : `${connectionId} connection does not grant ${operation?.operationType ?? "unclassified"} operations.`,
+              : `${connectionId} connection does not grant ${
+                  operation === "discovery" ? "discovery" : (operation?.operationType ?? "unclassified")
+                } operations.`,
           checks: [{ source: "token", outcome: "allow_miss", rule: `${connectionId}:${access}` }],
         };
       }
@@ -241,9 +246,10 @@ function connectionDenied(connectionId?: string): ActionPolicyDecision {
 
 function connectionAccessAllows(
   access: ConnectionAccessLevel,
-  operation: ActionDefinition | "proxy" | undefined,
+  operation: ActionDefinition | "proxy" | "discovery" | undefined,
 ): boolean {
   if (access === "full") return true;
+  if (operation === "discovery") return true;
   if (!operation || operation === "proxy" || !operation.operationType) return false;
   if (access === "read") return operation.operationType === "read";
   return operation.operationType === "read" || operation.operationType === "write";

@@ -884,7 +884,8 @@ export class ConnectServer {
     connections: ConnectionSummary[],
   ): ConnectionSummary[] {
     return connections.filter(
-      (connection) => connection.authType === "no_auth" || policy.evaluateConnection(connection.id).allowed,
+      (connection) =>
+        connection.authType === "no_auth" || policy.evaluateConnection(connection.id, "discovery").allowed,
     );
   }
 

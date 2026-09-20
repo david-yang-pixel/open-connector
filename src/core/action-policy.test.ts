@@ -419,6 +419,8 @@ describe("ActionPolicyService", () => {
     const destructiveAction = { ...action, operationType: "destructive" as const };
 
     expect(readConnection.evaluateConnection(workConnectionId, readAction)).toMatchObject({ allowed: true });
+    expect(readConnection.evaluateConnection(workConnectionId, "discovery")).toMatchObject({ allowed: true });
+    expect(writeConnection.evaluateConnection(workConnectionId, "discovery")).toMatchObject({ allowed: true });
     expect(readConnection.evaluateConnection(workConnectionId, action)).toMatchObject({
       allowed: false,
       code: "connection_operation_not_allowed",

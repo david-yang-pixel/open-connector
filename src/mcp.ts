@@ -214,7 +214,10 @@ async function listConnections(options: IMcpServerOptions, service: string | und
       : await options.connections.listConnections();
     return successPayload(
       connections
-        .filter((connection) => connection.authType === "no_auth" || policy.evaluateConnection(connection.id).allowed)
+        .filter(
+          (connection) =>
+            connection.authType === "no_auth" || policy.evaluateConnection(connection.id, "discovery").allowed,
+        )
         .map(serializeConnection),
     );
   } catch (error) {
@@ -231,7 +234,7 @@ async function listApps(options: IMcpServerOptions, query: string | undefined): 
   }
   const normalized = query?.trim().toLowerCase();
   const connections = (await options.connections.listConnections()).filter(
-    (connection) => connection.authType === "no_auth" || policy.evaluateConnection(connection.id).allowed,
+    (connection) => connection.authType === "no_auth" || policy.evaluateConnection(connection.id, "discovery").allowed,
   );
   const defaultConnections = new Map(
     connections.filter((connection) => connection.default).map((connection) => [connection.service, connection]),
@@ -335,7 +338,7 @@ async function getActionGuide(
   }
   try {
     const connection = await getSelectedConnectionSummary(options, action.service, connectionName);
-    const connectionDecision = evaluateConnectionGrant(policy, connection);
+    const connectionDecision = evaluateConnectionGrant(policy, connection, action);
     if (!connectionDecision.allowed) {
       return errorPayload(connectionDecision.code, connectionDecision.message);
     }
@@ -373,7 +376,7 @@ async function executeAction(
   if (connectionName && policy.evaluate(action).allowed) {
     try {
       const connection = await getSelectedConnectionSummary(options, action.service, connectionName);
-      const connectionDecision = evaluateConnectionGrant(policy, connection);
+      const connectionDecision = evaluateConnectionGrant(policy, connection, action);
       if (!connectionDecision.allowed) {
         return errorPayload(connectionDecision.code, connectionDecision.message);
       }
@@ -470,7 +473,7 @@ function describeActionCapability(
     requiredScopes: action.requiredScopes,
     providerPermissions: action.providerPermissions,
     policy: policy.evaluate(action),
-    connection: evaluateConnectionGrant(policy, connection).allowed ? connection : undefined,
+    connection: evaluateConnectionGrant(policy, connection, action).allowed ? connection : undefined,
   };
 }
 
@@ -489,8 +492,11 @@ async function getSelectedConnectionSummary(
 function evaluateConnectionGrant(
   policy: ActionPolicySnapshot,
   connection: ConnectionSummary | undefined,
+  action: RuntimeActionDefinition,
 ): ActionPolicyDecision {
-  return connection?.authType === "no_auth" ? { allowed: true, checks: [] } : policy.evaluateConnection(connection?.id);
+  return connection?.authType === "no_auth"
+    ? { allowed: true, checks: [] }
+    : policy.evaluateConnection(connection?.id, action);
 }
 
 interface ToolExecutionMeta {
