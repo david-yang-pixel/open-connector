@@ -174,11 +174,11 @@ describe("subscribeToOAuthCompletions", () => {
 
 describe("loadRuntimeData", () => {
   it("uses the unlock token only when reading the auth session", async () => {
-    const calls: Array<{ path: string; headers: Headers }> = [];
+    const calls: Array<{ path: string; headers: Headers; cache?: RequestCache }> = [];
     vi.stubGlobal(
       "fetch",
       vi.fn(async (path: RequestInfo | URL, init?: RequestInit) => {
-        calls.push({ path: String(path), headers: new Headers(init?.headers) });
+        calls.push({ path: String(path), headers: new Headers(init?.headers), cache: init?.cache });
         if (path === "/api/auth/session") {
           return Response.json({ adminAuthConfigured: true, authenticated: true });
         }
@@ -207,6 +207,7 @@ describe("loadRuntimeData", () => {
       "/api/provider-preferences",
     ]);
     expect(calls[0]?.headers.get("authorization")).toBe("Bearer local-token");
+    expect(calls.find((call) => call.path === "/api/providers")?.cache).toBe("no-cache");
     for (const call of calls.slice(1)) {
       expect(call.headers.get("authorization")).toBeNull();
     }

@@ -15,7 +15,8 @@
     "runtimeReady": "ランタイム準備完了",
     "showMore": "さらに表示",
     "showing": "{{shown}} / {{total}} を表示中",
-    "success": "成功"
+    "success": "成功",
+    "unavailable": "利用不可"
   },
   "brand": {
     "subtitle": "ローカルランタイムコンソール",

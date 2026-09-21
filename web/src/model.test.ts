@@ -6,6 +6,7 @@ import {
   connectionDiscoveredToolCount,
   createOverviewSummary,
   filterProvidersByCategory,
+  isActionAvailable,
   providerCategoryCounts,
   resolveProviderConnectionStatus,
   sortProviders,
@@ -231,6 +232,34 @@ describe("createOverviewSummary", () => {
       actionCount: 3,
       locallyExecutableActionCount: 2,
     });
+  });
+
+  it("counts credentialed actions only after a usable connection exists", () => {
+    const credentialedAction = {
+      ...action("github.get_current_user", true),
+      execution: {
+        ...action("github.get_current_user", true).execution,
+        requiredAuthTypes: ["oauth2"],
+        noAuthRunnable: false,
+        needsCredential: true,
+      },
+    };
+    const data = {
+      ...emptyAppData,
+      providers: [{ ...oauthProvider("github", "GitHub"), actions: [credentialedAction] }],
+    };
+
+    expect(isActionAvailable(credentialedAction, [])).toBe(false);
+    expect(createOverviewSummary(data).locallyExecutableActionCount).toBe(0);
+
+    const connected = [{ service: "github", authType: "oauth2", configured: true, metadata: {} }];
+    expect(isActionAvailable(credentialedAction, connected)).toBe(true);
+    expect(createOverviewSummary({ ...data, connections: connected }).locallyExecutableActionCount).toBe(1);
+    expect(
+      isActionAvailable(credentialedAction, [
+        { service: "github", authType: "api_key", configured: true, metadata: {} },
+      ]),
+    ).toBe(false);
   });
 
   it("does not count virtual no-auth connections as connected providers", () => {

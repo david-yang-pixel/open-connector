@@ -7,9 +7,17 @@ export class ApiError extends Error {
   }
 }
 
-export async function apiGet<T>(path: string, bearerToken?: string): Promise<T> {
-  const token = bearerToken?.trim();
-  return request<T>(path, { headers: token ? { authorization: `Bearer ${token}` } : undefined });
+export interface ApiGetOptions {
+  bearerToken?: string;
+  cache?: RequestCache;
+}
+
+export async function apiGet<T>(path: string, options: ApiGetOptions = {}): Promise<T> {
+  const token = options.bearerToken?.trim();
+  return request<T>(path, {
+    cache: options.cache,
+    headers: token ? { authorization: `Bearer ${token}` } : undefined,
+  });
 }
 
 export function apiPost<T = unknown>(path: string, body: unknown): Promise<T> {

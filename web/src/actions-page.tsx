@@ -19,6 +19,7 @@ import {
   buildActionExamples,
   exampleInput,
   filterActions,
+  isActionAvailable,
   parameterSummaries,
   usableConnectionsForService,
 } from "./model";
@@ -97,6 +98,7 @@ export function ActionsPage(props: ActionsPageProps): ReactNode {
 
   function renderActionRow(action: ActionDefinition): ReactNode {
     const selected = selectedAction?.id === action.id;
+    const available = isActionAvailable(action, props.data.connections);
     return (
       <Link
         key={action.id}
@@ -109,8 +111,12 @@ export function ActionsPage(props: ActionsPageProps): ReactNode {
           <small>{action.id}</small>
           <small className="action-row-meta">
             {providerNames.get(action.service) ?? action.service} ·{" "}
-            {action.execution.locallyExecutable ? t("common.local") : t("common.catalogOnly")} ·{" "}
-            {action.execution.noAuthRunnable ? t("common.noAuth") : t("common.credential")}
+            {available
+              ? t("common.local")
+              : action.execution.locallyExecutable
+                ? t("common.unavailable")
+                : t("common.catalogOnly")}{" "}
+            · {action.execution.noAuthRunnable ? t("common.noAuth") : t("common.credential")}
           </small>
         </span>
         <ChevronRight size={16} />
@@ -220,6 +226,7 @@ function ActionDetail(props: ActionDetailProps): ReactNode {
   const [fullAction, setFullAction] = useState<FullActionDefinition | null>(null);
   const [schemaError, setSchemaError] = useState<string | null>(null);
   const actionId = props.action.id;
+  const available = isActionAvailable(props.action, props.connections);
 
   useEffect(() => {
     let cancelled = false;
@@ -261,8 +268,12 @@ function ActionDetail(props: ActionDetailProps): ReactNode {
           </div>
         </div>
         <div className="button-row action-status-row">
-          <Badge tone={props.action.execution.locallyExecutable ? "success" : undefined}>
-            {props.action.execution.locallyExecutable ? t("actions.locallyExecutable") : t("common.catalogOnly")}
+          <Badge tone={available ? "success" : undefined}>
+            {available
+              ? t("actions.locallyExecutable")
+              : props.action.execution.locallyExecutable
+                ? t("common.unavailable")
+                : t("common.catalogOnly")}
           </Badge>
           <Badge>{props.action.execution.noAuthRunnable ? t("common.noAuth") : t("actions.needsCredential")}</Badge>
           <Badge>{props.providerName}</Badge>
@@ -270,7 +281,7 @@ function ActionDetail(props: ActionDetailProps): ReactNode {
       </div>
       <p className="detail-description">{props.action.description}</p>
       <div className="button-row action-command-row">
-        <Button disabled={!props.action.execution.locallyExecutable || !fullAction} onClick={() => setDebugOpen(true)}>
+        <Button disabled={!available || !fullAction} onClick={() => setDebugOpen(true)}>
           <Play size={16} />
           {t("actions.debugAction")}
         </Button>

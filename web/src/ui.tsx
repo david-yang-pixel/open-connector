@@ -138,15 +138,16 @@ export interface RuntimeLoadResult {
 /**
  * Loads dashboard state.
  *
- * The provider catalog is generated at build time and cannot change while the
- * server runs, so `cachedProviders` lets refreshes skip re-downloading it and
- * re-fetch only mutable data.
+ * The provider catalog is generated at build time and cannot change within one
+ * server deployment, so `cachedProviders` lets routine refreshes skip
+ * re-downloading it. A manual refresh invalidates this cache to discover a new
+ * deployment.
  */
 export async function loadRuntimeData(
   unlockToken: string,
   cachedProviders?: ProviderDefinition[],
 ): Promise<RuntimeLoadResult> {
-  const authSession = await apiGet<AuthSession>("/api/auth/session", unlockToken);
+  const authSession = await apiGet<AuthSession>("/api/auth/session", { bearerToken: unlockToken });
   if (!authSession.authenticated) {
     return { authSession, data: emptyData };
   }
@@ -154,9 +155,9 @@ export async function loadRuntimeData(
   const catalogRequest =
     cachedProviders !== undefined
       ? Promise.resolve(cachedProviders)
-      : apiGet<(ProviderDefinition & { setup: ProviderDefinition["auth"] })[]>("/api/providers").then((providers) =>
-          providers.map(({ setup, ...provider }) => ({ ...provider, auth: setup })),
-        );
+      : apiGet<(ProviderDefinition & { setup: ProviderDefinition["auth"] })[]>("/api/providers", {
+          cache: "no-cache",
+        }).then((providers) => providers.map(({ setup, ...provider }) => ({ ...provider, auth: setup })));
 
   const [
     providers,
@@ -203,8 +204,9 @@ export function App(): ReactNode {
     authenticated: true,
   });
   const pendingUnlockToken = useRef("");
-  // Catalog is immutable while the server runs, so it is fetched once and
-  // reused across refreshes instead of being re-downloaded on every action.
+  // Catalog is immutable within one deployment, so routine data refreshes can
+  // reuse it. Manual refreshes invalidate it to discover a newly deployed
+  // provider catalog.
   const cachedProviders = useRef<ProviderDefinition[] | undefined>(undefined);
   const [locked, setLocked] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -271,6 +273,7 @@ export function App(): ReactNode {
   }, [refreshToken, t]);
 
   function refresh(): void {
+    cachedProviders.current = undefined;
     setRefreshToken((value) => value + 1);
   }
 

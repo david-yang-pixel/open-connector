@@ -15,7 +15,8 @@
     "runtimeReady": "运行时就绪",
     "showMore": "显示更多",
     "showing": "显示 {{shown}} / {{total}}",
-    "success": "成功"
+    "success": "成功",
+    "unavailable": "不可用"
   },
   "brand": {
     "subtitle": "本地运行时控制台",

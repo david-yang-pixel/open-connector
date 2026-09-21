@@ -15,7 +15,8 @@
     "runtimeReady": "執行階段已就緒",
     "showMore": "顯示更多",
     "showing": "顯示 {{shown}} / {{total}}",
-    "success": "成功"
+    "success": "成功",
+    "unavailable": "無法使用"
   },
   "brand": {
     "subtitle": "本機執行階段控制台",

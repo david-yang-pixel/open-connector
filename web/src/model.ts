@@ -342,12 +342,26 @@ export function createOverviewSummary(data: AppData): OverviewSummary {
   return {
     providerCount: data.providers.length,
     actionCount: actions.length,
-    locallyExecutableActionCount: actions.filter((action) => action.execution.locallyExecutable).length,
+    locallyExecutableActionCount: actions.filter((action) => isActionAvailable(action, data.connections)).length,
     connectedCount: data.connections.filter(isUsableCredentialConnection).length,
     activeTokenCount: data.runtimeTokens.length,
     failedRunCount: failedRuns.length,
     failedRuns: failedRuns.slice(0, 5),
   };
+}
+
+/** An action is usable only when the runtime implements it and any required credential connection exists. */
+export function isActionAvailable(action: ActionDefinition, connections: ConnectionRecord[]): boolean {
+  if (!action.execution.locallyExecutable) return false;
+  if (action.execution.noAuthRunnable) return true;
+
+  const requiredAuthTypes = action.execution.requiredAuthTypes;
+  return usableConnectionsForService(connections, action.service).some(
+    (connection) =>
+      connection.authType === "marketplace" ||
+      requiredAuthTypes.length === 0 ||
+      requiredAuthTypes.includes(connection.authType),
+  );
 }
 
 export function resolveProviderConnectionStatus(

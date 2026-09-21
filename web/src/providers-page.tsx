@@ -43,6 +43,7 @@ import {
   credentialFieldsFor,
   filterProviders,
   filterProvidersByCategory,
+  isActionAvailable,
   providerCategoryCounts,
   resolveProviderConnectionStatus,
   sortProviders,
@@ -741,8 +742,16 @@ function ProviderStatusBadges(props: {
         {t("providers.noSetupBadge")}
       </Badge>,
     );
-  } else if (props.includeDisconnected) {
-    badges.push(<Badge key="not-connected">{t("providers.unconfiguredBadge")}</Badge>);
+  } else {
+    badges.push(
+      <Badge key="unavailable" tone="warning">
+        {props.compact ? <CircleSlash2 size={12} /> : null}
+        {t("providers.runtimeUnavailableBadge")}
+      </Badge>,
+    );
+    if (props.includeDisconnected) {
+      badges.push(<Badge key="not-connected">{t("providers.unconfiguredBadge")}</Badge>);
+    }
   }
 
   if (props.status.oauthClientRequired && !props.compact) {
@@ -1057,10 +1066,12 @@ function ProviderDetail(props: ProviderDetailProps): ReactNode {
                     <strong>{action.name}</strong>
                     <small>{action.id}</small>
                   </span>
-                  <Badge tone={action.execution.locallyExecutable ? "success" : undefined}>
-                    {action.execution.locallyExecutable
+                  <Badge tone={isActionAvailable(action, props.connectionStatus.connections) ? "success" : undefined}>
+                    {isActionAvailable(action, props.connectionStatus.connections)
                       ? t("providers.execution.executable")
-                      : t("providers.execution.catalogOnly")}
+                      : action.execution.locallyExecutable
+                        ? t("common.unavailable")
+                        : t("providers.execution.catalogOnly")}
                   </Badge>
                 </Link>
               ))}

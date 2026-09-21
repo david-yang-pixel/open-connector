@@ -15,6 +15,7 @@ import {
 } from "../core/request.ts";
 import { ProviderLoader } from "../providers/provider-loader.ts";
 import { executorModules } from "../providers/registry.cloudflare.generated.ts";
+import { getResponseCachePolicy } from "./api/cache-policy.ts";
 import { isConsoleShellPath } from "./api/console-paths.ts";
 import { loadCatalogFromAssets } from "./cloudflare/catalog-assets.ts";
 import { readPositiveInteger, resolvePublicOrigin } from "./cloudflare/cloudflare-env.ts";
@@ -45,22 +46,25 @@ export default {
       const assetResponse = await env.ASSETS.fetch(new Request(assetUrl));
       if (assetResponse.ok) {
         const etag = assetResponse.headers.get("etag") || 'W/"provider-summaries"';
+        const cachePolicy = getResponseCachePolicy(request.method, url.pathname, 200);
         const ifNoneMatch = request.headers.get("if-none-match");
         if (ifNoneMatch && (ifNoneMatch === etag || ifNoneMatch.includes(etag))) {
           return new Response(null, {
             status: 304,
             headers: {
-              "cache-control": "public, max-age=86400, stale-while-revalidate=86400",
-              "cloudflare-cdn-cache-control": "public, max-age=31536000, stale-while-revalidate=86400",
+              "cache-control": cachePolicy?.cacheControl ?? "no-store",
+              "cloudflare-cdn-cache-control": cachePolicy?.cloudflareCdnCacheControl ?? "no-store",
               etag: etag,
+              vary: cachePolicy?.vary ?? "Authorization, Cookie, Accept-Encoding",
             },
           });
         }
         const headers = new Headers(assetResponse.headers);
         headers.set("content-type", "application/json");
-        headers.set("cache-control", "public, max-age=86400, stale-while-revalidate=86400");
-        headers.set("cloudflare-cdn-cache-control", "public, max-age=31536000, stale-while-revalidate=86400");
+        headers.set("cache-control", cachePolicy?.cacheControl ?? "no-store");
+        headers.set("cloudflare-cdn-cache-control", cachePolicy?.cloudflareCdnCacheControl ?? "no-store");
         headers.set("etag", etag);
+        headers.set("vary", cachePolicy?.vary ?? "Authorization, Cookie, Accept-Encoding");
         return new Response(assetResponse.body, { status: 200, headers });
       }
     }

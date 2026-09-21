@@ -555,6 +555,41 @@ describe("ProvidersPage route shell", () => {
     expect(detailMarkup).not.toContain("Host");
   });
 
+  it("shows credentialed providers and actions as unavailable until connected", () => {
+    const provider = {
+      ...catalogOnlyProvider,
+      displayName: "Credentialed Provider",
+      actions: [{ ...catalogOnlyProvider.actions[0]!, execution: executableActionExecution }],
+    };
+
+    const unavailableMarkup = renderProvidersPage(
+      { ...providerData, providers: [provider], connections: [], oauthConfigs: [] },
+      "/providers/catalog-only",
+    );
+    const availableMarkup = renderProvidersPage(
+      {
+        ...providerData,
+        providers: [provider],
+        connections: [
+          {
+            service: "catalog-only",
+            connectionName: "default",
+            authType: "custom_credential",
+            configured: true,
+            metadata: {},
+          },
+        ],
+        oauthConfigs: [],
+      },
+      "/providers/catalog-only",
+    );
+
+    expect(unavailableMarkup).toContain("Unavailable");
+    expect(unavailableMarkup).not.toContain("Executable");
+    expect(availableMarkup).toContain("Configured");
+    expect(availableMarkup).toContain("Executable");
+  });
+
   it("keeps stale catalog-only connections available to manage", () => {
     const markup = renderProvidersPage(
       {

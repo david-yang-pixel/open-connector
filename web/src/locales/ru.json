@@ -15,7 +15,8 @@
     "runtimeReady": "Runtime готов",
     "showMore": "Показать еще",
     "showing": "Показано {{shown}} из {{total}}",
-    "success": "Успех"
+    "success": "Успех",
+    "unavailable": "Недоступно"
   },
   "brand": {
     "subtitle": "Консоль локального runtime",

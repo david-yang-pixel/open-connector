@@ -123,6 +123,38 @@ describe("cloudflare worker", () => {
     });
   });
 
+  it("revalidates provider summaries in browsers while retaining the edge cache", async () => {
+    const env: CloudflareEnv = {
+      DB: new EmptyMarketplaceD1Database(),
+      TRANSIT_FILES: new UnusedR2Bucket(),
+      ASSETS: memoryAssets({
+        ...chunkedCatalog(),
+        "/catalog/provider-summaries.json": [provider],
+      }),
+    };
+    const url = "https://catalog-cache.example.com/api/providers";
+
+    const response = await worker.fetch(new Request(url), env, createExecutionContext());
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("public, max-age=0, must-revalidate");
+    expect(response.headers.get("cloudflare-cdn-cache-control")).toBe(
+      "public, max-age=31536000, stale-while-revalidate=86400",
+    );
+    expect(response.headers.get("vary")).toBe("Authorization, Cookie, Accept-Encoding");
+    await expect(response.json()).resolves.toEqual([provider]);
+
+    const revalidated = await worker.fetch(
+      new Request(url, { headers: { "if-none-match": 'W/"provider-summaries"' } }),
+      env,
+      createExecutionContext(),
+    );
+
+    expect(revalidated.status).toBe(304);
+    expect(revalidated.headers.get("cache-control")).toBe("public, max-age=0, must-revalidate");
+    expect(revalidated.headers.get("vary")).toBe("Authorization, Cookie, Accept-Encoding");
+  });
+
   it("selects the KV backend and round-trips a file when TRANSIT_FILES_BACKEND is kv", async () => {
     const namespace = new MemoryKVNamespace();
     // A distinct host keeps this out of the R2 test's cached app instance.

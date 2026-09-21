@@ -15,7 +15,8 @@
     "runtimeReady": "Runtime prêt",
     "showMore": "Afficher plus",
     "showing": "{{shown}} sur {{total}} affichés",
-    "success": "Succès"
+    "success": "Succès",
+    "unavailable": "Indisponible"
   },
   "brand": {
     "subtitle": "Console du runtime local",
