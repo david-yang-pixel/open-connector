@@ -128,6 +128,26 @@ describe("copyCatalogAssets", () => {
       catalog.providers.map((provider) => ({ ...provider, actions: [], setup: [{ type: "no_auth" }] })),
     );
   });
+
+  it("keeps curated credentialed providers in the Cloudflare runtime catalog", async () => {
+    const { sourceDir, targetDir } = await fixture();
+    for (const service of ["cloudflare_worker", "docker_hub", "front", "openai", "anthropic", "unlisted_api"]) {
+      await writeFile(join(sourceDir, `${service}.json`), JSON.stringify(credentialedProviderDefinition(service)));
+    }
+
+    await copyCatalogAssets({ sourceDir, targetDir });
+
+    const coreProviders = JSON.parse(await readFile(join(targetDir, "core-providers.json"), "utf8")) as Array<{
+      service: string;
+    }>;
+    expect(coreProviders.map((provider) => provider.service)).toEqual([
+      "anthropic",
+      "cloudflare_worker",
+      "docker_hub",
+      "front",
+      "openai",
+    ]);
+  });
 });
 
 /** Serve a directory the way the Cloudflare assets binding does, including its SPA miss behaviour. */
@@ -156,6 +176,14 @@ function providerDefinition(service: string, displayName = service): Record<stri
     authTypes: ["no_auth"],
     auth: [{ type: "no_auth" }],
     actions: [],
+  };
+}
+
+function credentialedProviderDefinition(service: string): Record<string, unknown> {
+  return {
+    ...providerDefinition(service),
+    authTypes: ["api_key"],
+    auth: [{ type: "api_key", label: "API Key", placeholder: "secret" }],
   };
 }
 

@@ -61,7 +61,15 @@ export async function copyCatalogAssets(options: CopyCatalogAssetsOptions): Prom
   const coreServices = new Set([
     "custom_mcp",
     "cloudflare_mcp",
+    "cloudflare_browser_rendering",
+    "cloudflare_dns",
+    "cloudflare_docs",
+    "cloudflare_email_routing",
+    "cloudflare_r2",
+    "cloudflare_worker",
+    "docker_hub",
     "feishu_app_bot",
+    "front",
     "github",
     "gmail",
     "linear",
@@ -79,6 +87,17 @@ export async function copyCatalogAssets(options: CopyCatalogAssetsOptions): Prom
     "sendgrid",
     "hubspot",
     "feishu",
+    "openai",
+    "anthropic",
+    "gemini",
+    "deepseek",
+    "perplexity",
+    "groqcloud",
+    "mistral_ai",
+    "openrouter",
+    "x_ai",
+    "cohere",
+    "huggingface",
   ]);
   const catalogProviders = rawProviders.map((entry) => entry.provider as ProviderDefinition);
   const coreProviders = catalogProviders.filter(

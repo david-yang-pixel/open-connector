@@ -152,6 +152,14 @@ The Cloudflare runtime serves catalog metadata, `/api` and `/v1` metadata endpoi
 runtime tokens, OAuth config/state, transit files backed by the configured R2 bucket or KV
 namespace, and the generated provider Action executor registry.
 
+To keep Worker startup and isolate memory bounded, the deployed runtime preloads all no-auth
+providers plus a curated set of credentialed providers. The curated set includes the primary
+Cloudflare services, Docker Hub, Front, common collaboration services, and major hosted model providers.
+Providers outside that set remain visible for catalog reference but are marked unavailable until
+they are added to `coreServices` in `scripts/copy-catalog-assets.ts` and the Worker is rebuilt.
+Making a provider available does not grant a runtime token access: the connection and action rules
+continue to be enforced independently.
+
 Configure an R2 lifecycle rule for the transit bucket if you want unread expired transit files
 cleaned up automatically. Workers KV applies the configured TTL when each file is written and
 deletes it automatically. KV clamps `OOMOL_CONNECT_TRANSIT_FILE_TTL_SECONDS` to a minimum of 60
