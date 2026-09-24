@@ -50,7 +50,10 @@ async function readDump(): Promise<Buffer> {
 }
 
 function columns(database: DatabaseSync, table: string): string[] {
-  return database.prepare(`pragma table_info("${table}")`).all().map((row) => String(row.name));
+  return database
+    .prepare(`pragma table_info("${table}")`)
+    .all()
+    .map((row) => String(row.name));
 }
 
 async function main(): Promise<void> {
@@ -119,19 +122,21 @@ async function main(): Promise<void> {
       const rows = source.prepare(`select ${quoted} from "${table}"`).iterate();
       let count = 0;
       for (const row of rows) {
-        const values = await Promise.all(names.map(async (name) => {
-          const raw = row[name];
-          if (raw == null) return null;
-          if (secretColumns[table]?.includes(name)) return await reencrypt(raw);
-          if (table === "marketplace_config" && name === "value") {
-            const config = JSON.parse(String(raw)) as Record<string, unknown>;
-            if (typeof config.apiKeyEncrypted === "string") {
-              config.apiKeyEncrypted = await reencrypt(config.apiKeyEncrypted);
+        const values = await Promise.all(
+          names.map(async (name) => {
+            const raw = row[name];
+            if (raw == null) return null;
+            if (secretColumns[table]?.includes(name)) return await reencrypt(raw);
+            if (table === "marketplace_config" && name === "value") {
+              const config = JSON.parse(String(raw)) as Record<string, unknown>;
+              if (typeof config.apiKeyEncrypted === "string") {
+                config.apiKeyEncrypted = await reencrypt(config.apiKeyEncrypted);
+              }
+              return JSON.stringify(config);
             }
-            return JSON.stringify(config);
-          }
-          return raw;
-        }));
+            return raw;
+          }),
+        );
         insert.run(...values);
         count += 1;
       }
@@ -151,9 +156,8 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-  const code = error instanceof Error && /^[a-z_]+(?::[a-z_]+)?$/.test(error.message)
-    ? error.message
-    : "unexpected_error";
+  const code =
+    error instanceof Error && /^[a-z_]+(?::[a-z_]+)?$/.test(error.message) ? error.message : "unexpected_error";
   console.error(JSON.stringify({ ok: false, phase, code }));
   process.exitCode = 1;
 });

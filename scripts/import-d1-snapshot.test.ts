@@ -21,7 +21,9 @@ async function fixture(): Promise<{ path: string; dump: string }> {
   new SqliteRuntimeDatabase(path).close();
   const database = new DatabaseSync(path, { readOnly: true });
   const schema = database
-    .prepare("select sql from sqlite_master where type = 'table' and name not in ('runtime_migrations', 'sqlite_sequence')")
+    .prepare(
+      "select sql from sqlite_master where type = 'table' and name not in ('runtime_migrations', 'sqlite_sequence')",
+    )
     .all()
     .map((row) => `${String(row.sql)};`)
     .join("\n");
@@ -37,7 +39,11 @@ values ('token-1', 'test', 'synthetic-hash', '2026-01-01T00:00:00Z', '[{"connect
   };
 }
 
-async function runImport(path: string, dump: string, sourceKey?: string): Promise<{ code: number | null; stdout: string; stderr: string }> {
+async function runImport(
+  path: string,
+  dump: string,
+  sourceKey?: string,
+): Promise<{ code: number | null; stdout: string; stderr: string }> {
   const script = fileURLToPath(new URL("./import-d1-snapshot.ts", import.meta.url));
   const child = spawn(process.execPath, [script], {
     env: {
@@ -50,8 +56,12 @@ async function runImport(path: string, dump: string, sourceKey?: string): Promis
   });
   let stdout = "";
   let stderr = "";
-  child.stdout.setEncoding("utf8").on("data", (chunk: string) => { stdout += chunk; });
-  child.stderr.setEncoding("utf8").on("data", (chunk: string) => { stderr += chunk; });
+  child.stdout.setEncoding("utf8").on("data", (chunk: string) => {
+    stdout += chunk;
+  });
+  child.stderr.setEncoding("utf8").on("data", (chunk: string) => {
+    stderr += chunk;
+  });
   child.stdin.end(sourceKey ? `${Buffer.from(sourceKey).toString("base64")}\n${dump}` : dump);
   const code = await new Promise<number | null>((resolve) => child.on("exit", resolve));
   return { code, stdout, stderr };
@@ -68,8 +78,9 @@ test("copies D1 rows while encrypting credentials and preserving connection-scop
   const value = String(database.prepare("select value from connections").get()?.value);
   expect(value).toMatch(/^enc:v1:/);
   expect(await new AesGcmSecretCodec("synthetic-test-key").decode(value)).toBe('{"apiKey":"synthetic-test-only"}');
-  expect(database.prepare("select connection_permissions from runtime_tokens").get()?.connection_permissions)
-    .toBe('[{"connectionId":"connection-1","operationType":"read"}]');
+  expect(database.prepare("select connection_permissions from runtime_tokens").get()?.connection_permissions).toBe(
+    '[{"connectionId":"connection-1","operationType":"read"}]',
+  );
   database.close();
 });
 
@@ -97,7 +108,8 @@ test("decrypts Worker-format source credentials before destination encryption", 
   const database = new DatabaseSync(path, { readOnly: true });
   const destinationValue = String(database.prepare("select value from connections").get()?.value);
   expect(destinationValue).toMatch(/^enc:v1:/);
-  expect(await new AesGcmSecretCodec("synthetic-test-key").decode(destinationValue))
-    .toBe('{"apiKey":"synthetic-test-only"}');
+  expect(await new AesGcmSecretCodec("synthetic-test-key").decode(destinationValue)).toBe(
+    '{"apiKey":"synthetic-test-only"}',
+  );
   database.close();
 });

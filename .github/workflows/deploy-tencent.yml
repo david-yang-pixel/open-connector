@@ -1,0 +1,97 @@
+name: Deploy Tencent Cloud
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+# Never interrupt a deployment while a container is being replaced.
+concurrency:
+  group: deploy-tencent-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      github.repository == 'david-yang-pixel/open-connector' &&
+      ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository))
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      DEPLOY_HOST: ${{ vars.TENCENT_DEPLOY_HOST }}
+      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - name: Checkout the verified commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.DEPLOY_SHA }}
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Skip a superseded commit
+        id: current
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$DEPLOY_SHA"
+          current_sha="$(gh api "repos/$GITHUB_REPOSITORY/branches/main" --jq '.commit.sha')"
+          if [ "$current_sha" != "$DEPLOY_SHA" ]; then
+            echo "Skipping superseded commit $DEPLOY_SHA"
+            echo 'deploy=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            successful_ci="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml \
+              --commit "$DEPLOY_SHA" --json conclusion,event \
+              --jq '[.[] | select(.event == "push" and .conclusion == "success")] | length')"
+            test "$successful_ci" -gt 0
+          elif ! git diff --name-only HEAD^ HEAD | grep -qv '^assets/star-history/'; then
+            echo 'Skipping a Star History-only update'
+            echo 'deploy=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo 'deploy=true' >> "$GITHUB_OUTPUT"
+
+      - name: Build immutable deployment image
+        if: steps.current.outputs.deploy == 'true'
+        run: docker build --pull --file docker/Dockerfile --tag "openconnector:cicd-$DEPLOY_SHA" .
+
+      - name: Transfer and deploy
+        if: steps.current.outputs.deploy == 'true'
+        env:
+          DEPLOY_KEY: ${{ secrets.TENCENT_DEPLOY_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_KEY"
+
+          known_hosts="$RUNNER_TEMP/openconnector-known-hosts"
+          ssh-keyscan -T 10 -t ed25519 "$DEPLOY_HOST" > "$known_hosts"
+          fingerprint="$(ssh-keygen -lf "$known_hosts" -E sha256 | awk 'NR == 1 { print $2 }')"
+          test "$fingerprint" = 'SHA256:+eqUIYRxdkPeQJi0f2KiLI0TyGvSsa+2AM4zVFSiHms'
+
+          eval "$(ssh-agent -s)"
+          trap 'ssh-agent -k >/dev/null' EXIT
+          printf '%s\n' "$DEPLOY_KEY" | ssh-add - >/dev/null
+          docker save "openconnector:cicd-$DEPLOY_SHA" | gzip -1 | \
+            ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$known_hosts" \
+              "root@$DEPLOY_HOST" "deploy $DEPLOY_SHA"
+
+      - name: Check public health endpoint
+        if: steps.current.outputs.deploy == 'true'
+        run: curl --fail --silent --show-error --retry 3 --max-time 15 https://openconnector.smlershou.top/health | jq -e '.ok == true'
