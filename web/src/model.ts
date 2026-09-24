@@ -150,9 +150,15 @@ export interface RuntimeTokenSummary {
 
 export type ConnectionAccessLevel = "read" | "write" | "full";
 
+export type ConnectionToolPolicy =
+  | { mode: "all"; excludedActionIds: string[] }
+  | { mode: "selected"; allowedActionIds: string[] };
+
 export interface ConnectionPermissionGrant {
   connectionId: string;
   access: ConnectionAccessLevel;
+  toolPolicy?: ConnectionToolPolicy;
+  allowProxy?: boolean;
 }
 
 export interface PolicyRules {

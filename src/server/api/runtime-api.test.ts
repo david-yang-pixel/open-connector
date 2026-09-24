@@ -161,6 +161,7 @@ describe("runtime action HTTP results", () => {
     ["authorization_failed", 403],
     ["connection_not_allowed", 403],
     ["connection_operation_not_allowed", 403],
+    ["connection_tool_not_allowed", 403],
     ["connection_not_found", 404],
     ["unknown_action", 404],
     ["rate_limited", 429],

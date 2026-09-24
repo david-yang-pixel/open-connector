@@ -35,12 +35,69 @@ import {
   runtimeTokenColumns,
 } from "./runtime-sql.ts";
 import { DEFAULT_RUN_LIMIT } from "./runtime-store.ts";
+import { hashRuntimeToken } from "./runtime-token-service.ts";
 
 type SecretJsonTable = "oauth_client_configs";
 
 export interface D1RuntimeDatabaseOptions {
   runLimit?: number;
+  runRetentionInterval?: number;
   secretCodec?: ISecretCodec;
+}
+
+const defaultRunRetentionInterval = 100;
+
+/**
+ * Return the provider services that can participate in runtime execution.
+ *
+ * Connection identity is stored in clear columns, so bootstrapping the runtime catalog never needs to decode
+ * credential payloads. Enabled Marketplace providers count as configured runtime services as well.
+ */
+export async function listD1RuntimeServices(database: D1DatabaseBinding): Promise<string[]> {
+  const { results } = await database
+    .prepare(
+      `
+        select service from connections
+        union
+        select service from provider_preferences where enabled = 1
+        order by service
+      `,
+    )
+    .all<RuntimeRow>();
+  return results.map((row) => readString(row, "service"));
+}
+
+/**
+ * Return the provider services reachable through a stored runtime token's explicit connection grants.
+ * `undefined` means the token is unknown or unrestricted, so callers must fall back to the configured catalog.
+ */
+export async function listD1RuntimeServicesForToken(
+  database: D1DatabaseBinding,
+  token: string,
+): Promise<string[] | undefined> {
+  if (!token.startsWith("oct_")) {
+    return undefined;
+  }
+
+  const record = await new D1RuntimeTokenStore(database).findByHash(hashRuntimeToken(token));
+  if (!record) {
+    return undefined;
+  }
+
+  const connectionIds =
+    record.connectionPermissions && record.connectionPermissions.length > 0
+      ? record.connectionPermissions.map((grant) => grant.connectionId)
+      : record.allowedConnections;
+  if (connectionIds.length === 0) {
+    return undefined;
+  }
+
+  const placeholders = connectionIds.map(() => "?").join(", ");
+  const { results } = await database
+    .prepare(`select distinct service from connections where id in (${placeholders}) order by service`)
+    .bind(...connectionIds)
+    .all<RuntimeRow>();
+  return results.map((row) => readString(row, "service"));
 }
 
 export class D1RuntimeDatabase implements RuntimeDatabase {
@@ -65,7 +122,11 @@ export class D1RuntimeDatabase implements RuntimeDatabase {
     this.oauthStateStore = new D1OAuthStateStore(database, secretCodec);
     this.runtimeTokenStore = new D1RuntimeTokenStore(database);
     this.runtimePolicyStore = new D1RuntimePolicyStore(database);
-    this.runLogStore = new D1RunLogStore(database, options.runLimit ?? DEFAULT_RUN_LIMIT);
+    this.runLogStore = new D1RunLogStore(
+      database,
+      options.runLimit ?? DEFAULT_RUN_LIMIT,
+      options.runRetentionInterval ?? defaultRunRetentionInterval,
+    );
     this.idempotencyStore = new D1IdempotencyStore(database, secretCodec);
     this.marketplaceStore = new D1MarketplaceStore(database);
   }
@@ -493,10 +554,13 @@ export class D1IdempotencyStore implements IIdempotencyStore {
 export class D1RunLogStore implements IRunLogStore {
   private readonly database: D1DatabaseBinding;
   private readonly limit: number;
+  private readonly retentionInterval: number;
+  private writesSinceRetention = 0;
 
-  constructor(database: D1DatabaseBinding, limit: number) {
+  constructor(database: D1DatabaseBinding, limit: number, retentionInterval: number = defaultRunRetentionInterval) {
     this.database = database;
     this.limit = limit;
+    this.retentionInterval = Math.max(1, Math.floor(retentionInterval));
   }
 
   async add(run: RunLog): Promise<RunLogWriteResult> {
@@ -527,6 +591,12 @@ export class D1RunLogStore implements IRunLogStore {
       )
       .run();
 
+    this.writesSinceRetention += 1;
+    if (this.writesSinceRetention < this.retentionInterval) {
+      return { retentionApplied: true };
+    }
+    this.writesSinceRetention = 0;
+
     try {
       await this.database
         .prepare(
@@ -543,6 +613,7 @@ export class D1RunLogStore implements IRunLogStore {
         .run();
       return { retentionApplied: true };
     } catch {
+      this.writesSinceRetention = this.retentionInterval - 1;
       return { retentionApplied: false };
     }
   }

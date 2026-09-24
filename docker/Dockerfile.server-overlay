@@ -1,0 +1,27 @@
+FROM ghcr.io/oomol-lab/open-connector@sha256:a905fc6c5ebb4843a7caa3481915c409fd1237d056462dcb44d57d35cba5ed81 AS runtime-dependencies
+
+FROM node:24-alpine
+WORKDIR /app
+
+ENV NODE_ENV=production \
+    PORT=3000 \
+    HOST=0.0.0.0 \
+    OOMOL_CONNECT_DATA_DIR=/app/data
+
+# The upstream image and this checkout have identical package lockfiles. Reuse
+# its production dependencies while replacing every application-owned path.
+COPY package.json package-lock.json ./
+COPY --from=runtime-dependencies /app/node_modules ./node_modules
+COPY scripts/healthcheck.ts scripts/ensure-generated.ts scripts/runtime-data.ts ./scripts/
+COPY migrations ./migrations
+COPY src ./src
+COPY catalog ./catalog
+COPY dist ./dist
+COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/open-connector
+
+VOLUME ["/app/data"]
+EXPOSE 3000
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+  CMD ["node", "scripts/healthcheck.ts"]
+ENTRYPOINT ["/usr/local/bin/open-connector"]
+CMD ["serve"]

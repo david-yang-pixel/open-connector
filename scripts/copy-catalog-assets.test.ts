@@ -33,6 +33,8 @@ describe("copyCatalogAssets", () => {
     expect(JSON.parse(await readFile(join(targetDir, "index.json"), "utf8"))).toEqual(index);
     expect(JSON.parse(await readFile(join(targetDir, "apps-0000.json"), "utf8"))).toEqual([alpha]);
     expect(JSON.parse(await readFile(join(targetDir, "apps-0001.json"), "utf8"))).toEqual([zulu]);
+    expect(JSON.parse(await readFile(join(targetDir, "providers", "alpha.json"), "utf8"))).toEqual(alpha);
+    expect(JSON.parse(await readFile(join(targetDir, "providers", "zulu.json"), "utf8"))).toEqual(zulu);
     for (const chunk of index.chunks) {
       expect(Buffer.byteLength(await readFile(join(targetDir, chunk), "utf8"))).toBeLessThanOrEqual(maxChunkBytes);
     }
@@ -42,6 +44,7 @@ describe("copyCatalogAssets", () => {
       "core-providers.json",
       "index.json",
       "provider-summaries.json",
+      "providers",
     ]);
   });
 
@@ -78,6 +81,7 @@ describe("copyCatalogAssets", () => {
       "core-providers.json",
       "index.json",
       "provider-summaries.json",
+      "providers",
     ]);
   });
 
@@ -108,7 +112,12 @@ describe("copyCatalogAssets", () => {
     const index = await copyCatalogAssets({ sourceDir, targetDir });
 
     expect(index).toEqual({ version: 1, providerCount: 0, chunks: [] });
-    expect((await readdir(targetDir)).sort()).toEqual(["core-providers.json", "index.json", "provider-summaries.json"]);
+    expect((await readdir(targetDir)).sort()).toEqual([
+      "core-providers.json",
+      "index.json",
+      "provider-summaries.json",
+      "providers",
+    ]);
   });
 
   // The index shape and the `apps-NNNN.json` naming are declared once here and once in the worker
@@ -127,6 +136,12 @@ describe("copyCatalogAssets", () => {
     expect(JSON.parse(await readFile(join(targetDir, "provider-summaries.json"), "utf8"))).toEqual(
       catalog.providers.map((provider) => ({ ...provider, actions: [], setup: [{ type: "no_auth" }] })),
     );
+
+    const selectedCatalog = await loadCatalogFromAssets(directoryAssets(targetDir), {
+      executableServices: ["zulu"],
+      services: ["zulu"],
+    });
+    expect(selectedCatalog.providers.map((entry) => entry.service)).toEqual(["zulu"]);
   });
 
   it("keeps curated credentialed providers in the Cloudflare runtime catalog", async () => {

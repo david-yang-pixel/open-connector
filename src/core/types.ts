@@ -357,6 +357,10 @@ export type DynamicActionAuthorization = { allowed: true } | { allowed: false; c
 export interface ExecutionContext {
   /** Resolve the credential currently configured for a provider service id. */
   getCredential(service: string): Promise<ResolvedCredential | undefined>;
+  /** Stable local connection identity for safe provider-runtime caching. */
+  connectionId?: string;
+  /** Changes whenever the stored credential or connection settings change. */
+  connectionRevision?: string;
   /** Optional local temporary file storage for actions that produce downloadable files. */
   transitFiles?: TransitFileWriter;
   /** Optional cancellation signal propagated from the HTTP request or runner. */

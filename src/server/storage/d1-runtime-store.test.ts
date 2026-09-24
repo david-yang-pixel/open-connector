@@ -5,7 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import { beforeEach, describe, expect, it } from "vitest";
 import { AesGcmSecretCodec } from "../secrets/secret-codec.ts";
 import { connectionRequestStoreTests } from "./connection-request-store.cases.ts";
-import { D1RuntimeDatabase } from "./d1-runtime-store.ts";
+import { D1RuntimeDatabase, listD1RuntimeServices, listD1RuntimeServicesForToken } from "./d1-runtime-store.ts";
 import { defaultMigrationSource } from "./migration-source.ts";
 import { RuntimeTokenService } from "./runtime-token-service.ts";
 
@@ -16,6 +16,62 @@ const githubProfile = {
 };
 
 describe("D1RuntimeDatabase", () => {
+  it("lists distinct configured and enabled Marketplace services without decoding credentials", async () => {
+    const d1 = new SqliteD1Database();
+    const database = new D1RuntimeDatabase(d1);
+    const credential = {
+      authType: "api_key" as const,
+      apiKey: "secret",
+      values: { apiKey: "secret" },
+      profile: githubProfile,
+      metadata: {},
+    };
+    await database.connectionStore.set("github", "default", credential);
+    await database.connectionStore.set("github", "work", credential);
+    await database.connectionStore.set("linear", "default", credential);
+    await database.marketplaceStore.setProviderPreference({
+      service: "slack",
+      enabled: true,
+      createdAt: "2026-09-22T00:00:00.000Z",
+      updatedAt: "2026-09-22T00:00:00.000Z",
+    });
+    await database.marketplaceStore.setProviderPreference({
+      service: "notion",
+      enabled: false,
+      createdAt: "2026-09-22T00:00:00.000Z",
+      updatedAt: "2026-09-22T00:00:00.000Z",
+    });
+
+    await expect(listD1RuntimeServices(d1)).resolves.toEqual(["github", "linear", "slack"]);
+  });
+
+  it("limits runtime services to connections granted to a stored token", async () => {
+    const d1 = new SqliteD1Database();
+    const database = new D1RuntimeDatabase(d1);
+    const credential = {
+      authType: "api_key" as const,
+      apiKey: "secret",
+      values: { apiKey: "secret" },
+      profile: githubProfile,
+      metadata: {},
+    };
+    const github = await database.connectionStore.set("github", "default", credential);
+    await database.connectionStore.set("linear", "default", credential);
+    const tokens = new RuntimeTokenService(database.runtimeTokenStore);
+    const restricted = await tokens.createToken("GitHub only", {
+      allowedActions: [],
+      blockedActions: [],
+      allowedProxies: [],
+      allowedConnections: [github.id, "deleted-connection-id"],
+    });
+    const unrestricted = await tokens.createToken("All connections");
+
+    await expect(listD1RuntimeServicesForToken(d1, restricted.token)).resolves.toEqual(["github"]);
+    await expect(listD1RuntimeServicesForToken(d1, unrestricted.token)).resolves.toBeUndefined();
+    await expect(listD1RuntimeServicesForToken(d1, "oct_invalid")).resolves.toBeUndefined();
+    await expect(listD1RuntimeServicesForToken(d1, "not-a-stored-token")).resolves.toBeUndefined();
+  });
+
   it("stores connections and OAuth client configs through the secret codec", async () => {
     const d1 = new SqliteD1Database();
     const database = new D1RuntimeDatabase(d1, {
@@ -429,7 +485,10 @@ describe("D1RuntimeDatabase", () => {
   });
 
   it("keeps only the configured number of recent runs", async () => {
-    const database = new D1RuntimeDatabase(new SqliteD1Database(), { runLimit: 2 });
+    const database = new D1RuntimeDatabase(new SqliteD1Database(), {
+      runLimit: 2,
+      runRetentionInterval: 1,
+    });
 
     await database.runLogStore.add(createRun("run-1", "2026-06-30T00:00:00.000Z"));
     await database.runLogStore.add(createRun("run-2", "2026-06-30T00:00:01.000Z"));
@@ -437,6 +496,25 @@ describe("D1RuntimeDatabase", () => {
 
     await expect(database.runLogStore.list()).resolves.toMatchObject({
       items: [{ id: "run-3" }, { id: "run-2" }],
+    });
+  });
+
+  it("batches run retention instead of scanning the full run index after every insert", async () => {
+    const d1 = new SqliteD1Database();
+    const database = new D1RuntimeDatabase(d1, {
+      runLimit: 2,
+      runRetentionInterval: 2,
+    });
+
+    await database.runLogStore.add(createRun("run-1", "2026-06-30T00:00:00.000Z"));
+    await database.runLogStore.add(createRun("run-2", "2026-06-30T00:00:01.000Z"));
+    await database.runLogStore.add(createRun("run-3", "2026-06-30T00:00:02.000Z"));
+    await expect(d1.prepare("select count(*) as count from runs").first()).resolves.toEqual({ count: 3 });
+
+    await database.runLogStore.add(createRun("run-4", "2026-06-30T00:00:03.000Z"));
+    await expect(d1.prepare("select count(*) as count from runs").first()).resolves.toEqual({ count: 2 });
+    await expect(database.runLogStore.list()).resolves.toMatchObject({
+      items: [{ id: "run-4" }, { id: "run-3" }],
     });
   });
 
@@ -492,7 +570,7 @@ describe("D1RuntimeDatabase", () => {
 
   it("keeps an inserted run when retention cleanup fails", async () => {
     const d1 = new SqliteD1Database();
-    const database = new D1RuntimeDatabase(d1, { runLimit: 1 });
+    const database = new D1RuntimeDatabase(d1, { runLimit: 1, runRetentionInterval: 1 });
     await database.runLogStore.add(createRun("run-1", "2026-06-30T00:00:00.000Z"));
     d1.exec(`
       create trigger fail_run_retention before delete on runs begin

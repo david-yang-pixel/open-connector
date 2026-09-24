@@ -117,6 +117,7 @@ export class ActionRunner {
               connection.getCredential,
               input.policy,
               connection.summary?.authType === "no_auth" ? undefined : connection.summary?.id,
+              connection.revision,
               input.signal,
             ),
           );
@@ -209,10 +210,13 @@ export class ActionRunner {
     getCredential: ExecutionConnection["getCredential"],
     policy: ActionPolicySnapshot,
     connectionId: string | undefined,
+    connectionRevision: string | undefined,
     signal: AbortSignal | undefined,
   ): ExecutionContext {
     const context: ExecutionContext = {
       getCredential,
+      connectionId,
+      connectionRevision,
       signal,
       authorizeAction(action) {
         const decision = policy.evaluate(action);

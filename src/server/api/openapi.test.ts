@@ -225,6 +225,7 @@ describe("action execution OpenAPI", () => {
       "proxy_blocked",
       "connection_not_allowed",
       "connection_operation_not_allowed",
+      "connection_tool_not_allowed",
     ]);
     expect(runLog.properties).toHaveProperty("policy");
     expect(runLog.properties).toHaveProperty("runtimeTokenId");

@@ -286,7 +286,18 @@ async function hasValidRuntimeToken(context: Context, options: LocalAuthOptions)
 }
 
 function readBearerToken(context: Context): string | undefined {
-  return normalizeToken(readBearerCredential(context));
+  return readBearerTokenFromAuthorizationHeader(context.req.header("authorization") ?? null);
+}
+
+/** Read a stored/JWT runtime token from an Authorization header without authenticating it. */
+export function readBearerTokenFromAuthorizationHeader(authorization: string | null): string | undefined {
+  const value = authorization ?? "";
+  const separator = value.indexOf(" ");
+  if (separator < 0 || value.slice(0, separator).toLowerCase() !== bearerScheme) {
+    return undefined;
+  }
+
+  return normalizeToken(value.slice(separator + 1));
 }
 
 /**

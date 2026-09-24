@@ -441,4 +441,105 @@ describe("ActionPolicyService", () => {
       code: "connection_not_allowed",
     });
   });
+
+  it("enforces exact tool policies independently for each connection", () => {
+    const firstConnection = new ActionPolicyService().createSnapshot(undefined, {
+      allowedActions: [],
+      blockedActions: [],
+      allowedProxies: [],
+      connectionPermissions: [
+        {
+          connectionId: workConnectionId,
+          access: "write",
+          toolPolicy: { mode: "selected", allowedActionIds: ["github.create_issue"] },
+          allowProxy: false,
+        },
+        {
+          connectionId: otherConnectionId,
+          access: "write",
+          toolPolicy: { mode: "selected", allowedActionIds: ["github.other"] },
+          allowProxy: false,
+        },
+      ],
+    });
+    const otherAction = { ...action, id: "github.other" };
+
+    expect(firstConnection.evaluateConnection(workConnectionId, action)).toMatchObject({ allowed: true });
+    expect(firstConnection.evaluateConnection(workConnectionId, otherAction)).toMatchObject({
+      allowed: false,
+      code: "connection_tool_not_allowed",
+    });
+    expect(firstConnection.evaluateConnection(otherConnectionId, action)).toMatchObject({
+      allowed: false,
+      code: "connection_tool_not_allowed",
+    });
+    expect(firstConnection.evaluateConnection(otherConnectionId, otherAction)).toMatchObject({ allowed: true });
+  });
+
+  it("applies operation risk before tool selection and keeps raw proxy access separate", () => {
+    const readOnly = new ActionPolicyService().createSnapshot(undefined, {
+      allowedActions: [],
+      blockedActions: [],
+      allowedProxies: ["example"],
+      connectionPermissions: [
+        {
+          connectionId: workConnectionId,
+          access: "read",
+          toolPolicy: { mode: "selected", allowedActionIds: ["github.create_issue"] },
+          allowProxy: false,
+        },
+      ],
+    });
+    const proxyDisabled = new ActionPolicyService().createSnapshot(undefined, {
+      allowedActions: [],
+      blockedActions: [],
+      allowedProxies: ["example"],
+      connectionPermissions: [{ connectionId: workConnectionId, access: "full", allowProxy: false }],
+    });
+    const proxyEnabled = new ActionPolicyService().createSnapshot(undefined, {
+      allowedActions: [],
+      blockedActions: [],
+      allowedProxies: ["example"],
+      connectionPermissions: [{ connectionId: workConnectionId, access: "full", allowProxy: true }],
+    });
+
+    expect(readOnly.evaluateConnection(workConnectionId, action)).toMatchObject({
+      allowed: false,
+      code: "connection_operation_not_allowed",
+    });
+    expect(readOnly.evaluateConnection(workConnectionId, "proxy")).toMatchObject({
+      allowed: false,
+      code: "connection_operation_not_allowed",
+    });
+    expect(proxyDisabled.evaluateConnection(workConnectionId, "proxy")).toMatchObject({
+      allowed: false,
+      code: "connection_operation_not_allowed",
+    });
+    expect(proxyEnabled.evaluateConnection(workConnectionId, "proxy")).toMatchObject({ allowed: true });
+  });
+
+  it("lets Custom MCP transport actions reach the connection-scoped dynamic tool check", () => {
+    const snapshot = new ActionPolicyService().createSnapshot(undefined, {
+      allowedActions: [],
+      blockedActions: [],
+      allowedProxies: [],
+      connectionPermissions: [
+        {
+          connectionId: workConnectionId,
+          access: "read",
+          toolPolicy: { mode: "selected", allowedActionIds: ["custom_mcp.remote.query_logs"] },
+        },
+      ],
+    });
+    const wrapper = { ...action, id: "custom_mcp.call_tool", operationType: "read" as const };
+    const selectedTool = { ...action, id: "custom_mcp.remote.query_logs", operationType: "read" as const };
+    const unselectedTool = { ...action, id: "custom_mcp.remote.other", operationType: "read" as const };
+
+    expect(snapshot.evaluateConnection(workConnectionId, wrapper)).toMatchObject({ allowed: true });
+    expect(snapshot.evaluateConnection(workConnectionId, selectedTool)).toMatchObject({ allowed: true });
+    expect(snapshot.evaluateConnection(workConnectionId, unselectedTool)).toMatchObject({
+      allowed: false,
+      code: "connection_tool_not_allowed",
+    });
+  });
 });

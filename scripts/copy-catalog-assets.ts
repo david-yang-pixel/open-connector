@@ -3,6 +3,7 @@ import type { ProviderDefinition } from "../src/core/types.ts";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createCatalogStore, resolveExecutableActionIds } from "../src/catalog-store.ts";
+import { assertProviderId } from "../src/core/provider-id.ts";
 import { executorModules } from "../src/providers/registry.cloudflare.generated.ts";
 
 export const defaultCatalogChunkBytes = 4 * 1024 * 1024;
@@ -50,6 +51,8 @@ export async function copyCatalogAssets(options: CopyCatalogAssetsOptions): Prom
 
   await rm(options.targetDir, { recursive: true, force: true });
   await mkdir(options.targetDir, { recursive: true });
+  const providerDir = join(options.targetDir, "providers");
+  await mkdir(providerDir);
 
   const chunkNames = chunks.map((_, index) => `apps-${index.toString().padStart(4, "0")}.json`);
   const index: CatalogAssetIndex = {
@@ -100,6 +103,9 @@ export async function copyCatalogAssets(options: CopyCatalogAssetsOptions): Prom
     "huggingface",
   ]);
   const catalogProviders = rawProviders.map((entry) => entry.provider as ProviderDefinition);
+  for (const provider of catalogProviders) {
+    assertProviderId(provider.service, "catalog provider service");
+  }
   const coreProviders = catalogProviders.filter(
     (provider) => coreServices.has(provider.service) || provider.auth.some((auth) => auth.type === "no_auth"),
   );
@@ -116,6 +122,9 @@ export async function copyCatalogAssets(options: CopyCatalogAssetsOptions): Prom
     writeFile(join(options.targetDir, "index.json"), `${JSON.stringify(index)}\n`),
     writeFile(join(options.targetDir, "provider-summaries.json"), providerSummariesJson),
     writeFile(join(options.targetDir, "core-providers.json"), JSON.stringify(coreProviders)),
+    ...rawProviders.map((entry) =>
+      writeFile(join(providerDir, `${(entry.provider as ProviderDefinition).service}.json`), entry.json),
+    ),
     ...chunks.map((chunk, index) => writeFile(join(options.targetDir, chunkNames[index]!), chunk)),
   ]);
 

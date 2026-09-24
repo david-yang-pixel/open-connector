@@ -10,6 +10,7 @@ import type { CloudflareEnv } from "./cloudflare/cloudflare-env.ts";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import worker from "./cloudflare.ts";
+import { hashRuntimeToken } from "./storage/runtime-token-service.ts";
 
 const provider = {
   service: "example",
@@ -120,6 +121,94 @@ describe("cloudflare worker", () => {
     await expect(response.json()).resolves.toEqual({
       adminAuthConfigured: false,
       authenticated: true,
+    });
+  });
+
+  it("loads runtime providers from configured D1 services and refreshes when that set changes", async () => {
+    const database = new RuntimeServicesD1Database(["zulu"]);
+    const env: CloudflareEnv = {
+      DB: database,
+      TRANSIT_FILES: new UnusedR2Bucket(),
+      ASSETS: memoryAssets({
+        ...chunkedCatalog(),
+        "/catalog/providers/example.json": provider,
+        "/catalog/providers/zulu.json": { ...provider, service: "zulu" },
+      }),
+      OOMOL_CONNECT_RUNTIME_TOKEN: "runtime-secret",
+    };
+    const request = (): Request =>
+      new Request("https://runtime-catalog.example.com/v1/providers", {
+        headers: { authorization: "Bearer runtime-secret" },
+      });
+
+    const first = await worker.fetch(request(), env, createExecutionContext());
+    expect(first.status).toBe(200);
+    await expect(first.json()).resolves.toMatchObject({ data: [{ service: "zulu" }] });
+
+    database.setServices(["example"]);
+    const second = await worker.fetch(request(), env, createExecutionContext());
+    expect(second.status).toBe(200);
+    await expect(second.json()).resolves.toMatchObject({ data: [{ service: "example" }] });
+  });
+
+  it("loads only providers reachable through an explicitly restricted stored token", async () => {
+    const token = "oct_restricted";
+    const env: CloudflareEnv = {
+      DB: new TokenScopedRuntimeServicesD1Database(token),
+      TRANSIT_FILES: new UnusedR2Bucket(),
+      ASSETS: memoryAssets({
+        ...chunkedCatalog(),
+        "/catalog/providers/custom_mcp.json": { ...provider, service: "custom_mcp" },
+        "/catalog/providers/example.json": provider,
+      }),
+      OOMOL_CONNECT_RUNTIME_TOKEN: token,
+    };
+
+    const response = await worker.fetch(
+      new Request("https://token-runtime-catalog.example.com/v1/providers", {
+        headers: { authorization: `Bearer ${token}` },
+      }),
+      env,
+      createExecutionContext(),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ data: [{ service: "custom_mcp" }] });
+  });
+
+  it("returns a structured MCP error when runtime bootstrap storage is unavailable", async () => {
+    const env: CloudflareEnv = {
+      DB: new FailingD1Database(new Error("D1_ERROR: Your account has exceeded D1's free tier daily row read limit.")),
+      TRANSIT_FILES: new UnusedR2Bucket(),
+      ASSETS: memoryAssets(chunkedCatalog()),
+    };
+    const response = await worker.fetch(
+      new Request("https://runtime-storage-failure.example.com/mcp", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer oct_runtime",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 42, method: "tools/list", params: {} }),
+      }),
+      env,
+      createExecutionContext(),
+    );
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("content-type")).toContain("application/json");
+    await expect(response.json()).resolves.toEqual({
+      jsonrpc: "2.0",
+      id: null,
+      error: {
+        code: -32_001,
+        message: "OpenConnector runtime storage is temporarily unavailable.",
+        data: {
+          errorCode: "runtime_storage_quota_exceeded",
+          retryable: false,
+        },
+      },
+      retryable: false,
     });
   });
 
@@ -271,6 +360,173 @@ class EmptyMarketplaceD1Database implements D1DatabaseBinding {
       return new EmptyMarketplaceConfigStatement();
     }
     throw new Error(`Unexpected D1 query: ${query}`);
+  }
+}
+
+class FailingD1Database implements D1DatabaseBinding {
+  private readonly error: Error;
+
+  constructor(error: Error) {
+    this.error = error;
+  }
+
+  async batch(): Promise<{ results: Record<string, unknown>[] }[]> {
+    throw this.error;
+  }
+
+  prepare(): D1PreparedStatementBinding {
+    return new FailingD1Statement(this.error);
+  }
+}
+
+class FailingD1Statement implements D1PreparedStatementBinding {
+  private readonly error: Error;
+
+  constructor(error: Error) {
+    this.error = error;
+  }
+
+  bind(): D1PreparedStatementBinding {
+    return this;
+  }
+
+  async first<T = Record<string, unknown>>(): Promise<T | null> {
+    throw this.error;
+  }
+
+  async all<T = Record<string, unknown>>(): Promise<{ results: T[] }> {
+    throw this.error;
+  }
+
+  async run(): Promise<{ success: boolean; meta: { changes?: number } }> {
+    throw this.error;
+  }
+}
+
+class RuntimeServicesD1Database implements D1DatabaseBinding {
+  private services: string[];
+
+  constructor(services: string[]) {
+    this.services = services;
+  }
+
+  setServices(services: string[]): void {
+    this.services = services;
+  }
+
+  async batch(): Promise<{ results: Record<string, unknown>[] }[]> {
+    throw new Error("Unexpected D1 batch");
+  }
+
+  prepare(query: string): D1PreparedStatementBinding {
+    if (query === "select value from marketplace_config where id = 1") {
+      return new EmptyMarketplaceConfigStatement();
+    }
+    if (query.includes("select service from connections") && query.includes("provider_preferences")) {
+      return new RuntimeServicesStatement(() => this.services);
+    }
+    throw new Error(`Unexpected D1 query: ${query}`);
+  }
+}
+
+class TokenScopedRuntimeServicesD1Database implements D1DatabaseBinding {
+  private readonly tokenHash: string;
+
+  constructor(token: string) {
+    this.tokenHash = hashRuntimeToken(token);
+  }
+
+  async batch(): Promise<{ results: Record<string, unknown>[] }[]> {
+    throw new Error("Unexpected D1 batch");
+  }
+
+  prepare(query: string): D1PreparedStatementBinding {
+    if (query === "select value from marketplace_config where id = 1") {
+      return new EmptyMarketplaceConfigStatement();
+    }
+    if (query.includes("select service from connections") && query.includes("provider_preferences")) {
+      return new RuntimeServicesStatement(() => ["custom_mcp", "example"]);
+    }
+    if (query.includes("from runtime_tokens") && query.includes("where token_hash = ?")) {
+      return new BoundD1Statement((values) =>
+        values[0] === this.tokenHash
+          ? {
+              id: "token-id",
+              name: "Restricted token",
+              token_hash: this.tokenHash,
+              allowed_actions: "[]",
+              blocked_actions: "[]",
+              allowed_proxies: "[]",
+              allowed_connections: '["connection-custom"]',
+              connection_permissions: "[]",
+              created_at: "2026-09-22T00:00:00.000Z",
+              last_used_at: null,
+            }
+          : null,
+      );
+    }
+    if (query.includes("select distinct service from connections where id in")) {
+      return new BoundD1Statement(
+        () => null,
+        () => [{ service: "custom_mcp" }],
+      );
+    }
+    throw new Error(`Unexpected D1 query: ${query}`);
+  }
+}
+
+class BoundD1Statement implements D1PreparedStatementBinding {
+  private readonly allResults: (values: unknown[]) => Record<string, unknown>[];
+  private readonly firstResult: (values: unknown[]) => Record<string, unknown> | null;
+  private values: unknown[] = [];
+
+  constructor(
+    firstResult: (values: unknown[]) => Record<string, unknown> | null,
+    allResults: (values: unknown[]) => Record<string, unknown>[] = () => [],
+  ) {
+    this.firstResult = firstResult;
+    this.allResults = allResults;
+  }
+
+  bind(...values: unknown[]): D1PreparedStatementBinding {
+    this.values = values;
+    return this;
+  }
+
+  async first<T = Record<string, unknown>>(): Promise<T | null> {
+    return this.firstResult(this.values) as T | null;
+  }
+
+  async all<T = Record<string, unknown>>(): Promise<{ results: T[] }> {
+    return { results: this.allResults(this.values) as T[] };
+  }
+
+  async run(): Promise<{ success: boolean; meta: { changes?: number } }> {
+    throw new Error("Unexpected D1 run");
+  }
+}
+
+class RuntimeServicesStatement implements D1PreparedStatementBinding {
+  private readonly services: () => string[];
+
+  constructor(services: () => string[]) {
+    this.services = services;
+  }
+
+  bind(): D1PreparedStatementBinding {
+    throw new Error("Unexpected D1 bind");
+  }
+
+  async first<T = Record<string, unknown>>(): Promise<T | null> {
+    throw new Error("Unexpected D1 first");
+  }
+
+  async all<T = Record<string, unknown>>(): Promise<{ results: T[] }> {
+    return { results: this.services().map((service) => ({ service })) as T[] };
+  }
+
+  async run(): Promise<{ success: boolean; meta: { changes?: number } }> {
+    throw new Error("Unexpected D1 run");
   }
 }
 

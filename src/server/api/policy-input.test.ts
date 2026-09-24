@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { policyRuleListMaxItems, policyRuleMaxBytes, readRuntimePolicyRules, readTokenPolicy } from "./policy-input.ts";
+import {
+  connectionToolListMaxItems,
+  policyRuleListMaxItems,
+  policyRuleMaxBytes,
+  readRuntimePolicyRules,
+  readTokenPolicy,
+} from "./policy-input.ts";
 
 describe("policy input", () => {
   it("trims and stably deduplicates complete Runtime policy rules", () => {
@@ -127,6 +133,103 @@ describe("policy input", () => {
         connectionPermissions: [{ connectionId: "work", access: "admin" }],
       }),
     ).toThrow("must be read, write, or full");
+  });
+
+  it("accepts connection-scoped selected and excluded tool policies", () => {
+    expect(
+      readTokenPolicy({
+        allowedActions: [],
+        blockedActions: [],
+        allowedProxies: [],
+        allowedConnections: [],
+        connectionPermissions: [
+          {
+            connectionId: "work",
+            access: "write",
+            allowProxy: false,
+            toolPolicy: {
+              mode: "selected",
+              allowedActionIds: ["github.get_repository", "github.create_issue", "github.get_repository"],
+            },
+          },
+          {
+            connectionId: "archive",
+            access: "read",
+            toolPolicy: { mode: "all", excludedActionIds: ["github.get_audit_log"] },
+          },
+        ],
+      }),
+    ).toMatchObject({
+      connectionPermissions: [
+        {
+          connectionId: "work",
+          access: "write",
+          allowProxy: false,
+          toolPolicy: {
+            mode: "selected",
+            allowedActionIds: ["github.get_repository", "github.create_issue"],
+          },
+        },
+        {
+          connectionId: "archive",
+          access: "read",
+          toolPolicy: { mode: "all", excludedActionIds: ["github.get_audit_log"] },
+        },
+      ],
+    });
+  });
+
+  it("rejects empty selected tool policies, wildcard IDs, invalid proxy flags, and oversized tool lists", () => {
+    const base = {
+      allowedActions: [],
+      blockedActions: [],
+      allowedProxies: [],
+      allowedConnections: [],
+    };
+    expect(() =>
+      readTokenPolicy({
+        ...base,
+        connectionPermissions: [
+          { connectionId: "work", access: "read", toolPolicy: { mode: "selected", allowedActionIds: [] } },
+        ],
+      }),
+    ).toThrow("at least one allowed action ID");
+    expect(() =>
+      readTokenPolicy({
+        ...base,
+        connectionPermissions: [
+          {
+            connectionId: "work",
+            access: "read",
+            toolPolicy: { mode: "selected", allowedActionIds: ["github.*"] },
+          },
+        ],
+      }),
+    ).toThrow("exact action IDs");
+    expect(() =>
+      readTokenPolicy({
+        ...base,
+        connectionPermissions: [{ connectionId: "work", access: "full", allowProxy: "yes" }],
+      }),
+    ).toThrow("allowProxy must be a boolean");
+    expect(() =>
+      readTokenPolicy({
+        ...base,
+        connectionPermissions: [
+          {
+            connectionId: "work",
+            access: "read",
+            toolPolicy: {
+              mode: "selected",
+              allowedActionIds: Array.from(
+                { length: connectionToolListMaxItems + 1 },
+                (_, index) => `github.action_${index}`,
+              ),
+            },
+          },
+        ],
+      }),
+    ).toThrow(`more than ${connectionToolListMaxItems}`);
   });
 
   it.each(["", " "])("rejects empty allowedConnections value %s", (connectionId) => {

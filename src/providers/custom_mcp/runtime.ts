@@ -21,7 +21,12 @@ import {
   readCustomMcpPaginationRules,
 } from "./pagination.ts";
 import { processCustomMcpResult } from "./result.ts";
-import { authorizeCustomMcpTool, describeCustomMcpTool, validateCustomMcpToolArguments } from "./tool-contract.ts";
+import {
+  authorizeCustomMcpTool,
+  customMcpToolActionDefinition,
+  describeCustomMcpTool,
+  validateCustomMcpToolArguments,
+} from "./tool-contract.ts";
 
 const defaultRequestTimeoutMs = 60_000;
 const minRequestTimeoutMs = 1_000;
@@ -31,8 +36,19 @@ const minInlineResultMaxBytes = 4 * 1024;
 const maxInlineResultMaxBytes = 16 * 1024 * 1024;
 const maxFallbackEndpointCount = 10;
 const maxToolTimeoutCount = 1_000;
+const toolCatalogCacheTtlMs = 5 * 60_000;
+const maxToolCatalogCacheEntries = 128;
+
+interface CustomMcpToolCatalogCacheEntry {
+  expiresAt: number;
+  value: Promise<Tool[]>;
+}
+
+const toolCatalogCache = new Map<string, CustomMcpToolCatalogCacheEntry>();
 
 interface CustomMcpHostContext {
+  connectionId?: string;
+  connectionRevision?: string;
   signal?: AbortSignal;
   transitFiles?: TransitFileWriter;
   authorizeAction?(action: ActionDefinition): { allowed: true } | { allowed: false; code: string; message: string };
@@ -51,6 +67,7 @@ export interface CustomMcpContext {
   toolOperationTypes: Record<string, ActionOperationType>;
   inlineResultMaxBytes: number;
   paginationRules: CustomMcpPaginationRules;
+  toolCatalogCacheKey?: string;
 }
 
 export interface CustomMcpPublishedTool extends CustomMcpToolDescriptor {
@@ -88,6 +105,8 @@ export function createCustomMcpContext(
       maxInlineResultMaxBytes,
     ),
     paginationRules: readCustomMcpPaginationRules(values.paginationRules),
+    toolCatalogCacheKey:
+      host.connectionId && host.connectionRevision ? `${host.connectionId}:${host.connectionRevision}` : undefined,
   };
 }
 
@@ -113,12 +132,15 @@ export async function validateCustomMcpCredential(
 }
 
 export async function listCustomMcpTools(context: CustomMcpContext): Promise<CustomMcpPublishedTool[]> {
-  return withCustomMcpClient(context, async (client) => {
-    return (await listAllCustomMcpTools(client, context)).map((tool) => ({
-      ...describeCustomMcpTool(tool, context.toolOperationTypes[tool.name]),
-      pagination: context.paginationRules[tool.name],
-    }));
-  });
+  const published: CustomMcpPublishedTool[] = [];
+  for (const tool of await getCustomMcpToolCatalog(context)) {
+    const descriptor = describeCustomMcpTool(tool, context.toolOperationTypes[tool.name]);
+    if (context.authorizeAction && !context.authorizeAction(customMcpToolActionDefinition(tool, descriptor)).allowed) {
+      continue;
+    }
+    published.push({ ...descriptor, pagination: context.paginationRules[tool.name] });
+  }
+  return published;
 }
 
 export async function callCustomMcpTool(
@@ -128,7 +150,7 @@ export async function callCustomMcpTool(
   const toolName = requiredString(input.toolName, "toolName", providerInputError);
   const args = optionalRecord(input.arguments) ?? {};
   return withCustomMcpClient(context, async (client) => {
-    const tools = await listAllCustomMcpTools(client, context);
+    const tools = await getCustomMcpToolCatalog(context, client);
     const tool = tools.find((candidate) => candidate.name === toolName);
     if (!tool) {
       throw new ProviderRequestError(404, `Remote MCP tool was not found: ${toolName}.`, {
@@ -176,6 +198,41 @@ export async function callCustomMcpTool(
       ...descriptor,
     });
   });
+}
+
+async function getCustomMcpToolCatalog(context: CustomMcpContext, client?: Client): Promise<Tool[]> {
+  const cacheKey = context.toolCatalogCacheKey;
+  if (!cacheKey) {
+    return client
+      ? listAllCustomMcpTools(client, context)
+      : withCustomMcpClient(context, (connectedClient) => listAllCustomMcpTools(connectedClient, context));
+  }
+
+  const now = Date.now();
+  const cached = toolCatalogCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) {
+    return cached.value;
+  }
+  if (cached) toolCatalogCache.delete(cacheKey);
+
+  const value = client
+    ? listAllCustomMcpTools(client, context)
+    : withCustomMcpClient(context, (connectedClient) => listAllCustomMcpTools(connectedClient, context));
+  const entry = { expiresAt: now + toolCatalogCacheTtlMs, value };
+  toolCatalogCache.set(cacheKey, entry);
+  trimToolCatalogCache();
+  void value.catch(() => {
+    if (toolCatalogCache.get(cacheKey) === entry) toolCatalogCache.delete(cacheKey);
+  });
+  return value;
+}
+
+function trimToolCatalogCache(): void {
+  while (toolCatalogCache.size > maxToolCatalogCacheEntries) {
+    const oldestKey = toolCatalogCache.keys().next().value as string | undefined;
+    if (!oldestKey) return;
+    toolCatalogCache.delete(oldestKey);
+  }
 }
 
 function assertCustomMcpToolSucceeded(result: CallToolResult, toolName: string): void {

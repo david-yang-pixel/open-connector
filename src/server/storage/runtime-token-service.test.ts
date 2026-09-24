@@ -144,20 +144,35 @@ describe("RuntimeTokenService", () => {
       allowedProxies: [],
       allowedConnections: [],
       connectionPermissions: [
-        { connectionId: "example:readonly", access: "read" },
+        {
+          connectionId: "example:readonly",
+          access: "read",
+          toolPolicy: { mode: "selected", allowedActionIds: ["example.get"] },
+          allowProxy: false,
+        },
         { connectionId: "example:writer", access: "write" },
       ],
     });
 
     expect(created.record.allowedConnections).toEqual(["example:readonly", "example:writer"]);
     expect(created.record.connectionPermissions).toEqual([
-      { connectionId: "example:readonly", access: "read" },
+      {
+        connectionId: "example:readonly",
+        access: "read",
+        toolPolicy: { mode: "selected", allowedActionIds: ["example.get"] },
+        allowProxy: false,
+      },
       { connectionId: "example:writer", access: "write" },
     ]);
     await expect(service.resolveToken(created.token)).resolves.toMatchObject({
       allowedConnections: ["example:readonly", "example:writer"],
       connectionPermissions: [
-        { connectionId: "example:readonly", access: "read" },
+        {
+          connectionId: "example:readonly",
+          access: "read",
+          toolPolicy: { mode: "selected", allowedActionIds: ["example.get"] },
+          allowProxy: false,
+        },
         { connectionId: "example:writer", access: "write" },
       ],
     });

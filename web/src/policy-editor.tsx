@@ -25,6 +25,7 @@ interface PolicyEditorProps {
   providers: ProviderDefinition[];
   includeProxies: boolean;
   proxyAccess?: "constraint" | "grant";
+  showActionPresets?: boolean;
   connectionEditor?: ReactNode;
   connectionInvalid?: boolean;
   onChange(draft: PolicyEditorDraft): void;
@@ -36,7 +37,13 @@ export function PolicyEditor(props: PolicyEditorProps): ReactNode {
   const actionIssue = issues.find((issue) => issue.field === "allowedActions" || issue.field === "blockedActions");
   const proxyIssue = issues.find((issue) => issue.field === "allowedProxies" || issue.field === "blockedProxies");
   const actionEditor = (
-    <PolicyResourceEditor resource="action" draft={props.draft} providers={props.providers} onChange={props.onChange} />
+    <PolicyResourceEditor
+      resource="action"
+      draft={props.draft}
+      providers={props.providers}
+      showPresets={props.showActionPresets !== false}
+      onChange={props.onChange}
+    />
   );
 
   return (
@@ -100,6 +107,7 @@ interface PolicyResourceEditorProps {
   draft: PolicyEditorDraft;
   providers: ProviderDefinition[];
   proxyAccess?: "constraint" | "grant";
+  showPresets?: boolean;
   onChange(draft: PolicyEditorDraft): void;
 }
 
@@ -174,7 +182,7 @@ function PolicyResourceEditor(props: PolicyResourceEditorProps): ReactNode {
 
   return (
     <div className="policy-resource-editor">
-      {props.resource === "action" ? (
+      {props.resource === "action" && props.showPresets !== false ? (
         <div className="space-y-1.5 mb-2">
           <div className="text-xs font-medium text-muted-foreground">{t("access.policy.editor.quickPresets")}</div>
           <div className="grid grid-cols-3 gap-2">

@@ -258,6 +258,26 @@ describe("ActionRunner", () => {
     expect(run?.result.ok).toBe(true);
   });
 
+  it("passes stored connection identity and revision to the provider execution context", async () => {
+    const store = new MemoryConnectionStore();
+    const connection = await store.set("example", "default", credential);
+    const runner = createRunner({
+      runs: new MemoryRunLogStore(),
+      logger: createTestLogger().logger,
+      provider: authenticatedProvider,
+      store,
+      providerLoader: new TestProviderLoader(async (_input, context) => {
+        expect(context.connectionId).toBe(connection.id);
+        expect(context.connectionRevision).toBe(connection.revision);
+        return { ok: true, output: {} };
+      }),
+    });
+
+    const run = await runner.run({ actionId: "example.echo", input: {}, caller: "mcp", policy: openPolicy });
+
+    expect(run?.result.ok).toBe(true);
+  });
+
   it("records policy denial before resolving a connection or loading an executor", async () => {
     const runs = new MemoryRunLogStore();
     const { logger } = createTestLogger();
@@ -384,6 +404,68 @@ describe("ActionRunner", () => {
     expect(unrestricted?.result).toMatchObject({ ok: true });
     expect(denied?.result).toMatchObject({ ok: false, error: { code: "connection_not_allowed" } });
     expect(resolveConnection).toHaveBeenCalledTimes(2);
+  });
+
+  it("enforces the selected tool list at the shared execution boundary", async () => {
+    const runs = new MemoryRunLogStore();
+    const store = new MemoryConnectionStore();
+    const connection = await store.set("example", "work", credential);
+    const providerLoader = new TestProviderLoader(async () => ({ ok: true, output: { message: "ok" } }));
+    const loadExecutor = vi.spyOn(providerLoader, "loadActionExecutor");
+    const runner = createRunner({
+      runs,
+      logger: createTestLogger().logger,
+      providerLoader,
+      provider: authenticatedProvider,
+      store,
+    });
+
+    const denied = await runner.run({
+      actionId: "example.echo",
+      input: {},
+      caller: "http",
+      connectionName: "work",
+      policy: new ActionPolicyService().createSnapshot(undefined, {
+        allowedActions: ["example.*"],
+        blockedActions: [],
+        allowedProxies: [],
+        connectionPermissions: [
+          {
+            connectionId: connection.id,
+            access: "read",
+            toolPolicy: { mode: "selected", allowedActionIds: ["example.other"] },
+            allowProxy: false,
+          },
+        ],
+      }),
+    });
+    const allowed = await runner.run({
+      actionId: "example.echo",
+      input: {},
+      caller: "http",
+      connectionName: "work",
+      policy: new ActionPolicyService().createSnapshot(undefined, {
+        allowedActions: ["example.*"],
+        blockedActions: [],
+        allowedProxies: [],
+        connectionPermissions: [
+          {
+            connectionId: connection.id,
+            access: "read",
+            toolPolicy: { mode: "selected", allowedActionIds: ["example.echo"] },
+            allowProxy: false,
+          },
+        ],
+      }),
+    });
+
+    expect(denied?.result).toMatchObject({
+      ok: false,
+      error: { code: "connection_tool_not_allowed" },
+    });
+    expect(allowed?.result).toMatchObject({ ok: true });
+    expect(loadExecutor).toHaveBeenCalledOnce();
+    expect(runs.items.map((item) => item.errorCode)).toEqual(["connection_tool_not_allowed", undefined]);
   });
 
   it("rechecks nested dynamic actions against the selected connection access level", async () => {

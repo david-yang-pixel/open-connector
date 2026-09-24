@@ -501,6 +501,48 @@ describe("ConnectServer", () => {
     });
   });
 
+  it("returns a lightweight per-connection tool catalog for permission editing", async () => {
+    const provider: ProviderDefinition = {
+      ...apiKeyProvider,
+      actions: [
+        { ...echoAction, operationType: "read" },
+        { ...followUpAction, operationType: "destructive" },
+      ],
+    };
+    const app = createTestServer([provider]).createApp();
+    const connected = await app.request("/api/connections/example", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ authType: "api_key", values: { apiKey: "example-key" } }),
+    });
+    const connection = (await connected.json()) as { id: string };
+
+    const response = await app.request(`/api/connections/tools/${connection.id}`);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      connectionId: connection.id,
+      service: "example",
+      total: 2,
+      tools: [
+        {
+          actionId: "example.echo",
+          name: "echo",
+          description: "Echo input.",
+          operationType: "read",
+        },
+        {
+          actionId: "example.follow_up",
+          name: "follow_up",
+          description: "Echo input.",
+          operationType: "destructive",
+        },
+      ],
+    });
+    const missing = await app.request("/api/connections/tools/unknown");
+    expect(missing.status).toBe(404);
+  });
+
   it("patches optional public connection settings without accepting secrets", async () => {
     const app = createTestServer([customCredentialProvider]).createApp();
     const connected = await app.request("/api/connections/custom", {
@@ -679,6 +721,10 @@ describe("ConnectServer", () => {
         message: "A valid local bearer token is required.",
       },
     });
+    expect((await app.request("/api/cloudflare-usage")).status).toBe(401);
+    expect(
+      (await app.request("/api/cloudflare-usage", { headers: { authorization: "Bearer runtime-token" } })).status,
+    ).toBe(401);
 
     const authorized = await app.request("/api/providers/example", {
       headers: { authorization: "Bearer local-token" },

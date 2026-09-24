@@ -8,7 +8,12 @@ import {
   idempotencyRetentionHours,
 } from "../actions/action-idempotency.ts";
 import { oauthConnectionInput, apiKeyConnectionInput, customConnectionInput } from "./connection-input.ts";
-import { policyRequestMaxBytes, policyRuleListMaxItems, policyRuleMaxBytes } from "./policy-input.ts";
+import {
+  connectionToolListMaxItems,
+  policyRequestMaxBytes,
+  policyRuleListMaxItems,
+  policyRuleMaxBytes,
+} from "./policy-input.ts";
 
 /**
  * Minimal OpenAPI document shape returned by the local runtime.
@@ -724,6 +729,7 @@ export function createOpenApiDocument(
                 "proxy_blocked",
                 "connection_not_allowed",
                 "connection_operation_not_allowed",
+                "connection_tool_not_allowed",
               ],
             },
             message: jsonSchema.string({ description: "Policy denial message." }),
@@ -1066,9 +1072,49 @@ function connectionPermissionArraySchema(description: string): JsonSchema {
           enum: ["read", "write", "full"],
           description: "Maximum operation risk granted to this connection.",
         },
+        toolPolicy: {
+          oneOf: [
+            jsonSchema.object(
+              {
+                mode: { type: "string", enum: ["all"] },
+                excludedActionIds: connectionActionIdArraySchema(
+                  "Exact action IDs excluded while every other tool remains available.",
+                ),
+              },
+              { required: ["mode", "excludedActionIds"] },
+            ),
+            jsonSchema.object(
+              {
+                mode: { type: "string", enum: ["selected"] },
+                allowedActionIds: connectionActionIdArraySchema(
+                  "Exact action IDs granted to this connection. The list must not be empty.",
+                ),
+              },
+              { required: ["mode", "allowedActionIds"] },
+            ),
+          ],
+          description: "Optional per-connection tool selection. Omission allows every tool within the access level.",
+        },
+        allowProxy: {
+          type: "boolean",
+          description: "Whether full access also permits raw provider proxy requests.",
+        },
       },
       { required: ["connectionId", "access"] },
     ),
+    description,
+  };
+}
+
+function connectionActionIdArraySchema(description: string): JsonSchema {
+  return {
+    type: "array",
+    maxItems: connectionToolListMaxItems,
+    items: jsonSchema.string({
+      minLength: 1,
+      maxLength: policyRuleMaxBytes,
+      description: "Exact action ID from the connection tool catalog.",
+    }),
     description,
   };
 }

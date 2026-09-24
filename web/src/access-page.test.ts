@@ -14,8 +14,8 @@ import {
   policyDraftFromRules,
   policyRulesFromDraft,
   runtimeTokenPolicyBody,
+  TokenPermissionEditor,
 } from "./access-page";
-import { PolicyEditor } from "./policy-editor";
 
 vi.mock("@embra/i18n/react", () => ({
   useTranslate() {
@@ -125,19 +125,39 @@ describe("AccessPage", () => {
   });
 
   it("treats omitted and empty allowedConnections as unrestricted token grants", () => {
-    expect(createConnectionGrantDraft()).toEqual({ mode: "unrestricted", ids: [], accessById: {} });
-    expect(createConnectionGrantDraft([])).toEqual({ mode: "unrestricted", ids: [], accessById: {} });
+    expect(createConnectionGrantDraft()).toEqual({
+      mode: "unrestricted",
+      ids: [],
+      accessById: {},
+      toolPolicyById: {},
+      allowProxyById: {},
+    });
+    expect(createConnectionGrantDraft([])).toEqual({
+      mode: "unrestricted",
+      ids: [],
+      accessById: {},
+      toolPolicyById: {},
+      allowProxyById: {},
+    });
     expect(
       allowedConnectionsFromDraft({
         mode: "unrestricted",
         ids: [githubWorkId],
         accessById: { [githubWorkId]: "read" },
+        toolPolicyById: {},
+        allowProxyById: {},
       }),
     ).toEqual([]);
     expect(
       runtimeTokenPolicyBody(
         { allowedActions: ["github.*"], blockedActions: [], allowedProxies: [] },
-        { mode: "unrestricted", ids: [githubWorkId], accessById: { [githubWorkId]: "read" } },
+        {
+          mode: "unrestricted",
+          ids: [githubWorkId],
+          accessById: { [githubWorkId]: "read" },
+          toolPolicyById: {},
+          allowProxyById: {},
+        },
       ),
     ).toEqual({
       allowedActions: ["github.*"],
@@ -153,18 +173,26 @@ describe("AccessPage", () => {
       mode: "restricted",
       ids: [githubWorkId, githubDefaultId],
       accessById: { [githubWorkId]: "full", [githubDefaultId]: "full" },
+      toolPolicyById: {},
+      allowProxyById: {},
     });
     expect(
       runtimeTokenPolicyBody(
         { allowedActions: [], blockedActions: [], allowedProxies: ["github"] },
-        { mode: "restricted", ids: [githubWorkId], accessById: { [githubWorkId]: "read" } },
+        {
+          mode: "restricted",
+          ids: [githubWorkId],
+          accessById: { [githubWorkId]: "read" },
+          toolPolicyById: {},
+          allowProxyById: {},
+        },
       ),
     ).toEqual({
       allowedActions: [],
       blockedActions: [],
-      allowedProxies: ["github"],
+      allowedProxies: [],
       allowedConnections: [githubWorkId],
-      connectionPermissions: [{ connectionId: githubWorkId, access: "read" }],
+      connectionPermissions: [{ connectionId: githubWorkId, access: "read", allowProxy: false }],
     });
   });
 
@@ -178,10 +206,12 @@ describe("AccessPage", () => {
       mode: "restricted",
       ids: [githubDefaultId, slackWorkId],
       accessById: { [githubDefaultId]: "read", [slackWorkId]: "read" },
+      toolPolicyById: {},
+      allowProxyById: {},
     });
     expect(connectionPermissionsFromDraft(draft)).toEqual([
-      { connectionId: githubDefaultId, access: "read" },
-      { connectionId: slackWorkId, access: "read" },
+      { connectionId: githubDefaultId, access: "read", allowProxy: false },
+      { connectionId: slackWorkId, access: "read", allowProxy: false },
     ]);
     expect(
       runtimeTokenPolicyBody({ allowedActions: [], blockedActions: [], allowedProxies: [] }, draft, [
@@ -189,6 +219,41 @@ describe("AccessPage", () => {
         { id: slackWorkId, service: "slack", name: "work", provider: "Slack" },
       ]),
     ).toMatchObject({ allowedActions: ["github.*", "slack.*"] });
+  });
+
+  it("serializes per-connection tool scope and derives raw proxy grants only from explicit full access", () => {
+    const draft = createRecommendedConnectionGrantDraft([
+      { id: githubDefaultId, service: "github", name: "default", provider: "GitHub" },
+      { id: slackWorkId, service: "slack", name: "work", provider: "Slack" },
+    ]);
+    draft.accessById[githubDefaultId] = "full";
+    draft.allowProxyById[githubDefaultId] = true;
+    draft.accessById[slackWorkId] = "write";
+    draft.toolPolicyById[slackWorkId] = {
+      mode: "selected",
+      allowedActionIds: ["slack.search_messages", "slack.send_message"],
+    };
+
+    expect(
+      runtimeTokenPolicyBody({ allowedActions: [], blockedActions: [], allowedProxies: ["ignored"] }, draft, [
+        { id: githubDefaultId, service: "github", name: "default", provider: "GitHub" },
+        { id: slackWorkId, service: "slack", name: "work", provider: "Slack" },
+      ]),
+    ).toMatchObject({
+      allowedProxies: ["github"],
+      connectionPermissions: [
+        { connectionId: githubDefaultId, access: "full", allowProxy: true },
+        {
+          connectionId: slackWorkId,
+          access: "write",
+          allowProxy: false,
+          toolPolicy: {
+            mode: "selected",
+            allowedActionIds: ["slack.search_messages", "slack.send_message"],
+          },
+        },
+      ],
+    });
   });
 
   it("builds one token grant option for each current credential connection", () => {
@@ -265,10 +330,9 @@ describe("AccessPage", () => {
       }),
     );
 
-    expect(unrestricted).toContain("access.policy.editor.connectionsTitle");
-    expect(unrestricted).toContain("access.policy.editor.connectionsUnrestrictedHint");
+    expect(unrestricted).toContain("access.policy.tools.legacyUnrestricted");
+    expect(unrestricted).toContain("access.policy.tools.convertLegacy");
     expect(unrestricted).not.toContain("access.policy.editor.connectionsList");
-    expect(restricted).toContain("access.policy.editor.connectionsRestrictedHint");
     expect(restricted).toContain("access.policy.editor.connectionsList");
     expect(restricted).toContain("access.policy.editor.connectionsDefaultHint");
     expect(restricted).toContain("work");
@@ -294,29 +358,28 @@ describe("AccessPage", () => {
     expect(markup).toContain('type="checkbox"');
   });
 
-  it("places connection access beside actions and proxies in the token policy tabs", () => {
+  it("keeps connection and tool permissions primary while advanced rules stay collapsed", () => {
     const markup = renderToStaticMarkup(
-      createElement(PolicyEditor, {
+      createElement(TokenPermissionEditor, {
         draft: {
           rules: { allowedActions: [], blockedActions: [], allowedProxies: [], blockedProxies: [] },
           actionAllowMode: "unrestricted",
           proxyAllowMode: "unrestricted",
         },
         providers: [],
-        includeProxies: true,
-        connectionEditor: createElement(ConnectionGrantEditor, {
-          draft: createConnectionGrantDraft(),
-          options: [{ id: githubDefaultId, service: "github", name: "default", provider: "GitHub" }],
-          onChange: vi.fn(),
-        }),
-        onChange: vi.fn(),
+        connections: createRecommendedConnectionGrantDraft([
+          { id: githubDefaultId, service: "github", name: "default", provider: "GitHub" },
+        ]),
+        connectionOptions: [{ id: githubDefaultId, service: "github", name: "default", provider: "GitHub" }],
+        onDraftChange: vi.fn(),
+        onConnectionsChange: vi.fn(),
       }),
     );
 
-    expect(markup.match(/data-slot="tabs-trigger"/g)).toHaveLength(3);
-    expect(markup).toContain("access.policy.editor.actionsTab");
-    expect(markup).toContain("access.policy.editor.proxiesTab");
-    expect(markup).toContain("access.policy.editor.connectionsTitle");
+    expect(markup).not.toContain('data-slot="tabs-trigger"');
+    expect(markup).toContain("access.policy.tools.connectionPermissions");
+    expect(markup).toContain("access.policy.tools.allTools");
+    expect(markup).toContain("access.policy.tools.advancedRules");
   });
 
   it("serializes one policy rule per non-empty trimmed line", () => {

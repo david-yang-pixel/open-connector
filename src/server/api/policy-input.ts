@@ -1,13 +1,19 @@
-import type { ConnectionPermissionGrant, PolicyRules, TokenPolicy } from "../../core/action-policy.ts";
+import type {
+  ConnectionPermissionGrant,
+  ConnectionToolPolicy,
+  PolicyRules,
+  TokenPolicy,
+} from "../../core/action-policy.ts";
 import type { JsonRequestBody } from "./http-utils.ts";
 
 import { Buffer } from "node:buffer";
-import { objectArray, requiredString, requiredStringArray } from "../../core/cast.ts";
+import { objectArray, optionalBoolean, requiredRecord, requiredString, requiredStringArray } from "../../core/cast.ts";
 import { HttpRequestError } from "./http-utils.ts";
 
 export const policyRequestMaxBytes: number = 256 * 1024;
 export const policyRuleMaxBytes: number = 256;
 export const policyRuleListMaxItems: number = 128;
+export const connectionToolListMaxItems: number = 1_000;
 
 export function readRuntimePolicyRules(body: JsonRequestBody): PolicyRules {
   return {
@@ -52,9 +58,66 @@ function readConnectionPermissions(value: unknown): ConnectionPermissionGrant[] 
       throw invalidInput(`connectionPermissions contains a duplicate connection ID: ${connectionId}.`);
     }
     seen.add(connectionId);
-    grants.push({ connectionId, access });
+    const toolPolicy = readConnectionToolPolicy(item.toolPolicy, connectionId);
+    const allowProxy = optionalBoolean(item.allowProxy);
+    if (item.allowProxy !== undefined && allowProxy === undefined) {
+      throw invalidInput("connectionPermissions.allowProxy must be a boolean.");
+    }
+    const grant: ConnectionPermissionGrant = { connectionId, access };
+    if (toolPolicy) grant.toolPolicy = toolPolicy;
+    if (allowProxy !== undefined) grant.allowProxy = allowProxy;
+    grants.push(grant);
   }
   return grants;
+}
+
+function readConnectionToolPolicy(value: unknown, connectionId: string): ConnectionToolPolicy | undefined {
+  if (value === undefined) return undefined;
+  const input = requiredRecord(value, "connectionPermissions.toolPolicy", invalidInput);
+  const mode = requiredString(input.mode, "connectionPermissions.toolPolicy.mode", invalidInput);
+  if (mode === "all") {
+    return {
+      mode,
+      excludedActionIds: readConnectionActionIds(
+        input.excludedActionIds,
+        `connectionPermissions[${connectionId}].toolPolicy.excludedActionIds`,
+      ),
+    };
+  }
+  if (mode === "selected") {
+    const allowedActionIds = readConnectionActionIds(
+      input.allowedActionIds,
+      `connectionPermissions[${connectionId}].toolPolicy.allowedActionIds`,
+    );
+    if (allowedActionIds.length === 0) {
+      throw invalidInput("Selected connection tool policies must include at least one allowed action ID.");
+    }
+    return { mode, allowedActionIds };
+  }
+  throw invalidInput("connectionPermissions.toolPolicy.mode must be all or selected.");
+}
+
+function readConnectionActionIds(value: unknown, fieldName: string): string[] {
+  const values = requiredStringArray(value, fieldName, invalidInput);
+  if (values.length > connectionToolListMaxItems) {
+    throw invalidInput(`${fieldName} must not contain more than ${connectionToolListMaxItems} action IDs.`);
+  }
+  const actionIds: string[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    const actionId = value.trim();
+    if (!actionId) throw invalidInput(`${fieldName} must not contain empty action IDs.`);
+    if (Buffer.byteLength(actionId, "utf8") > policyRuleMaxBytes) {
+      throw invalidInput(`${fieldName} action IDs must not exceed ${policyRuleMaxBytes} UTF-8 bytes.`);
+    }
+    assertRuleSyntax(actionId, fieldName, "action");
+    if (actionId.includes("*")) throw invalidInput(`${fieldName} must contain exact action IDs.`);
+    if (!seen.has(actionId)) {
+      seen.add(actionId);
+      actionIds.push(actionId);
+    }
+  }
+  return actionIds;
 }
 
 function readRules(value: unknown, fieldName: string, kind: "action" | "proxy", allowOmitted = false): string[] {

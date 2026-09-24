@@ -8,7 +8,8 @@ export type PolicyErrorCode =
   | "proxy_not_allowed"
   | "proxy_blocked"
   | "connection_not_allowed"
-  | "connection_operation_not_allowed";
+  | "connection_operation_not_allowed"
+  | "connection_tool_not_allowed";
 
 export interface PolicyCheck {
   source: PolicySource;
@@ -34,9 +35,16 @@ export interface PolicyRules {
 
 export type ConnectionAccessLevel = "read" | "write" | "full";
 
+export type ConnectionToolPolicy =
+  | { mode: "all"; excludedActionIds: string[] }
+  | { mode: "selected"; allowedActionIds: string[] };
+
 export interface ConnectionPermissionGrant {
   connectionId: string;
   access: ConnectionAccessLevel;
+  toolPolicy?: ConnectionToolPolicy;
+  /** Raw provider proxy access is separate because it bypasses action-level tool selection. */
+  allowProxy?: boolean;
 }
 
 export interface TokenPolicy {
@@ -87,7 +95,7 @@ export class ActionPolicySnapshot {
   private readonly proxyLayers: CompiledLayer[];
   private readonly tokenProxyRules?: CompiledRule[];
   private readonly allowedConnections: readonly string[];
-  private readonly connectionPermissions: ReadonlyMap<string, ConnectionAccessLevel>;
+  private readonly connectionPermissions: ReadonlyMap<string, ConnectionPermissionGrant>;
 
   constructor(deployment: PolicyRules, runtime: PolicyRules, token?: TokenPolicy, updatedAt?: string) {
     const deploymentRules = immutablePolicyRules(deployment);
@@ -97,7 +105,7 @@ export class ActionPolicySnapshot {
     this.layers = [...this.proxyLayers];
     this.allowedConnections = Object.freeze([...(token?.allowedConnections ?? [])]);
     this.connectionPermissions = new Map(
-      (token?.connectionPermissions ?? []).map((grant) => [grant.connectionId, grant.access]),
+      (token?.connectionPermissions ?? []).map((grant) => [grant.connectionId, grant]),
     );
     if (token) {
       const tokenRules = immutablePolicyRules({
@@ -196,11 +204,11 @@ export class ActionPolicySnapshot {
     operation?: ActionDefinition | "proxy" | "discovery",
   ): ActionPolicyDecision {
     if (this.connectionPermissions.size > 0) {
-      const access = connectionId ? this.connectionPermissions.get(connectionId) : undefined;
-      if (!connectionId || !access) {
+      const grant = connectionId ? this.connectionPermissions.get(connectionId) : undefined;
+      if (!connectionId || !grant) {
         return connectionDenied(connectionId);
       }
-      if (!connectionAccessAllows(access, operation)) {
+      if (!connectionAccessAllows(grant, operation)) {
         return {
           allowed: false,
           code: "connection_operation_not_allowed",
@@ -210,12 +218,20 @@ export class ActionPolicySnapshot {
               : `${connectionId} connection does not grant ${
                   operation === "discovery" ? "discovery" : (operation?.operationType ?? "unclassified")
                 } operations.`,
-          checks: [{ source: "token", outcome: "allow_miss", rule: `${connectionId}:${access}` }],
+          checks: [{ source: "token", outcome: "allow_miss", rule: `${connectionId}:${grant.access}` }],
+        };
+      }
+      if (typeof operation === "object" && !connectionToolPolicyAllows(grant.toolPolicy, operation.id)) {
+        return {
+          allowed: false,
+          code: "connection_tool_not_allowed",
+          message: `${operation.id} is not included in the tools granted to the ${connectionId} connection.`,
+          checks: [{ source: "token", outcome: "allow_miss", rule: `${connectionId}:tools` }],
         };
       }
       return {
         allowed: true,
-        checks: [{ source: "token", outcome: "allow_match", rule: `${connectionId}:${access}` }],
+        checks: [{ source: "token", outcome: "allow_match", rule: `${connectionId}:${grant.access}` }],
       };
     }
     if (this.allowedConnections.length === 0) {
@@ -245,14 +261,22 @@ function connectionDenied(connectionId?: string): ActionPolicyDecision {
 }
 
 function connectionAccessAllows(
-  access: ConnectionAccessLevel,
+  grant: ConnectionPermissionGrant,
   operation: ActionDefinition | "proxy" | "discovery" | undefined,
 ): boolean {
-  if (access === "full") return true;
   if (operation === "discovery") return true;
-  if (!operation || operation === "proxy" || !operation.operationType) return false;
-  if (access === "read") return operation.operationType === "read";
+  if (operation === "proxy") return grant.access === "full" && grant.allowProxy !== false;
+  if (!operation || !operation.operationType) return false;
+  if (grant.access === "full") return true;
+  if (grant.access === "read") return operation.operationType === "read";
   return operation.operationType === "read" || operation.operationType === "write";
+}
+
+function connectionToolPolicyAllows(policy: ConnectionToolPolicy | undefined, actionId: string): boolean {
+  if (!policy || actionId === "custom_mcp.list_tools" || actionId === "custom_mcp.call_tool") return true;
+  return policy.mode === "selected"
+    ? policy.allowedActionIds.includes(actionId)
+    : !policy.excludedActionIds.includes(actionId);
 }
 
 /**

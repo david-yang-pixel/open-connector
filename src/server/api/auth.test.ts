@@ -1,8 +1,17 @@
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
-import { createLocalAuthMiddleware } from "./auth.ts";
+import { createLocalAuthMiddleware, readBearerTokenFromAuthorizationHeader } from "./auth.ts";
 
 describe("createLocalAuthMiddleware", () => {
+  it("reads bearer credentials with the same strict syntax used by middleware", () => {
+    expect(readBearerTokenFromAuthorizationHeader("bearer oct_valid")).toBe("oct_valid");
+    expect(readBearerTokenFromAuthorizationHeader("BEARER oct_valid")).toBe("oct_valid");
+    expect(readBearerTokenFromAuthorizationHeader("Bearer  oct_valid")).toBe("oct_valid");
+    expect(readBearerTokenFromAuthorizationHeader("Bearer")).toBeUndefined();
+    expect(readBearerTokenFromAuthorizationHeader("Basic oct_valid")).toBeUndefined();
+    expect(readBearerTokenFromAuthorizationHeader(null)).toBeUndefined();
+  });
+
   it("fails closed when a runtime token resolver is configured without a token-count callback", async () => {
     const app = new Hono();
     app.use(

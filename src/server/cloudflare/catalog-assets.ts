@@ -3,6 +3,7 @@ import type { ProviderDefinition } from "../../core/types.ts";
 import type { AssetsBinding } from "./cloudflare-bindings.ts";
 
 import { createCatalogStore, resolveExecutableActionIds } from "../../catalog-store.ts";
+import { assertProviderId } from "../../core/provider-id.ts";
 
 const catalogIndexPath = "/catalog/index.json";
 const chunkNamePattern = /^apps-\d{4}\.json$/;
@@ -14,14 +15,31 @@ interface CatalogAssetIndex {
   chunks: string[];
 }
 
+export interface CatalogAssetLoadOptions extends ExecutableActionOptions {
+  /** Load only these provider definitions instead of the curated or full browser catalog. */
+  services?: readonly string[];
+}
+
 export async function loadCatalogFromAssets(
   assets: AssetsBinding,
-  options: ExecutableActionOptions = {},
+  options: CatalogAssetLoadOptions = {},
 ): Promise<CatalogStore> {
+  const { services, ...executableOptions } = options;
+  if (services !== undefined) {
+    const selectedServices = [...new Set(services)].sort();
+    const providers = await Promise.all(
+      selectedServices.map(async (service) => {
+        assertProviderId(service, "configured provider service");
+        return requireProviderAsset(await readJsonAsset(assets, `/catalog/providers/${service}.json`), service);
+      }),
+    );
+    return createCatalog(providers, executableOptions);
+  }
+
   try {
     const coreProviders = await readJsonAsset(assets, "/catalog/core-providers.json");
     if (Array.isArray(coreProviders) && coreProviders.length > 0) {
-      return createCatalog(coreProviders as ProviderDefinition[], options);
+      return createCatalog(coreProviders as ProviderDefinition[], executableOptions);
     }
   } catch {
     // Fall back to full chunked catalog if core-providers.json is unavailable
@@ -35,7 +53,7 @@ export async function loadCatalogFromAssets(
     );
   }
 
-  return createCatalog(providers, options);
+  return createCatalog(providers, executableOptions);
 }
 
 function createCatalog(providers: ProviderDefinition[], options: ExecutableActionOptions): CatalogStore {
@@ -89,6 +107,13 @@ function requireProviderArray(value: unknown, path: string): ProviderDefinition[
   }
 
   return value as ProviderDefinition[];
+}
+
+function requireProviderAsset(value: unknown, service: string): ProviderDefinition {
+  if (!isRecord(value) || value.service !== service) {
+    throw new Error(`Cloudflare provider asset must define service ${service}`);
+  }
+  return value as ProviderDefinition;
 }
 
 /**

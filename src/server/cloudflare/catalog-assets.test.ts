@@ -24,6 +24,40 @@ const provider = {
 };
 
 describe("loadCatalogFromAssets", () => {
+  it("loads only explicitly selected provider assets", async () => {
+    const requested: string[] = [];
+    const assets = memoryAssets({
+      "/catalog/providers/example.json": provider,
+      "/catalog/providers/zulu.json": { ...provider, service: "zulu", actions: [] },
+    });
+    const catalog = await loadCatalogFromAssets(
+      {
+        async fetch(request) {
+          requested.push(new URL(request.url).pathname);
+          return assets.fetch(request);
+        },
+      },
+      { executableServices: ["example"], services: ["example"] },
+    );
+
+    expect(catalog.providers.map((entry) => entry.service)).toEqual(["example"]);
+    expect(catalog.actionsById.get("example.ping")?.execution.locallyExecutable).toBe(true);
+    expect(requested).toEqual(["/catalog/providers/example.json"]);
+  });
+
+  it("creates an empty runtime catalog without fetching assets", async () => {
+    const assets: AssetsBinding = {
+      async fetch() {
+        throw new Error("Unexpected asset request");
+      },
+    };
+
+    const catalog = await loadCatalogFromAssets(assets, { services: [] });
+
+    expect(catalog.providers).toEqual([]);
+    expect(catalog.actions).toEqual([]);
+  });
+
   it("loads providers from catalog index chunks", async () => {
     const catalog = await loadCatalogFromAssets(
       memoryAssets({

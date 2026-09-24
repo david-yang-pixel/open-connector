@@ -1,5 +1,5 @@
 import type { ConnectionGrantOption } from "./access-page";
-import type { ConnectionAccessLevel } from "./model";
+import type { ConnectionAccessLevel, ConnectionToolPolicy } from "./model";
 import type { ReactNode } from "react";
 
 import { useTranslate } from "@embra/i18n/react";
@@ -19,13 +19,14 @@ export interface ProviderGroupSectionProps {
   isExpanded: boolean;
   selectedIds: string[];
   accessById: Record<string, ConnectionAccessLevel>;
+  toolPolicyById: Record<string, ConnectionToolPolicy>;
   maxItems: number;
   onToggleExpand(service: string): void;
   onToggleGroup(groupOptions: ConnectionGrantOption[]): void;
   onToggleOption(id: string, checked: boolean): void;
   onSetGroupAccess(groupOptions: ConnectionGrantOption[], access: ConnectionAccessLevel | "disabled"): void;
   onSetOptionAccess(id: string, access: ConnectionAccessLevel): void;
-  onViewTools(option: ConnectionGrantOption): void;
+  onConfigureTools(option: ConnectionGrantOption): void;
 }
 
 export function ProviderGroupSection(props: ProviderGroupSectionProps): ReactNode {
@@ -142,7 +143,7 @@ export function ProviderGroupSection(props: ProviderGroupSectionProps): ReactNod
                   </div>
                 </label>
 
-                {option.toolCount !== undefined ? (
+                {checked ? (
                   <div className="ml-2 flex items-center gap-2">
                     <select
                       className="h-8 rounded border bg-background px-2 text-xs"
@@ -159,26 +160,13 @@ export function ProviderGroupSection(props: ProviderGroupSectionProps): ReactNod
                     </select>
                     <button
                       type="button"
-                      className="inline-flex cursor-pointer transition-transform hover:scale-105"
-                      title={t("providers.viewTools")}
-                      onClick={() => props.onViewTools(option)}
+                      className="inline-flex cursor-pointer"
+                      title={t("access.policy.tools.configure")}
+                      onClick={() => props.onConfigureTools(option)}
                     >
-                      <Badge>{t("providers.toolCount", { count: option.toolCount })}</Badge>
+                      <Badge>{toolPolicyLabel(props.toolPolicyById[option.id], option.toolCount, t)}</Badge>
                     </button>
                   </div>
-                ) : checked ? (
-                  <select
-                    className="ml-2 h-8 rounded border bg-background px-2 text-xs"
-                    value={props.accessById[option.id] ?? "read"}
-                    aria-label={t("access.policy.editor.connectionAccess", { connection: option.name })}
-                    onChange={(event) =>
-                      props.onSetOptionAccess(option.id, event.target.value as ConnectionAccessLevel)
-                    }
-                  >
-                    <option value="read">{t("access.policy.editor.accessRead")}</option>
-                    <option value="write">{t("access.policy.editor.accessWrite")}</option>
-                    <option value="full">{t("access.policy.editor.accessFull")}</option>
-                  </select>
                 ) : null}
               </div>
             );
@@ -187,4 +175,19 @@ export function ProviderGroupSection(props: ProviderGroupSectionProps): ReactNod
       ) : null}
     </div>
   );
+}
+
+function toolPolicyLabel(
+  policy: ConnectionToolPolicy | undefined,
+  toolCount: number | undefined,
+  t: NonNullable<ReturnType<typeof useTranslate>>,
+): string {
+  if (!policy || (policy.mode === "all" && policy.excludedActionIds.length === 0)) {
+    return toolCount === undefined
+      ? t("access.policy.tools.allTools")
+      : t("access.policy.tools.allToolsCount", { count: toolCount });
+  }
+  return policy.mode === "selected"
+    ? t("access.policy.tools.selectedCount", { count: policy.allowedActionIds.length })
+    : t("access.policy.tools.excludedCount", { count: policy.excludedActionIds.length });
 }

@@ -27,7 +27,7 @@ import {
   encodeActionSearchCursor,
   searchActions,
 } from "../core/action-search.ts";
-import { optionalRecord, optionalString, requiredString, requiredStringArray } from "../core/cast.ts";
+import { looseArray, optionalRecord, optionalString, requiredString, requiredStringArray } from "../core/cast.ts";
 import { PromiseCache } from "../core/promise-cache.ts";
 import { MarketplaceError } from "../marketplace/marketplace-service.ts";
 import { OAuthClientConfigError, OAuthClientConfigService } from "../oauth/oauth-client-config-service.ts";
@@ -254,6 +254,9 @@ export class ConnectServer {
     });
 
     app.get("/api/connections", (context) => this.listConnections(context));
+    app.get("/api/connections/tools/:connectionId", (context) =>
+      this.listConnectionTools(context, context.req.param("connectionId")),
+    );
     app.get("/api/connections/:service/settings", (context) =>
       this.getConnectionSettings(context, context.req.param("service")),
     );
@@ -272,6 +275,7 @@ export class ConnectServer {
     app.delete("/api/runtime-tokens/:id", (context) => this.revokeRuntimeToken(context, context.req.param("id")));
     app.get("/api/runtime-policy", (context) => this.getRuntimePolicy(context));
     app.put("/api/runtime-policy", (context) => this.updateRuntimePolicy(context));
+    app.get("/api/cloudflare-usage", (context) => this.getCloudflareUsage(context));
     app.get("/api/oauth/configs", (context) => this.listOAuthConfigs(context));
     app.put("/api/oauth/configs/:service", (context) => this.upsertOAuthConfig(context, context.req.param("service")));
     app.delete("/api/oauth/configs/:service", (context) =>
@@ -920,6 +924,61 @@ export class ConnectServer {
     return context.json(await this.options.connections.listConnections());
   }
 
+  private async listConnectionTools(context: Context, connectionId: string): Promise<Response> {
+    const connection = (await this.options.connections.listConnections()).find((item) => item.id === connectionId);
+    if (!connection || connection.virtual || connection.authType === "no_auth") {
+      return jsonError(context, 404, "connection_not_found", `Connection not found: ${connectionId}.`);
+    }
+
+    if (connection.service !== "custom_mcp") {
+      const provider = this.options.catalog.providers.find((item) => item.service === connection.service);
+      if (!provider) return jsonError(context, 404, "unknown_service", `Unknown service: ${connection.service}.`);
+      const tools = provider.actions.map((action) => ({
+        actionId: action.id,
+        name: action.name,
+        description: action.description,
+        operationType: action.operationType ?? "write",
+      }));
+      return context.json({ connectionId, service: connection.service, tools, total: tools.length });
+    }
+
+    const policy = await this.getPolicySnapshot(context);
+    const run = await this.options.actions.run({
+      actionId: "custom_mcp.list_tools",
+      input: {},
+      caller: "web",
+      connectionName: connection.connectionName,
+      policy,
+      signal: context.req.raw.signal,
+    });
+    if (!run) return jsonError(context, 404, "unknown_action", "Custom MCP tool discovery is unavailable.");
+    if (!run.result.ok) {
+      return jsonError(
+        context,
+        500,
+        run.result.error?.code ?? "provider_error",
+        run.result.error?.message ?? "Custom MCP tool discovery failed.",
+      );
+    }
+    const output = optionalRecord(run.result.output);
+    const tools = looseArray(output?.tools).flatMap((value) => {
+      const item = optionalRecord(value);
+      const actionId = optionalString(item?.actionId);
+      const name = optionalString(item?.name);
+      const operationType = optionalString(item?.operationType);
+      if (!actionId || !name || !isActionOperationType(operationType)) return [];
+      return [
+        {
+          actionId,
+          name,
+          description: optionalString(item?.description),
+          operationType,
+        },
+      ];
+    });
+    return context.json({ connectionId, service: connection.service, tools, total: tools.length });
+  }
+
   private async getConnectionSettings(context: Context, service: string): Promise<Response> {
     const connectionName = readConnectionName(context);
     return this.writeConnectionResult(
@@ -1132,6 +1191,53 @@ export class ConnectServer {
 
   private async getRuntimePolicy(context: Context): Promise<Response> {
     return context.json((await this.getPolicySnapshot(context)).state);
+  }
+
+  private async getCloudflareUsage(context: Context): Promise<Response> {
+    const connections = (await this.options.connections.listConnectionsByService("cloudflare_mcp")).filter(
+      (connection) => connection.configured && !connection.virtual,
+    );
+    if (connections.length === 0) {
+      return context.json({ status: "unavailable", reason: "connection_not_configured" });
+    }
+
+    const requestedName = context.req.query("connectionName");
+    const connection = requestedName
+      ? connections.find((item) => item.connectionName === requestedName)
+      : connections.length === 1
+        ? connections[0]
+        : undefined;
+    if (!connection) {
+      return jsonError(context, 400, "invalid_connection", "Select a configured Cloudflare MCP connection.");
+    }
+    const credential = await this.options.connections.getCredential("cloudflare_mcp", connection.connectionName);
+    const token =
+      credential?.authType === "api_key"
+        ? credential.apiKey
+        : credential?.authType === "oauth2"
+          ? credential.accessToken
+          : undefined;
+    if (!token) {
+      return context.json({ status: "unavailable", reason: "connection_not_configured" });
+    }
+
+    let usageModule: typeof import("./cloudflare/cloudflare-usage.ts") | undefined;
+    try {
+      usageModule = await import("./cloudflare/cloudflare-usage.ts");
+      return context.json({
+        status: "ready",
+        ...(await usageModule.loadCloudflareUsage(token, { signal: context.req.raw.signal })),
+      });
+    } catch (error) {
+      if (usageModule && error instanceof usageModule.CloudflareUsageError) {
+        return context.json({ errorCode: "cloudflare_usage_unavailable", message: error.message }, 502);
+      }
+      this.options.logger?.error({ err: error }, "Cloudflare usage lookup failed");
+      return context.json(
+        { errorCode: "cloudflare_usage_unavailable", message: "Cloudflare usage is unavailable." },
+        502,
+      );
+    }
   }
 
   private async updateRuntimePolicy(context: Context): Promise<Response> {
@@ -1434,6 +1540,10 @@ interface RuntimeActionSearchResult {
   authenticated: boolean;
   inputSchema: RuntimeActionDefinition["inputSchema"];
   outputSchema: RuntimeActionDefinition["outputSchema"];
+}
+
+function isActionOperationType(value: string | undefined): value is "read" | "write" | "destructive" {
+  return value === "read" || value === "write" || value === "destructive";
 }
 
 function serializeActionSearchResult(

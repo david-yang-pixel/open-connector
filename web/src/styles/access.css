@@ -189,6 +189,107 @@
   white-space: nowrap;
 }
 
+.cloudflare-usage {
+  display: grid;
+  gap: 10px;
+}
+
+.cloudflare-usage-heading p,
+.cloudflare-usage-note,
+.cloudflare-usage-account-heading small,
+.cloudflare-usage-item small {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+.cloudflare-usage-heading p {
+  margin: 3px 0 0;
+}
+
+.cloudflare-usage-controls,
+.cloudflare-usage-account-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.cloudflare-usage-controls select {
+  max-width: 180px;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--background);
+  color: var(--foreground);
+}
+
+.cloudflare-usage-account {
+  display: grid;
+  gap: 8px;
+}
+
+.cloudflare-usage-account-heading strong {
+  font-size: 12px;
+}
+
+.cloudflare-usage-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--background);
+}
+
+.cloudflare-usage-item {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px 14px;
+}
+
+.cloudflare-usage-item + .cloudflare-usage-item {
+  border-left: 1px solid var(--border);
+}
+
+.cloudflare-usage-item > span {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+.cloudflare-usage-item strong {
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cloudflare-usage-track {
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--muted);
+}
+
+.cloudflare-usage-track > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+}
+
+.cloudflare-usage-message {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+
+.cloudflare-usage-error {
+  color: var(--destructive);
+}
+
 .policy-tester {
   padding: 12px;
   border: 1px solid var(--border);
@@ -805,6 +906,244 @@
   justify-content: flex-end;
 }
 
+.token-permission-editor,
+.token-permission-primary {
+  display: grid;
+  gap: 12px;
+}
+
+.token-permission-heading,
+.connection-tool-selection-bar,
+.connection-tool-dialog-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.token-permission-heading h3,
+.token-permission-heading p,
+.token-legacy-permission p {
+  margin: 0;
+}
+
+.token-permission-heading h3 {
+  font-size: 14px;
+}
+
+.token-permission-heading p,
+.token-legacy-permission p {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+.token-permission-advanced,
+.token-legacy-permission {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in oklab, var(--muted) 35%, transparent);
+}
+
+.token-permission-advanced > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  cursor: pointer;
+}
+
+.token-permission-advanced > summary > span {
+  display: grid;
+  gap: 2px;
+}
+
+.token-permission-advanced > summary small {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.token-permission-advanced-body {
+  padding: 0 12px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.token-permission-advanced-body .structured-policy-editor {
+  padding-top: 12px;
+}
+
+.token-legacy-permission {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px;
+}
+
+.connection-tool-dialog-body {
+  display: grid;
+  min-height: 0;
+  gap: 12px;
+  padding: 16px 20px;
+  overflow: hidden;
+}
+
+.connection-tool-toolbar,
+.connection-tool-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.connection-tool-selected-only {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.connection-tool-filters {
+  flex-wrap: wrap;
+}
+
+.connection-tool-selection-bar {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+.connection-tool-list {
+  display: grid;
+  max-height: 360px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.connection-tool-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 8px 10px;
+}
+
+.connection-tool-row + .connection-tool-row {
+  border-top: 1px solid var(--border);
+}
+
+.connection-tool-row:has(input:checked) {
+  background: color-mix(in oklab, var(--accent) 55%, transparent);
+}
+
+.connection-tool-row:has(input:disabled) {
+  opacity: 0.62;
+}
+
+.connection-tool-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.connection-tool-copy code,
+.connection-tool-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connection-tool-copy code {
+  font-size: 12px;
+  font-weight: 620;
+}
+
+.connection-tool-copy small,
+.connection-tool-row > small {
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+
+.connection-tool-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 160px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+.connection-tool-stale {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid color-mix(in oklab, var(--destructive) 22%, var(--border));
+  border-radius: var(--radius);
+  background: color-mix(in oklab, var(--destructive) 5%, transparent);
+}
+
+.connection-tool-stale > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.connection-tool-stale > div:first-child {
+  display: grid;
+  justify-content: initial;
+  gap: 2px;
+}
+
+.connection-tool-stale small,
+.connection-proxy-toggle small {
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+
+.connection-tool-stale code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.connection-proxy-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid color-mix(in oklab, var(--destructive) 28%, var(--border));
+  border-radius: var(--radius);
+  background: color-mix(in oklab, var(--destructive) 5%, transparent);
+}
+
+.connection-proxy-toggle > span {
+  display: grid;
+  gap: 2px;
+}
+
+.connection-proxy-toggle.is-disabled {
+  border-color: var(--border);
+  background: color-mix(in oklab, var(--muted) 35%, transparent);
+  opacity: 0.72;
+}
+
+.connection-tool-dialog-actions {
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--popover);
+}
+
+.connection-tool-dialog-actions > :first-child {
+  margin-left: auto;
+}
+
 @media (max-width: 960px) {
   .access-panel > .access-section-heading {
     grid-template-columns: 1fr;
@@ -825,6 +1164,7 @@
 
 @media (max-width: 640px) {
   .policy-baseline-grid,
+  .cloudflare-usage-grid,
   .policy-rule-readout,
   .policy-allow-mode,
   .policy-advanced-grid {
@@ -832,6 +1172,11 @@
   }
 
   .policy-baseline-grid > div + div {
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+
+  .cloudflare-usage-item + .cloudflare-usage-item {
     border-top: 1px solid var(--border);
     border-left: 0;
   }
@@ -909,5 +1254,21 @@
   .policy-decision-trace li {
     grid-template-columns: 1fr;
     gap: 3px;
+  }
+
+  .token-permission-heading,
+  .token-legacy-permission,
+  .connection-tool-selection-bar,
+  .connection-tool-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .connection-tool-row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .connection-tool-row > small {
+    grid-column: 2 / -1;
   }
 }

@@ -68,7 +68,7 @@ export function authorizeCustomMcpTool(
       actionId: descriptor.actionId,
     });
   }
-  const decision = context.authorizeAction(dynamicAction(tool, descriptor));
+  const decision = context.authorizeAction(customMcpToolActionDefinition(tool, descriptor));
   if (!decision.allowed) {
     throw new ProviderRequestError(403, decision.message, {
       reason: decision.code,
@@ -79,7 +79,7 @@ export function authorizeCustomMcpTool(
   return descriptor;
 }
 
-function dynamicAction(tool: Tool, descriptor: CustomMcpToolDescriptor): ActionDefinition {
+export function customMcpToolActionDefinition(tool: Tool, descriptor: CustomMcpToolDescriptor): ActionDefinition {
   return {
     id: descriptor.actionId,
     service: "custom_mcp",

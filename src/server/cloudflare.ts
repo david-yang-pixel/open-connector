@@ -1,4 +1,5 @@
 import type { CatalogStore } from "../catalog-store.ts";
+import type { ExecutorModules } from "../providers/provider-loader.ts";
 import type { AssetsBinding, KVNamespaceBinding, R2BucketBinding } from "./cloudflare/cloudflare-bindings.ts";
 import type { CloudflareEnv } from "./cloudflare/cloudflare-env.ts";
 import type { ConnectApp } from "./connect-app.ts";
@@ -15,6 +16,7 @@ import {
 } from "../core/request.ts";
 import { ProviderLoader } from "../providers/provider-loader.ts";
 import { executorModules } from "../providers/registry.cloudflare.generated.ts";
+import { readBearerTokenFromAuthorizationHeader } from "./api/auth.ts";
 import { getResponseCachePolicy } from "./api/cache-policy.ts";
 import { isConsoleShellPath } from "./api/console-paths.ts";
 import { loadCatalogFromAssets } from "./cloudflare/catalog-assets.ts";
@@ -23,7 +25,7 @@ import { createConnectApp } from "./connect-app.ts";
 import { KVTransitFileService } from "./files/kv-transit-files.ts";
 import { R2TransitFileService } from "./files/r2-transit-files.ts";
 import { createWorkerSecretCodec } from "./secrets/worker-secret-codec.ts";
-import { D1RuntimeDatabase } from "./storage/d1-runtime-store.ts";
+import { D1RuntimeDatabase, listD1RuntimeServices, listD1RuntimeServicesForToken } from "./storage/d1-runtime-store.ts";
 import { DEFAULT_RUN_LIMIT } from "./storage/runtime-store.ts";
 
 interface CloudflareExecutionContext {
@@ -31,9 +33,11 @@ interface CloudflareExecutionContext {
   passThroughOnException(): void;
 }
 
-const catalogCache = new PromiseCache<CatalogStore>();
+const adminCatalogCache = new PromiseCache<CatalogStore>();
+const runtimeCatalogCache = new PromiseCache<CatalogStore>();
 const secretCodecCache = new PromiseCache<ISecretCodec>();
-const appCache = new PromiseCache<ConnectApp>();
+const adminAppCache = new PromiseCache<ConnectApp>();
+const runtimeAppCache = new PromiseCache<ConnectApp>();
 
 export default {
   async fetch(request: Request, env: CloudflareEnv, _ctx: CloudflareExecutionContext): Promise<Response> {
@@ -69,18 +73,31 @@ export default {
       }
     }
 
-    const publicOrigin = resolvePublicOrigin(request, env);
-    const { app } = await appCache.get(createCacheKey(env, publicOrigin), () => createCloudflareApp(env, publicOrigin));
-    const response = await app.fetch(request, env);
-    if (response.status === 404 && env.ASSETS && shouldServeAsset(request)) {
-      return env.ASSETS.fetch(request);
-    }
+    const runtimeRequest = isRuntimeRequest(url.pathname);
+    try {
+      const publicOrigin = resolvePublicOrigin(request, env);
+      const runtimeServices = runtimeRequest ? await resolveRuntimeServices(request, env.DB) : undefined;
+      const appKey = createCacheKey(env, publicOrigin, runtimeServices);
+      const cache = runtimeRequest ? runtimeAppCache : adminAppCache;
+      const { app } = await cache.get(appKey, () => createCloudflareApp(env, publicOrigin, runtimeServices));
+      const response = await app.fetch(request, env);
+      if (response.status === 404 && env.ASSETS && shouldServeAsset(request)) {
+        return env.ASSETS.fetch(request);
+      }
 
-    return response;
+      return response;
+    } catch (error) {
+      if (!runtimeRequest) throw error;
+      return runtimeExceptionResponse(url.pathname, error);
+    }
   },
 };
 
-async function createCloudflareApp(env: CloudflareEnv, publicOrigin: string): Promise<ConnectApp> {
+async function createCloudflareApp(
+  env: CloudflareEnv,
+  publicOrigin: string,
+  runtimeServices?: readonly string[],
+): Promise<ConnectApp> {
   const assets = env.ASSETS;
   if (!assets) {
     throw new Error("Cloudflare ASSETS binding is required to load the catalog");
@@ -89,9 +106,10 @@ async function createCloudflareApp(env: CloudflareEnv, publicOrigin: string): Pr
   // Workers keep paying their evaluation here, at app creation, so the first /mcp or /docs request of an isolate
   // is served the same way as every later one.
   const secretCodec = await createSecretCodec(env.OOMOL_CONNECT_ENCRYPTION_KEY);
+  const selectedExecutorModules = selectExecutorModules(runtimeServices);
   return await createConnectApp({
-    catalog: await loadCatalogOnce(assets),
-    providerLoader: new ProviderLoader(executorModules),
+    catalog: await loadCatalogOnce(assets, runtimeServices, Object.keys(selectedExecutorModules)),
+    providerLoader: new ProviderLoader(selectedExecutorModules),
     runtimeDatabase: new D1RuntimeDatabase(env.DB, {
       secretCodec,
       runLimit: readPositiveInteger(env.OOMOL_CONNECT_RUN_LIMIT, DEFAULT_RUN_LIMIT),
@@ -155,12 +173,36 @@ function writeWorkerLog(level: "error" | "info" | "warn"): (fields: unknown, mes
   };
 }
 
-function loadCatalogOnce(assets: AssetsBinding): Promise<CatalogStore> {
-  // The catalog depends only on the assets binding, which is fixed for the isolate, so one slot
-  // under a constant key covers every request.
-  return catalogCache.get("", () =>
+function loadCatalogOnce(
+  assets: AssetsBinding,
+  runtimeServices?: readonly string[],
+  executableServices: readonly string[] = Object.keys(executorModules),
+): Promise<CatalogStore> {
+  if (runtimeServices !== undefined) {
+    const key = runtimeServices.join("\0");
+    return runtimeCatalogCache.get(key, () =>
+      loadCatalogFromAssets(assets, {
+        executableServices,
+        services: runtimeServices,
+      }),
+    );
+  }
+  return adminCatalogCache.get("", () =>
     loadCatalogFromAssets(assets, {
       executableServices: Object.keys(executorModules),
+    }),
+  );
+}
+
+function selectExecutorModules(runtimeServices?: readonly string[]): ExecutorModules {
+  if (runtimeServices === undefined) {
+    return executorModules;
+  }
+
+  return Object.fromEntries(
+    runtimeServices.flatMap((service) => {
+      const load = executorModules[service];
+      return load ? [[service, load]] : [];
     }),
   );
 }
@@ -169,8 +211,9 @@ function createSecretCodec(encryptionKey: string | undefined): Promise<ISecretCo
   return secretCodecCache.get(encryptionKey ?? "", () => createWorkerSecretCodec(encryptionKey));
 }
 
-function createCacheKey(env: CloudflareEnv, publicOrigin: string): string {
+function createCacheKey(env: CloudflareEnv, publicOrigin: string, runtimeServices?: readonly string[]): string {
   return JSON.stringify({
+    runtimeServices,
     publicOrigin,
     adminToken: env.OOMOL_CONNECT_ADMIN_TOKEN ?? "",
     runtimeToken: env.OOMOL_CONNECT_RUNTIME_TOKEN ?? "",
@@ -184,6 +227,65 @@ function createCacheKey(env: CloudflareEnv, publicOrigin: string): string {
     transitFileMaxBytes: env.OOMOL_CONNECT_TRANSIT_FILE_MAX_BYTES ?? "",
     runLimit: env.OOMOL_CONNECT_RUN_LIMIT ?? "",
   });
+}
+
+function isRuntimeRequest(pathname: string): boolean {
+  return pathname === "/mcp" || pathname.startsWith("/mcp/") || pathname === "/v1" || pathname.startsWith("/v1/");
+}
+
+async function resolveRuntimeServices(request: Request, database: CloudflareEnv["DB"]): Promise<string[]> {
+  const token = readBearerTokenFromAuthorizationHeader(request.headers.get("authorization"));
+  if (token) {
+    const grantedServices = await listD1RuntimeServicesForToken(database, token);
+    if (grantedServices !== undefined) {
+      return grantedServices;
+    }
+  }
+
+  return listD1RuntimeServices(database);
+}
+
+function runtimeExceptionResponse(pathname: string, error: unknown): Response {
+  const errorMessage = error instanceof Error ? error.message : "";
+  const storageUnavailable = errorMessage.includes("D1_ERROR:");
+  const storageQuotaExceeded = storageUnavailable && errorMessage.includes("daily row read limit");
+  const status = storageUnavailable ? 503 : 500;
+  const errorCode = storageQuotaExceeded
+    ? "runtime_storage_quota_exceeded"
+    : storageUnavailable
+      ? "runtime_storage_unavailable"
+      : "runtime_internal_error";
+  const message = storageUnavailable
+    ? "OpenConnector runtime storage is temporarily unavailable."
+    : "OpenConnector encountered an internal runtime error.";
+  const retryable = storageUnavailable && !storageQuotaExceeded;
+  workerLogger.error({ err: error, errorCode, pathname }, "runtime request failed before a response was produced");
+
+  if (pathname === "/mcp" || pathname.startsWith("/mcp/")) {
+    return Response.json(
+      {
+        jsonrpc: "2.0",
+        id: null,
+        error: {
+          code: storageUnavailable ? -32_001 : -32_603,
+          message,
+          data: { errorCode, retryable },
+        },
+        retryable,
+      },
+      { status },
+    );
+  }
+
+  return Response.json(
+    {
+      success: false,
+      message,
+      error: { code: errorCode, message },
+      retryable,
+    },
+    { status },
+  );
 }
 
 function shouldServeAsset(request: Request): boolean {

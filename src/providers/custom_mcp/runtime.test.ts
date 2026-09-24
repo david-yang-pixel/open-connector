@@ -53,6 +53,65 @@ describe("custom MCP runtime", () => {
     ]);
   });
 
+  it("reuses remote tool definitions for one connection revision and refreshes after the revision changes", async () => {
+    const first = context({ connectionId: "connection-cache-test", connectionRevision: "revision-1" });
+
+    await listCustomMcpTools(first);
+    await callCustomMcpTool(first, {
+      toolName: "query_logs",
+      arguments: { query: "error" },
+    });
+
+    expect(client.listTools).toHaveBeenCalledTimes(1);
+
+    await listCustomMcpTools(context({ connectionId: "connection-cache-test", connectionRevision: "revision-2" }));
+    expect(client.listTools).toHaveBeenCalledTimes(2);
+  });
+
+  it("reapplies connection authorization when using cached remote tool definitions", async () => {
+    const cacheIdentity = { connectionId: "connection-policy-test", connectionRevision: "revision-1" };
+    await expect(
+      listCustomMcpTools(context({ ...cacheIdentity, authorizeAction: () => ({ allowed: true }) })),
+    ).resolves.toHaveLength(1);
+
+    await expect(
+      listCustomMcpTools(
+        context({
+          ...cacheIdentity,
+          authorizeAction: () => ({ allowed: false, code: "connection_tool_not_allowed", message: "denied" }),
+        }),
+      ),
+    ).resolves.toEqual([]);
+    expect(client.listTools).toHaveBeenCalledTimes(1);
+  });
+
+  it("omits remote tools denied by the connection-scoped authorization policy", async () => {
+    client.listTools.mockResolvedValueOnce({
+      tools: [
+        {
+          name: "query_logs",
+          inputSchema: { type: "object" },
+          annotations: { readOnlyHint: true },
+        },
+        {
+          name: "delete_logs",
+          inputSchema: { type: "object" },
+          annotations: { destructiveHint: true },
+        },
+      ],
+    });
+    const customContext = context({
+      authorizeAction: (action) =>
+        action.id === "custom_mcp.remote.query_logs"
+          ? { allowed: true }
+          : { allowed: false, code: "connection_tool_not_allowed", message: "denied" },
+    });
+
+    await expect(listCustomMcpTools(customContext)).resolves.toEqual([
+      expect.objectContaining({ name: "query_logs", actionId: "custom_mcp.remote.query_logs" }),
+    ]);
+  });
+
   it("tries each primary transport before using a configured fallback endpoint", async () => {
     mcpClient.withMcpClient.mockImplementation(
       async (

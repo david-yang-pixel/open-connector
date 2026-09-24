@@ -302,7 +302,8 @@ function mapExecutionErrorStatus(code: string | undefined, details?: unknown): R
   if (
     code === "authorization_failed" ||
     code === "connection_not_allowed" ||
-    code === "connection_operation_not_allowed"
+    code === "connection_operation_not_allowed" ||
+    code === "connection_tool_not_allowed"
   ) {
     return 403;
   }

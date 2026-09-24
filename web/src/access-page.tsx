@@ -2,6 +2,7 @@ import type {
   ConnectionAccessLevel,
   ConnectionPermissionGrant,
   ConnectionRecord,
+  ConnectionToolPolicy,
   PolicyRules,
   ProviderDefinition,
   RuntimePolicyState,
@@ -33,7 +34,8 @@ import {
 } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { apiDelete, apiPost, apiPut } from "./api";
-import { McpToolsDialog } from "./mcp-tools-dialog";
+import { CloudflareUsage } from "./cloudflare-usage";
+import { ConnectionToolPolicyDialog } from "./connection-tool-policy-dialog";
 import { connectionDiscoveredToolCount, formatDate } from "./model";
 import {
   countAllowedActions,
@@ -72,6 +74,8 @@ export interface ConnectionGrantDraft {
   mode: "unrestricted" | "restricted";
   ids: string[];
   accessById: Record<string, ConnectionAccessLevel>;
+  toolPolicyById: Record<string, ConnectionToolPolicy>;
+  allowProxyById: Record<string, boolean>;
 }
 
 export interface ConnectionGrantOption {
@@ -263,16 +267,18 @@ export function AccessPage(props: AccessPageProps): ReactNode {
   }
 
   function openPolicyEditor(token: RuntimeTokenSummary): void {
+    const connections = createConnectionGrantDraft(token.allowedConnections ?? [], token.connectionPermissions);
+    const generatedActions = connectionScopedAllowedActions([], connections, connectionOptions);
     setEditingToken(token);
     setEditTokenDraft(
       createPolicyEditorDraft({
-        allowedActions: token.allowedActions,
+        allowedActions: sameStringSet(token.allowedActions, generatedActions) ? [] : token.allowedActions,
         blockedActions: token.blockedActions,
-        allowedProxies: token.allowedProxies,
+        allowedProxies: [],
         blockedProxies: [],
       }),
     );
-    setEditConnections(createConnectionGrantDraft(token.allowedConnections ?? [], token.connectionPermissions));
+    setEditConnections(connections);
     setTokenStatus(null);
   }
 
@@ -307,6 +313,7 @@ export function AccessPage(props: AccessPageProps): ReactNode {
 
         <div className="access-section-content">
           <PolicyBaseline policy={policy} providers={props.providers} />
+          <CloudflareUsage connections={props.connections} />
           <PolicyTester policy={policy} providers={props.providers} tokens={props.tokens} />
           <div className="access-settings-list">
             <PolicyLayerDisclosure rules={policy.deployment} />
@@ -791,7 +798,7 @@ function CreateTokenDialog(props: CreateTokenDialogProps): ReactNode {
   const t = useTranslate();
   const mode = createTokenDialogMode(props.created);
   const created = mode === "created" ? props.created : null;
-  const issues = validatePolicyEditorDraft(props.draft, true);
+  const issues = validatePolicyEditorDraft(props.draft, false);
   const connectionIssue = connectionGrantIssue(props.connections);
 
   return (
@@ -846,20 +853,13 @@ function CreateTokenDialog(props: CreateTokenDialogProps): ReactNode {
                   placeholder={t("access.namePlaceholder")}
                 />
               </Label>
-              <PolicyEditor
+              <TokenPermissionEditor
                 draft={props.draft}
                 providers={props.providers}
-                includeProxies
-                proxyAccess="grant"
-                connectionEditor={
-                  <ConnectionGrantEditor
-                    draft={props.connections}
-                    options={props.connectionOptions}
-                    onChange={props.onConnectionsChange}
-                  />
-                }
-                connectionInvalid={connectionIssue != null}
-                onChange={props.onDraftChange}
+                connections={props.connections}
+                connectionOptions={props.connectionOptions}
+                onDraftChange={props.onDraftChange}
+                onConnectionsChange={props.onConnectionsChange}
               />
               {props.status ? <FormStatus message={props.status} /> : null}
               <div className="token-dialog-actions">
@@ -896,7 +896,7 @@ interface EditTokenPolicyDialogProps {
 
 function EditTokenPolicyDialog(props: EditTokenPolicyDialogProps): ReactNode {
   const t = useTranslate();
-  const issues = validatePolicyEditorDraft(props.draft, true);
+  const issues = validatePolicyEditorDraft(props.draft, false);
   const connectionIssue = connectionGrantIssue(props.connections);
   return (
     <Dialog open onOpenChange={(open) => (!open ? props.onClose() : undefined)}>
@@ -915,20 +915,13 @@ function EditTokenPolicyDialog(props: EditTokenPolicyDialogProps): ReactNode {
         </DialogHeader>
         <div className="token-dialog-body">
           <form className="token-dialog-form" onSubmit={(event) => void props.onSubmit(event)}>
-            <PolicyEditor
+            <TokenPermissionEditor
               draft={props.draft}
               providers={props.providers}
-              includeProxies
-              proxyAccess="grant"
-              connectionEditor={
-                <ConnectionGrantEditor
-                  draft={props.connections}
-                  options={props.connectionOptions}
-                  onChange={props.onConnectionsChange}
-                />
-              }
-              connectionInvalid={connectionIssue != null}
-              onChange={props.onDraftChange}
+              connections={props.connections}
+              connectionOptions={props.connectionOptions}
+              onDraftChange={props.onDraftChange}
+              onConnectionsChange={props.onConnectionsChange}
             />
             {props.status ? <FormStatus message={props.status} /> : null}
             <div className="token-dialog-actions">
@@ -946,6 +939,59 @@ function EditTokenPolicyDialog(props: EditTokenPolicyDialogProps): ReactNode {
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+interface TokenPermissionEditorProps {
+  draft: PolicyEditorDraft;
+  providers: ProviderDefinition[];
+  connections: ConnectionGrantDraft;
+  connectionOptions: ConnectionGrantOption[];
+  onDraftChange(draft: PolicyEditorDraft): void;
+  onConnectionsChange(draft: ConnectionGrantDraft): void;
+}
+
+export function TokenPermissionEditor(props: TokenPermissionEditorProps): ReactNode {
+  const t = useTranslate();
+  const customRuleCount = props.draft.rules.allowedActions.length + props.draft.rules.blockedActions.length;
+  return (
+    <div className="token-permission-editor">
+      <section className="token-permission-primary">
+        <div className="token-permission-heading">
+          <div>
+            <h3>{t("access.policy.tools.connectionPermissions")}</h3>
+            <p>{t("access.policy.tools.connectionPermissionsHint")}</p>
+          </div>
+          <Badge>{t("access.policy.editor.connectionCount", { count: props.connections.ids.length })}</Badge>
+        </div>
+        <ConnectionGrantEditor
+          draft={props.connections}
+          options={props.connectionOptions}
+          onChange={props.onConnectionsChange}
+        />
+      </section>
+
+      <details className="token-permission-advanced" open={customRuleCount > 0 || undefined}>
+        <summary>
+          <span>
+            <strong>{t("access.policy.tools.advancedRules")}</strong>
+            <small>{t("access.policy.tools.advancedRulesHint")}</small>
+          </span>
+          {customRuleCount > 0 ? (
+            <Badge>{t("access.policy.tools.customRuleCount", { count: customRuleCount })}</Badge>
+          ) : null}
+        </summary>
+        <div className="token-permission-advanced-body">
+          <PolicyEditor
+            draft={props.draft}
+            providers={props.providers}
+            includeProxies={false}
+            showActionPresets={false}
+            onChange={props.onDraftChange}
+          />
+        </div>
+      </details>
+    </div>
   );
 }
 
@@ -1051,20 +1097,34 @@ export function createConnectionGrantDraft(
   ids: string[] = [],
   permissions: ConnectionPermissionGrant[] = [],
 ): ConnectionGrantDraft {
-  const permissionById = new Map(permissions.map((grant) => [grant.connectionId, grant.access]));
+  const permissionById = new Map(permissions.map((grant) => [grant.connectionId, grant]));
+  const effectiveIds = ids.length > 0 ? ids : permissions.map((grant) => grant.connectionId);
   return {
-    mode: ids.length > 0 ? "restricted" : "unrestricted",
-    ids: [...ids],
-    accessById: Object.fromEntries(ids.map((id) => [id, permissionById.get(id) ?? "full"])),
+    mode: effectiveIds.length > 0 ? "restricted" : "unrestricted",
+    ids: [...effectiveIds],
+    accessById: Object.fromEntries(effectiveIds.map((id) => [id, permissionById.get(id)?.access ?? "full"])),
+    toolPolicyById: Object.fromEntries(
+      effectiveIds.flatMap((id) => {
+        const policy = permissionById.get(id)?.toolPolicy;
+        return policy ? [[id, policy]] : [];
+      }),
+    ),
+    allowProxyById: Object.fromEntries(
+      effectiveIds.flatMap((id) => {
+        const allowProxy = permissionById.get(id)?.allowProxy;
+        return allowProxy === undefined ? [] : [[id, allowProxy]];
+      }),
+    ),
   };
 }
 
 export function createRecommendedConnectionGrantDraft(options: ConnectionGrantOption[]): ConnectionGrantDraft {
-  if (options.length === 0) return createConnectionGrantDraft();
   return {
     mode: "restricted",
     ids: options.map((option) => option.id),
     accessById: Object.fromEntries(options.map((option) => [option.id, "read"])),
+    toolPolicyById: {},
+    allowProxyById: {},
   };
 }
 
@@ -1074,7 +1134,16 @@ export function allowedConnectionsFromDraft(draft: ConnectionGrantDraft): string
 
 export function connectionPermissionsFromDraft(draft: ConnectionGrantDraft): ConnectionPermissionGrant[] {
   return draft.mode === "restricted"
-    ? draft.ids.map((connectionId) => ({ connectionId, access: draft.accessById[connectionId] ?? "read" }))
+    ? draft.ids.map((connectionId) => {
+        const grant: ConnectionPermissionGrant = {
+          connectionId,
+          access: draft.accessById[connectionId] ?? "read",
+          allowProxy: draft.allowProxyById[connectionId] ?? false,
+        };
+        const toolPolicy = draft.toolPolicyById[connectionId];
+        if (toolPolicy) grant.toolPolicy = toolPolicy;
+        return grant;
+      })
     : [];
 }
 
@@ -1092,10 +1161,22 @@ export function runtimeTokenPolicyBody(
   return {
     allowedActions: connectionScopedAllowedActions(rules.allowedActions, connections, options),
     blockedActions: rules.blockedActions,
-    allowedProxies: rules.allowedProxies,
+    allowedProxies: connectionScopedAllowedProxies(rules.allowedProxies, connections, options),
     allowedConnections: allowedConnectionsFromDraft(connections),
     connectionPermissions: connectionPermissionsFromDraft(connections),
   };
+}
+
+function connectionScopedAllowedProxies(
+  allowedProxies: string[],
+  connections: ConnectionGrantDraft,
+  options: ConnectionGrantOption[],
+): string[] {
+  if (connections.mode !== "restricted") return allowedProxies;
+  const selected = new Set(
+    connections.ids.filter((id) => connections.accessById[id] === "full" && connections.allowProxyById[id] === true),
+  );
+  return [...new Set(options.filter((option) => selected.has(option.id)).map((option) => option.service))];
 }
 
 function connectionScopedAllowedActions(
@@ -1107,6 +1188,10 @@ function connectionScopedAllowedActions(
   const selected = new Set(connections.ids);
   const services = options.filter((option) => selected.has(option.id)).map((option) => `${option.service}.*`);
   return [...new Set(services)];
+}
+
+function sameStringSet(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((value) => right.includes(value));
 }
 
 export function connectionGrantOptions(
@@ -1163,14 +1248,6 @@ export function ConnectionGrantEditor(props: ConnectionGrantEditorProps): ReactN
   const [expandedServices, setExpandedServices] = useState<Set<string>>(() => new Set(options.map((o) => o.service)));
   const [viewingToolsOption, setViewingToolsOption] = useState<ConnectionGrantOption | null>(null);
 
-  function setMode(mode: ConnectionGrantDraft["mode"]): void {
-    props.onChange({
-      mode,
-      ids: mode === "unrestricted" ? [] : props.draft.ids,
-      accessById: mode === "unrestricted" ? {} : props.draft.accessById,
-    });
-  }
-
   function toggleServiceExpand(service: string): void {
     setExpandedServices((prev) => {
       const next = new Set(prev);
@@ -1190,23 +1267,46 @@ export function ConnectionGrantEditor(props: ConnectionGrantEditorProps): ReactN
       ? props.draft.ids.filter((id) => !groupIds.includes(id))
       : Array.from(new Set([...props.draft.ids, ...groupIds]));
     const accessById = { ...props.draft.accessById };
+    const toolPolicyById = { ...props.draft.toolPolicyById };
+    const allowProxyById = { ...props.draft.allowProxyById };
     for (const id of groupIds) {
-      if (allChecked) delete accessById[id];
-      else accessById[id] ??= "read";
+      if (allChecked) {
+        delete accessById[id];
+        delete toolPolicyById[id];
+        delete allowProxyById[id];
+      } else accessById[id] ??= "read";
     }
-    props.onChange({ mode: "restricted", ids: nextIds, accessById });
+    props.onChange({ mode: "restricted", ids: nextIds, accessById, toolPolicyById, allowProxyById });
   }
 
   function setGroupAccess(groupOptions: ConnectionGrantOption[], access: ConnectionAccessLevel | "disabled"): void {
     const groupIds = groupOptions.map((option) => option.id);
     const accessById = { ...props.draft.accessById };
+    const toolPolicyById = { ...props.draft.toolPolicyById };
+    const allowProxyById = { ...props.draft.allowProxyById };
     if (access === "disabled") {
-      for (const id of groupIds) delete accessById[id];
-      props.onChange({ mode: "restricted", ids: props.draft.ids.filter((id) => !groupIds.includes(id)), accessById });
+      for (const id of groupIds) {
+        delete accessById[id];
+        delete toolPolicyById[id];
+        delete allowProxyById[id];
+      }
+      props.onChange({
+        mode: "restricted",
+        ids: props.draft.ids.filter((id) => !groupIds.includes(id)),
+        accessById,
+        toolPolicyById,
+        allowProxyById,
+      });
       return;
     }
     for (const id of groupIds) accessById[id] = access;
-    props.onChange({ mode: "restricted", ids: Array.from(new Set([...props.draft.ids, ...groupIds])), accessById });
+    props.onChange({
+      mode: "restricted",
+      ids: Array.from(new Set([...props.draft.ids, ...groupIds])),
+      accessById,
+      toolPolicyById,
+      allowProxyById,
+    });
   }
 
   const filteredOptions = useMemo(() => {
@@ -1244,36 +1344,22 @@ export function ConnectionGrantEditor(props: ConnectionGrantEditorProps): ReactN
   return (
     <div className="policy-resource-editor">
       <p className="mb-3 text-sm text-muted-foreground">{t("access.policy.editor.accessHint")}</p>
-      <fieldset className="policy-allow-mode">
-        <legend>{t("access.policy.editor.connectionsTitle")}</legend>
-        <label>
-          <input
-            type="radio"
-            name={`${listId}-connection-mode`}
-            value="unrestricted"
-            checked={props.draft.mode === "unrestricted"}
-            onChange={() => setMode("unrestricted")}
-          />
-          <span>
-            <strong>{t("access.policy.editor.unrestricted")}</strong>
-            <small>{t("access.policy.editor.connectionsUnrestrictedHint")}</small>
-          </span>
-        </label>
-        <label>
-          <input
-            type="radio"
-            name={`${listId}-connection-mode`}
-            value="restricted"
-            checked={props.draft.mode === "restricted"}
-            onChange={() => setMode("restricted")}
-          />
-          <span>
-            <strong>{t("access.policy.editor.restricted")}</strong>
-            <small>{t("access.policy.editor.connectionsRestrictedHint")}</small>
-          </span>
-        </label>
-      </fieldset>
-      {props.draft.mode === "restricted" ? (
+      {props.draft.mode === "unrestricted" ? (
+        <div className="token-legacy-permission" role="alert">
+          <div>
+            <strong>{t("access.policy.tools.legacyUnrestricted")}</strong>
+            <p>{t("access.policy.tools.legacyUnrestrictedHint")}</p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => props.onChange(createRecommendedConnectionGrantDraft(options))}
+          >
+            {t("access.policy.tools.convertLegacy")}
+          </Button>
+        </div>
+      ) : (
         <section className="policy-rule-section">
           <div className="policy-rule-heading">
             <div>
@@ -1288,6 +1374,8 @@ export function ConnectionGrantEditor(props: ConnectionGrantEditorProps): ReactN
                     mode: "restricted",
                     ids: options.map((option) => option.id),
                     accessById: Object.fromEntries(options.map((option) => [option.id, "read"])),
+                    toolPolicyById: {},
+                    allowProxyById: {},
                   })
                 }
               >
@@ -1297,7 +1385,15 @@ export function ConnectionGrantEditor(props: ConnectionGrantEditorProps): ReactN
               <button
                 type="button"
                 className="text-xs text-muted-foreground hover:underline"
-                onClick={() => props.onChange({ mode: "restricted", ids: [], accessById: {} })}
+                onClick={() =>
+                  props.onChange({
+                    mode: "restricted",
+                    ids: [],
+                    accessById: {},
+                    toolPolicyById: {},
+                    allowProxyById: {},
+                  })
+                }
               >
                 {t("access.policy.editor.deselectAll")}
               </button>
@@ -1325,6 +1421,7 @@ export function ConnectionGrantEditor(props: ConnectionGrantEditorProps): ReactN
                   isExpanded={expandedServices.has(group.service)}
                   selectedIds={props.draft.ids}
                   accessById={props.draft.accessById}
+                  toolPolicyById={props.draft.toolPolicyById}
                   maxItems={connectionListMaxItems}
                   onToggleExpand={toggleServiceExpand}
                   onToggleGroup={toggleGroup}
@@ -1336,6 +1433,16 @@ export function ConnectionGrantEditor(props: ConnectionGrantEditorProps): ReactN
                       accessById: checked
                         ? { ...props.draft.accessById, [id]: props.draft.accessById[id] ?? "read" }
                         : Object.fromEntries(Object.entries(props.draft.accessById).filter(([item]) => item !== id)),
+                      toolPolicyById: checked
+                        ? props.draft.toolPolicyById
+                        : Object.fromEntries(
+                            Object.entries(props.draft.toolPolicyById).filter(([item]) => item !== id),
+                          ),
+                      allowProxyById: checked
+                        ? props.draft.allowProxyById
+                        : Object.fromEntries(
+                            Object.entries(props.draft.allowProxyById).filter(([item]) => item !== id),
+                          ),
                     })
                   }
                   onSetOptionAccess={(id, access) =>
@@ -1343,9 +1450,12 @@ export function ConnectionGrantEditor(props: ConnectionGrantEditorProps): ReactN
                       mode: "restricted",
                       ids: props.draft.ids.includes(id) ? props.draft.ids : [...props.draft.ids, id],
                       accessById: { ...props.draft.accessById, [id]: access },
+                      toolPolicyById: props.draft.toolPolicyById,
+                      allowProxyById:
+                        access === "full" ? props.draft.allowProxyById : { ...props.draft.allowProxyById, [id]: false },
                     })
                   }
-                  onViewTools={(option) => setViewingToolsOption(option)}
+                  onConfigureTools={(option) => setViewingToolsOption(option)}
                 />
               ))}
             </div>
@@ -1362,23 +1472,25 @@ export function ConnectionGrantEditor(props: ConnectionGrantEditorProps): ReactN
             </p>
           ) : null}
         </section>
-      ) : null}
+      )}
 
       {viewingToolsOption ? (
-        <McpToolsDialog
-          connection={{
-            id: viewingToolsOption.id,
-            service: viewingToolsOption.service,
-            connectionName: viewingToolsOption.name,
-            authType: "custom_credential",
-            metadata: {},
-            discoveredToolCount: viewingToolsOption.toolCount,
-            profile: viewingToolsOption.displayName ? { displayName: viewingToolsOption.displayName } : null,
-          }}
+        <ConnectionToolPolicyDialog
+          option={viewingToolsOption}
+          access={props.draft.accessById[viewingToolsOption.id] ?? "read"}
+          value={props.draft.toolPolicyById[viewingToolsOption.id]}
+          allowProxy={props.draft.allowProxyById[viewingToolsOption.id] ?? false}
           open={Boolean(viewingToolsOption)}
           onOpenChange={(open) => {
             if (!open) setViewingToolsOption(null);
           }}
+          onSave={(toolPolicy, allowProxy) =>
+            props.onChange({
+              ...props.draft,
+              toolPolicyById: { ...props.draft.toolPolicyById, [viewingToolsOption.id]: toolPolicy },
+              allowProxyById: { ...props.draft.allowProxyById, [viewingToolsOption.id]: allowProxy },
+            })
+          }
         />
       ) : null}
     </div>

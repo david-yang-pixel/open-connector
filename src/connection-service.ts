@@ -96,6 +96,7 @@ export interface DisconnectedConnectionSummary {
 
 export interface ExecutionConnection {
   summary?: ConnectionSummary;
+  revision?: string;
   marketplace?: boolean;
   getCredential(service: string): Promise<ResolvedCredential | undefined>;
 }
@@ -281,6 +282,7 @@ export class ConnectionService {
 
     return {
       summary,
+      revision: stored?.revision,
       getCredential: async (requestedService) => (requestedService === service ? credential : undefined),
     };
   }
