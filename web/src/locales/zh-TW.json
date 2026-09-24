@@ -459,21 +459,6 @@
         "layerCount": "部署 {{deployment}} · 執行階段 {{runtime}}",
         "blockPriority": "Block 規則優先"
       },
-      "usage": {
-        "title": "Cloudflare 免費額度",
-        "description": "查看帳戶今天的已使用量與免費方案每日額度。",
-        "connection": "Cloudflare MCP 連線",
-        "connectMcp": "請先連接 Cloudflare MCP，再查看帳戶用量。",
-        "loading": "正在讀取 Cloudflare 用量…",
-        "loadFailed": "無法讀取 Cloudflare 用量。",
-        "noAccounts": "目前連線沒有可查詢的 Cloudflare 帳戶。",
-        "asOf": "查詢時間",
-        "workerRequests": "Worker 請求",
-        "d1RowsRead": "D1 讀取列數",
-        "d1RowsWritten": "D1 寫入列數",
-        "percentUsed": "已用 {{percent}}",
-        "note": "以免費方案額度為參考；付費方案額度不同。每日 UTC 00:00 重置，統計資料可能略有延遲。"
-      },
       "tester": {
         "title": "權限測試器",
         "description": "使用執行時相同的分層策略檢查操作或提供商。",

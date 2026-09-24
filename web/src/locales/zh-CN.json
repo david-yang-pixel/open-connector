@@ -459,21 +459,6 @@
         "layerCount": "部署 {{deployment}} · 运行时 {{runtime}}",
         "blockPriority": "Block 规则优先"
       },
-      "usage": {
-        "title": "Cloudflare 免费额度",
-        "description": "查看账户今天的已使用量与免费套餐每日额度。",
-        "connection": "Cloudflare MCP 连接",
-        "connectMcp": "请先连接 Cloudflare MCP，再查看账户用量。",
-        "loading": "正在读取 Cloudflare 用量…",
-        "loadFailed": "无法读取 Cloudflare 用量。",
-        "noAccounts": "当前连接没有可查询的 Cloudflare 账户。",
-        "asOf": "查询时间",
-        "workerRequests": "Worker 请求",
-        "d1RowsRead": "D1 读取行数",
-        "d1RowsWritten": "D1 写入行数",
-        "percentUsed": "已用 {{percent}}",
-        "note": "按免费套餐额度参考；付费套餐额度不同。每日北京时间 08:00 重置，统计数据可能略有延迟。"
-      },
       "tester": {
         "title": "权限测试器",
         "description": "使用执行时相同的分层策略检查操作或提供商。",

@@ -34,7 +34,6 @@ import {
 } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { apiDelete, apiPost, apiPut } from "./api";
-import { CloudflareUsage } from "./cloudflare-usage";
 import { ConnectionToolPolicyDialog } from "./connection-tool-policy-dialog";
 import { connectionDiscoveredToolCount, formatDate } from "./model";
 import {
@@ -313,7 +312,6 @@ export function AccessPage(props: AccessPageProps): ReactNode {
 
         <div className="access-section-content">
           <PolicyBaseline policy={policy} providers={props.providers} />
-          <CloudflareUsage connections={props.connections} />
           <PolicyTester policy={policy} providers={props.providers} tokens={props.tokens} />
           <div className="access-settings-list">
             <PolicyLayerDisclosure rules={policy.deployment} />

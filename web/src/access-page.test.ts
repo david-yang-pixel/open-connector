@@ -104,6 +104,8 @@ describe("AccessPage", () => {
     );
 
     expect(markup).toContain("access.policy.baseline.title");
+    expect(markup).not.toContain("access.policy.usage.title");
+    expect(markup).toContain("access.policy.tester.title");
     expect(markup).toContain("access.policy.deploymentSummary.title");
     expect(markup).toContain("access.policy.runtimeSummary.title");
     expect(markup).not.toContain("github.create_issue");

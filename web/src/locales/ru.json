@@ -470,21 +470,6 @@
         "layerCount": "В deployment {{deployment}} · В runtime {{runtime}}",
         "blockPriority": "Block rules имеют приоритет"
       },
-      "usage": {
-        "title": "Бесплатные лимиты Cloudflare",
-        "description": "Использование за сегодня относительно дневных лимитов Workers Free.",
-        "connection": "Подключение Cloudflare MCP",
-        "connectMcp": "Подключите Cloudflare MCP, чтобы увидеть использование аккаунта.",
-        "loading": "Загрузка использования Cloudflare…",
-        "loadFailed": "Не удалось загрузить использование Cloudflare.",
-        "noAccounts": "Для этого подключения нет доступных аккаунтов Cloudflare.",
-        "asOf": "Проверено",
-        "workerRequests": "Запросы Worker",
-        "d1RowsRead": "Прочитано строк D1",
-        "d1RowsWritten": "Записано строк D1",
-        "percentUsed": "Использовано {{percent}}",
-        "note": "Лимиты бесплатного плана указаны для справки; у платных планов они другие. Сброс ежедневно в 00:00 UTC. Статистика может обновляться с задержкой."
-      },
       "tester": {
         "title": "Проверка разрешений",
         "description": "Проверьте action или provider по той же многоуровневой policy, что используется при выполнении.",

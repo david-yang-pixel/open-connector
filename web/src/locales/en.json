@@ -476,21 +476,6 @@
         "layerCount": "Deployment {{deployment}} · Runtime {{runtime}}",
         "blockPriority": "Block rules take priority"
       },
-      "usage": {
-        "title": "Cloudflare free usage",
-        "description": "Today's account usage against Workers Free daily allowances.",
-        "connection": "Cloudflare MCP connection",
-        "connectMcp": "Connect Cloudflare MCP to view account usage.",
-        "loading": "Loading Cloudflare usage…",
-        "loadFailed": "Could not load Cloudflare usage.",
-        "noAccounts": "This connection has no accessible Cloudflare accounts.",
-        "asOf": "Checked at",
-        "workerRequests": "Worker requests",
-        "d1RowsRead": "D1 rows read",
-        "d1RowsWritten": "D1 rows written",
-        "percentUsed": "{{percent}} used",
-        "note": "Free-plan limits shown for reference; paid plans differ. Resets daily at 00:00 UTC. Analytics may lag."
-      },
       "tester": {
         "title": "Permission tester",
         "description": "Check an action or provider against the same layered policy used at execution time.",

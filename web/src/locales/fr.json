@@ -482,21 +482,6 @@
         "layerCount": "Déploiement {{deployment}} · Runtime {{runtime}}",
         "blockPriority": "Les règles de blocage sont prioritaires"
       },
-      "usage": {
-        "title": "Quota gratuit Cloudflare",
-        "description": "Utilisation du jour par rapport aux limites quotidiennes Workers Free.",
-        "connection": "Connexion Cloudflare MCP",
-        "connectMcp": "Connectez Cloudflare MCP pour afficher l’utilisation du compte.",
-        "loading": "Chargement de l’utilisation Cloudflare…",
-        "loadFailed": "Impossible de charger l’utilisation Cloudflare.",
-        "noAccounts": "Aucun compte Cloudflare accessible avec cette connexion.",
-        "asOf": "Vérifié à",
-        "workerRequests": "Requêtes Worker",
-        "d1RowsRead": "Lignes D1 lues",
-        "d1RowsWritten": "Lignes D1 écrites",
-        "percentUsed": "{{percent}} utilisé",
-        "note": "Limites du forfait gratuit à titre indicatif ; les forfaits payants diffèrent. Réinitialisation à 00:00 UTC. Les statistiques peuvent être différées."
-      },
       "tester": {
         "title": "Testeur d’autorisations",
         "description": "Vérifiez une action ou un fournisseur avec la politique en couches utilisée à l’exécution.",

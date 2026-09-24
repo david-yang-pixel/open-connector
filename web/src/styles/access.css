@@ -189,107 +189,6 @@
   white-space: nowrap;
 }
 
-.cloudflare-usage {
-  display: grid;
-  gap: 10px;
-}
-
-.cloudflare-usage-heading p,
-.cloudflare-usage-note,
-.cloudflare-usage-account-heading small,
-.cloudflare-usage-item small {
-  color: var(--muted-foreground);
-  font-size: 12px;
-}
-
-.cloudflare-usage-heading p {
-  margin: 3px 0 0;
-}
-
-.cloudflare-usage-controls,
-.cloudflare-usage-account-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.cloudflare-usage-controls select {
-  max-width: 180px;
-  min-height: 32px;
-  padding: 0 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--background);
-  color: var(--foreground);
-}
-
-.cloudflare-usage-account {
-  display: grid;
-  gap: 8px;
-}
-
-.cloudflare-usage-account-heading strong {
-  font-size: 12px;
-}
-
-.cloudflare-usage-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--background);
-}
-
-.cloudflare-usage-item {
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-  padding: 12px 14px;
-}
-
-.cloudflare-usage-item + .cloudflare-usage-item {
-  border-left: 1px solid var(--border);
-}
-
-.cloudflare-usage-item > span {
-  color: var(--muted-foreground);
-  font-size: 12px;
-}
-
-.cloudflare-usage-item strong {
-  font-size: 16px;
-  font-variant-numeric: tabular-nums;
-}
-
-.cloudflare-usage-track {
-  height: 5px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--muted);
-}
-
-.cloudflare-usage-track > span {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--primary);
-}
-
-.cloudflare-usage-message {
-  margin: 0;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--muted-foreground);
-  font-size: 13px;
-}
-
-.cloudflare-usage-error {
-  color: var(--destructive);
-}
-
 .policy-tester {
   padding: 12px;
   border: 1px solid var(--border);
@@ -1164,7 +1063,6 @@
 
 @media (max-width: 640px) {
   .policy-baseline-grid,
-  .cloudflare-usage-grid,
   .policy-rule-readout,
   .policy-allow-mode,
   .policy-advanced-grid {
@@ -1172,11 +1070,6 @@
   }
 
   .policy-baseline-grid > div + div {
-    border-top: 1px solid var(--border);
-    border-left: 0;
-  }
-
-  .cloudflare-usage-item + .cloudflare-usage-item {
     border-top: 1px solid var(--border);
     border-left: 0;
   }

@@ -462,21 +462,6 @@
         "layerCount": "Deployment {{deployment}} 件 · Runtime {{runtime}} 件",
         "blockPriority": "Block rules が優先されます"
       },
-      "usage": {
-        "title": "Cloudflare 無料枠",
-        "description": "本日の使用量と Workers Free の日次上限を表示します。",
-        "connection": "Cloudflare MCP 接続",
-        "connectMcp": "使用量を表示するには Cloudflare MCP を接続してください。",
-        "loading": "Cloudflare の使用量を読み込み中…",
-        "loadFailed": "Cloudflare の使用量を読み込めませんでした。",
-        "noAccounts": "アクセス可能な Cloudflare アカウントがありません。",
-        "asOf": "確認時刻",
-        "workerRequests": "Worker リクエスト",
-        "d1RowsRead": "D1 読み取り行数",
-        "d1RowsWritten": "D1 書き込み行数",
-        "percentUsed": "使用率 {{percent}}",
-        "note": "無料プランの上限は参考値です。有料プランでは異なります。毎日 UTC 00:00 にリセットされ、統計には遅延が生じる場合があります。"
-      },
       "tester": {
         "title": "権限テスター",
         "description": "実行時と同じ階層 policy で action または provider を確認します。",
