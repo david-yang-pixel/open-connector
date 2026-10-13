@@ -77,6 +77,8 @@ export interface ConnectorRuntimeOptions {
   runtimeToken?: string;
   /** Verify /v1 bearer tokens as JWTs against a JWKS endpoint. */
   jwt?: RuntimeJwtConfig;
+  /** Let ChatGPT custom connectors obtain /mcp runtime tokens through OAuth. Requires `adminToken` and an HTTPS `publicOrigin`. */
+  mcpOAuth?: boolean;
   postgres?: ConnectorPostgresOptions;
   network?: ConnectorNetworkOptions;
   /** Allow or block actions and proxies by name. */
@@ -221,6 +223,7 @@ async function openRuntime(options: ConnectorRuntimeOptions): Promise<ConnectorR
       adminToken: options.adminToken,
       runtimeToken: options.runtimeToken,
       verifyRuntimeJwt,
+      mcpOAuth: options.mcpOAuth,
       actionPolicy: new ActionPolicyService(options.actionPolicy),
       allowedCustomOAuth: options.allowedCustomOAuth,
       logger: options.logger,

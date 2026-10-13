@@ -27,38 +27,7 @@ export async function readJsonBody(context: Context, maxBytes?: number): Promise
   }
 
   try {
-    const contentLength = Number(context.req.header("content-length"));
-    if (maxBytes !== undefined && Number.isFinite(contentLength) && contentLength > maxBytes) {
-      throw new HttpRequestError("payload_too_large", `Request body must not exceed ${maxBytes} bytes.`, 413);
-    }
-    let text: string;
-    if (maxBytes === undefined) {
-      text = await context.req.raw.text();
-    } else if (!context.req.raw.body) {
-      text = "";
-    } else {
-      const reader = context.req.raw.body.getReader();
-      const decoder = new TextDecoder();
-      let byteLength = 0;
-      text = "";
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) {
-            break;
-          }
-          byteLength += value.byteLength;
-          if (byteLength > maxBytes) {
-            await reader.cancel().catch(() => undefined);
-            throw new HttpRequestError("payload_too_large", `Request body must not exceed ${maxBytes} bytes.`, 413);
-          }
-          text += decoder.decode(value, { stream: true });
-        }
-        text += decoder.decode();
-      } finally {
-        reader.releaseLock();
-      }
-    }
+    const text = maxBytes === undefined ? await context.req.raw.text() : await readRequestText(context, maxBytes);
     const body = text ? (JSON.parse(text) as unknown) : {};
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       throw new HttpRequestError("invalid_json", "Request body must be a JSON object.");
@@ -69,6 +38,41 @@ export async function readJsonBody(context: Context, maxBytes?: number): Promise
       throw error;
     }
     throw new HttpRequestError("invalid_json", "Request body must be valid JSON.");
+  }
+}
+
+/**
+ * Read a request body as UTF-8 text, rejecting it with 413 as soon as it exceeds `maxBytes`.
+ */
+export async function readRequestText(context: Context, maxBytes: number): Promise<string> {
+  const contentLength = Number(context.req.header("content-length"));
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    throw new HttpRequestError("payload_too_large", `Request body must not exceed ${maxBytes} bytes.`, 413);
+  }
+  if (!context.req.raw.body) {
+    return "";
+  }
+
+  const reader = context.req.raw.body.getReader();
+  const decoder = new TextDecoder();
+  let byteLength = 0;
+  let text = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      byteLength += value.byteLength;
+      if (byteLength > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        throw new HttpRequestError("payload_too_large", `Request body must not exceed ${maxBytes} bytes.`, 413);
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    return text + decoder.decode();
+  } finally {
+    reader.releaseLock();
   }
 }
 

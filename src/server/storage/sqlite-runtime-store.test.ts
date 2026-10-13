@@ -8,6 +8,7 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AesGcmSecretCodec } from "../secrets/secret-codec.ts";
 import { connectionRequestStoreTests } from "./connection-request-store.cases.ts";
+import { mcpOAuthStoreTests } from "./mcp-oauth-store.cases.ts";
 import { createDirectoryMigrationSource } from "./migration-source.ts";
 import { RuntimeTokenService } from "./runtime-token-service.ts";
 import { SqliteRunLogStore, SqliteRuntimeDatabase } from "./sqlite-runtime-store.ts";
@@ -55,6 +56,7 @@ describe("SqliteRuntimeDatabase", () => {
       "0012_marketplace.sql",
       "0013_connection_requests.sql",
       "0014_runtime_token_connection_permissions.sql",
+      "0015_mcp_oauth.sql",
     ];
     expect(entries.filter((entry) => entry.message === "sqlite migration started")).toEqual(
       migrations.map((migration) => ({ fields: { migration }, message: "sqlite migration started" })),
@@ -998,6 +1000,7 @@ describe("SQLite connection requests", () => {
     database.close();
   });
   connectionRequestStoreTests(() => database);
+  mcpOAuthStoreTests(() => database);
 });
 
 it("rolls back credential writes when the request success update fails and recovers after restart", async () => {

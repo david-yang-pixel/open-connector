@@ -76,6 +76,9 @@
       },
       "resources": {
         "title": "資源"
+      },
+      "authorize": {
+        "title": "授權用戶端"
       }
     }
   },
@@ -687,6 +690,23 @@
       "title": "OpenAPI JSON",
       "description": "在指令碼或工具匯入器中使用產生的規格。"
     }
+  },
+  "authorize": {
+    "title": "授權 {{client}}",
+    "description": "{{client}} 請求呼叫本執行環境的 MCP 端點。核准後會依下方權限建立一個執行階段權杖，並交給 {{client}} 使用。",
+    "warning": "只核准你自己剛剛發起的請求，例如你剛在 ChatGPT 中新增了這個伺服器。任何能連線到本伺服器的人都可以傳送授權連結給你。",
+    "client": "用戶端",
+    "clientNameHint": "（名稱由用戶端自行回報）",
+    "callback": "授權後返回",
+    "requestedAt": "發起時間",
+    "expiresAt": "到期時間",
+    "tokenName": "權杖名稱",
+    "approve": "核准",
+    "deny": "拒絕",
+    "loading": "正在載入授權請求...",
+    "notFound": "這個授權請求不存在、已過期或已處理。請回到 ChatGPT 重新發起連線。",
+    "failed": "無法完成授權請求。",
+    "revokeHint": "此權杖會列在 API 金鑰頁面，你可以隨時修改它的權限或將其撤銷。"
   },
   "hostedPromo": {
     "title": "歡迎使用 Open Connect",

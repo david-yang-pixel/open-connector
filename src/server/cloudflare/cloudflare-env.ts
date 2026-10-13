@@ -19,6 +19,7 @@ export interface CloudflareEnv {
   OOMOL_CONNECT_TRANSIT_FILE_TTL_SECONDS?: string;
   OOMOL_CONNECT_TRANSIT_FILE_MAX_BYTES?: string;
   OOMOL_CONNECT_RUN_LIMIT?: string;
+  OOMOL_CONNECT_MCP_OAUTH?: string;
 }
 
 export function resolvePublicOrigin(request: Request, env: CloudflareEnv): string {
@@ -28,4 +29,9 @@ export function resolvePublicOrigin(request: Request, env: CloudflareEnv): strin
 export function readPositiveInteger(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+export function readBooleanFlag(value: string | undefined): boolean {
+  const normalized = value?.trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
 }

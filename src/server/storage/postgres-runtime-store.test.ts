@@ -7,6 +7,7 @@ import { Pool } from "pg";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { AesGcmSecretCodec } from "../secrets/secret-codec.ts";
 import { connectionRequestStoreTests } from "./connection-request-store.cases.ts";
+import { mcpOAuthStoreTests } from "./mcp-oauth-store.cases.ts";
 import { defaultMigrationSource } from "./migration-source.ts";
 import { createNodeRuntimeDatabase, migratePostgresRuntimeDatabase } from "./node-runtime-database.ts";
 import { assertPostgresSchemaReady, migratePostgresDatabase } from "./postgres-migrations.ts";
@@ -54,6 +55,7 @@ describe("PostgreSQL migrations with PGlite", () => {
           { name: "0012_marketplace.sql" },
           { name: "0013_connection_requests.sql" },
           { name: "0014_runtime_token_connection_permissions.sql" },
+          { name: "0015_mcp_oauth.sql" },
         ],
       });
 
@@ -114,6 +116,7 @@ describe("PostgreSQL migrations with a custom migration source", () => {
           { name: "0012_marketplace.sql" },
           { name: "0013_connection_requests.sql" },
           { name: "0014_runtime_token_connection_permissions.sql" },
+          { name: "0015_mcp_oauth.sql" },
           { name: "9998_custom.sql" },
         ],
       });
@@ -200,6 +203,7 @@ describe("PostgresRuntimeDatabase with PGlite", () => {
   });
 
   connectionRequestStoreTests(() => database);
+  mcpOAuthStoreTests(() => database);
 
   it("persists connections and OAuth data across database instances", async () => {
     const connection = await database.connectionStore.set("github", "default", githubCredential("github-token"));

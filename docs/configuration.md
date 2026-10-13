@@ -21,6 +21,7 @@ OpenConnector is configured with environment variables.
 | `OOMOL_CONNECT_JWKS_URI`                    | unset                     | Node-only JWKS endpoint for validating runtime JWT access tokens.                                                                                                           |
 | `OOMOL_CONNECT_JWT_ISSUER`                  | unset                     | Expected `iss` claim for runtime JWT access tokens.                                                                                                                         |
 | `OOMOL_CONNECT_JWT_AUDIENCE`                | unset                     | Expected API `aud` claim for runtime JWT access tokens.                                                                                                                     |
+| `OOMOL_CONNECT_MCP_OAUTH`                   | `false`                   | Lets ChatGPT custom connectors obtain `/mcp` runtime tokens through OAuth. Requires `OOMOL_CONNECT_ADMIN_TOKEN` and an HTTPS origin. See below.                             |
 | `OOMOL_CONNECT_ALLOWED_ACTIONS`             | unset                     | Comma-separated executable action allowlist. Supports exact ids, `service.*`, `*`, and `@operation:<type>`.                                                                 |
 | `OOMOL_CONNECT_BLOCKED_ACTIONS`             | unset                     | Comma-separated executable action denylist. Supports exact ids, `service.*`, `*`, and `@operation:<type>`.                                                                  |
 | `OOMOL_CONNECT_ALLOWED_PROXIES`             | unset                     | Comma-separated provider proxy allowlist. Supports service names and `*`.                                                                                                   |
@@ -139,6 +140,32 @@ before exposing those surfaces.
 OpenConnector acts only as a resource server. It does not implement OIDC discovery or login, accept
 ID tokens as API credentials, or map JWT claims to action and proxy policy. JWT verification is
 currently available only on the Node server, not Cloudflare Workers.
+
+## ChatGPT custom connectors (MCP OAuth)
+
+ChatGPT's "Add custom MCP server" dialog cannot send an `Authorization` header, so it connects with
+OAuth instead. Set `OOMOL_CONNECT_MCP_OAUTH=true` together with `OOMOL_CONNECT_ADMIN_TOKEN` and an
+HTTPS `OOMOL_CONNECT_ORIGIN`, then in ChatGPT enter `<OOMOL_CONNECT_ORIGIN>/mcp` as the server URL
+and choose OAuth as the authentication method.
+
+ChatGPT discovers the authorization server from the `/mcp` 401 challenge and
+`/.well-known/oauth-protected-resource/mcp`, registers itself at `/oauth/register`, and opens
+`/oauth/authorize` in the browser. The Web Console asks for the admin token, shows the request, and
+lets the administrator choose the token name and per-connection permissions exactly as when creating a
+runtime token on the Access tab. Approving returns the browser to ChatGPT, which exchanges the
+single-use authorization code (PKCE S256 is required) for an ordinary persistent `oct_` runtime token.
+
+The issued token appears on the Access tab with the other runtime tokens, keeps the chosen policy,
+and stays valid until it is revoked there; removing the connector in ChatGPT does not revoke it.
+Each new authorization creates a new token. Registration accepts only ChatGPT connector callbacks
+under `https://chatgpt.com/`, so authorization codes cannot be delivered anywhere else. Only approve
+requests you started yourself: anyone who can reach the server can send you an authorization link.
+
+Enabling it requires a bearer token on `/mcp` and `/v1` even before any runtime token exists, so
+clients that relied on an open runtime API must be given a token. The discovery documents are served
+at the host root; when `OOMOL_CONNECT_ORIGIN` includes a mount path, a reverse proxy must forward
+`/.well-known/oauth-protected-resource/...` and `/.well-known/oauth-authorization-server` to the
+runtime.
 
 ## S3-compatible transit files
 

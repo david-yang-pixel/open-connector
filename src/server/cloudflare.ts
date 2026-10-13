@@ -20,7 +20,7 @@ import { readBearerTokenFromAuthorizationHeader } from "./api/auth.ts";
 import { getResponseCachePolicy } from "./api/cache-policy.ts";
 import { isConsoleShellPath } from "./api/console-paths.ts";
 import { loadCatalogFromAssets } from "./cloudflare/catalog-assets.ts";
-import { readPositiveInteger, resolvePublicOrigin } from "./cloudflare/cloudflare-env.ts";
+import { readBooleanFlag, readPositiveInteger, resolvePublicOrigin } from "./cloudflare/cloudflare-env.ts";
 import { createConnectApp } from "./connect-app.ts";
 import { KVTransitFileService } from "./files/kv-transit-files.ts";
 import { R2TransitFileService } from "./files/r2-transit-files.ts";
@@ -134,6 +134,7 @@ async function createCloudflareApp(
     secretCodec,
     adminToken: env.OOMOL_CONNECT_ADMIN_TOKEN,
     runtimeToken: env.OOMOL_CONNECT_RUNTIME_TOKEN,
+    mcpOAuth: readBooleanFlag(env.OOMOL_CONNECT_MCP_OAUTH),
     actionPolicy: new ActionPolicyService({
       allowedActions: parseActionPolicyList(env.OOMOL_CONNECT_ALLOWED_ACTIONS),
       blockedActions: parseActionPolicyList(env.OOMOL_CONNECT_BLOCKED_ACTIONS),
@@ -226,6 +227,7 @@ function createCacheKey(env: CloudflareEnv, publicOrigin: string, runtimeService
     transitFileTtlSeconds: env.OOMOL_CONNECT_TRANSIT_FILE_TTL_SECONDS ?? "",
     transitFileMaxBytes: env.OOMOL_CONNECT_TRANSIT_FILE_MAX_BYTES ?? "",
     runLimit: env.OOMOL_CONNECT_RUN_LIMIT ?? "",
+    mcpOAuth: env.OOMOL_CONNECT_MCP_OAUTH ?? "",
   });
 }
 

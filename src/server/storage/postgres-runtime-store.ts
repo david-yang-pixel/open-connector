@@ -9,6 +9,7 @@ import type {
 import type { IOAuthClientConfigStore, OAuthClientConfig } from "../../oauth/oauth-client-config-service.ts";
 import type { IOAuthStateStore, OAuthAuthorizationState } from "../../oauth/oauth-flow-service.ts";
 import type { ISecretCodec } from "../secrets/secret-codec-core.ts";
+import type { RequestStatement } from "./connection-request-store.ts";
 import type {
   CompleteIdempotencyInput,
   IdempotencyClaimInput,
@@ -27,6 +28,7 @@ import { Pool } from "pg";
 import { parseRuntimeActionHttpResult } from "../api/runtime-api.ts";
 import { PlainTextSecretCodec } from "../secrets/secret-codec-core.ts";
 import { ConnectionRequestStore } from "./connection-request-store.ts";
+import { McpOAuthStore } from "./mcp-oauth-store.ts";
 import { assertPostgresSchemaReady } from "./postgres-migrations.ts";
 import {
   listRunLogs,
@@ -58,6 +60,7 @@ export class PostgresRuntimeDatabase implements RuntimeDatabase {
   readonly runLogStore: IRunLogStore;
   readonly idempotencyStore: IIdempotencyStore;
   readonly marketplaceStore: IMarketplaceStore;
+  readonly mcpOAuthStore: McpOAuthStore;
 
   private readonly pool: Pool;
   private readonly secretCodec: ISecretCodec;
@@ -70,19 +73,7 @@ export class PostgresRuntimeDatabase implements RuntimeDatabase {
         runInTransaction(pool, async (client) => {
           // Serialize request transitions across processes, including first requests with no row to lock.
           await client.query("select pg_advisory_xact_lock(1326382671, 2)");
-          const results: Record<string, unknown>[][] = [];
-          for (const { sql, values } of statements) {
-            let index = 0;
-            results.push(
-              (
-                await client.query(
-                  sql.replaceAll("?", () => `$${++index}`),
-                  values,
-                )
-              ).rows,
-            );
-          }
-          return results;
+          return runPlaceholderStatements(client, statements);
         }),
       this.secretCodec,
     );
@@ -94,6 +85,10 @@ export class PostgresRuntimeDatabase implements RuntimeDatabase {
     this.runLogStore = new PostgresRunLogStore(pool, options.runLimit ?? DEFAULT_RUN_LIMIT);
     this.idempotencyStore = new PostgresIdempotencyStore(pool, this.secretCodec);
     this.marketplaceStore = new PostgresMarketplaceStore(pool);
+    // Single-use MCP OAuth state is consumed by row-level `update ... returning`, so no advisory lock is needed.
+    this.mcpOAuthStore = new McpOAuthStore((statements) =>
+      runInTransaction(pool, (client) => runPlaceholderStatements(client, statements)),
+    );
   }
 
   static async open(
@@ -136,6 +131,8 @@ export class PostgresRuntimeDatabase implements RuntimeDatabase {
         delete from idempotency_records;
         delete from marketplace_config;
         delete from provider_preferences;
+        delete from mcp_oauth_clients;
+        delete from mcp_oauth_states;
       `);
     });
   }
@@ -691,6 +688,23 @@ class PostgresRunLogStore implements IRunLogStore {
       async (sql, values) => (await this.pool.query<RuntimeRow>(sql, values)).rows,
     );
   }
+}
+
+/** Run `?`-placeholder statements shared with SQLite and D1, numbering the placeholders for PostgreSQL. */
+async function runPlaceholderStatements(client: PoolClient, statements: RequestStatement[]): Promise<RuntimeRow[][]> {
+  const results: RuntimeRow[][] = [];
+  for (const { sql, values } of statements) {
+    let index = 0;
+    results.push(
+      (
+        await client.query(
+          sql.replaceAll("?", () => `$${++index}`),
+          values,
+        )
+      ).rows,
+    );
+  }
+  return results;
 }
 
 async function runInTransaction<T>(pool: Pool, work: (client: PoolClient) => Promise<T>): Promise<T> {

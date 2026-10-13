@@ -15,6 +15,7 @@ import { OAuthCredentialRefreshService } from "../oauth/oauth-credential-refresh
 import { OAuthFlowService } from "../oauth/oauth-flow-service.ts";
 import { ActionRunner } from "./actions/action-runner.ts";
 import { ConnectServer } from "./connect-server.ts";
+import { McpOAuthService } from "./mcp-oauth/mcp-oauth-service.ts";
 import { RuntimeTokenService } from "./storage/runtime-token-service.ts";
 
 export interface ConnectAppOptions {
@@ -29,6 +30,8 @@ export interface ConnectAppOptions {
   runtimeToken?: string;
   allowedCustomOAuth?: string[];
   verifyRuntimeJwt?: RuntimeJwtVerifier;
+  /** Let ChatGPT custom connectors obtain /mcp runtime tokens through OAuth with administrator approval. */
+  mcpOAuth?: boolean;
   actionPolicy?: ActionPolicyService;
   registerStaticRoutes?: (app: Hono) => void;
   logger?: RuntimeLogger;
@@ -43,6 +46,7 @@ export interface ConnectApp {
 }
 
 export async function createConnectApp(options: ConnectAppOptions): Promise<ConnectApp> {
+  if (options.mcpOAuth) assertMcpOAuthConfiguration(options);
   const marketplace = new MarketplaceService({
     catalog: options.catalog,
     store: options.runtimeDatabase.marketplaceStore,
@@ -51,6 +55,13 @@ export async function createConnectApp(options: ConnectAppOptions): Promise<Conn
   await marketplace.initialize();
   const runtimeTokens = new RuntimeTokenService(options.runtimeDatabase.runtimeTokenStore, options.logger);
   const hasStoredRuntimeTokens = async (): Promise<boolean> => (await runtimeTokens.listTokens()).length > 0;
+  const mcpOAuth = options.mcpOAuth
+    ? new McpOAuthService({
+        store: options.runtimeDatabase.mcpOAuthStore,
+        runtimeTokens,
+        publicOrigin: options.publicOrigin,
+      })
+    : undefined;
   const allowedCustomOAuth = new Set(options.allowedCustomOAuth);
   const isCustomClientConfigAllowed = (service: string): boolean =>
     allowedCustomOAuth.has("*") || allowedCustomOAuth.has(service);
@@ -99,6 +110,7 @@ export async function createConnectApp(options: ConnectAppOptions): Promise<Conn
       transitFiles: options.transitFiles,
       uploadTransitFile: options.uploadTransitFile,
       runtimeTokens,
+      mcpOAuth,
       runtimePolicyStore: options.runtimeDatabase.runtimePolicyStore,
       registerStaticRoutes: options.registerStaticRoutes,
       auth: {
@@ -107,6 +119,7 @@ export async function createConnectApp(options: ConnectAppOptions): Promise<Conn
         hasRuntimeTokens: hasStoredRuntimeTokens,
         resolveRuntimeToken: (token) => runtimeTokens.resolveToken(token),
         verifyRuntimeJwt: options.verifyRuntimeJwt,
+        mcpResourceMetadataUrl: mcpOAuth?.resourceMetadataUrl,
       },
       actionPolicy: options.actionPolicy,
       logger: options.logger,
@@ -117,6 +130,23 @@ export async function createConnectApp(options: ConnectAppOptions): Promise<Conn
     runtimeAuthConfigured:
       Boolean(options.runtimeToken) ||
       Boolean(options.verifyRuntimeJwt) ||
+      Boolean(mcpOAuth) ||
       (options.computeRuntimeAuthConfigured === false ? false : await hasStoredRuntimeTokens()),
   };
+}
+
+/**
+ * Only the administrator may approve OAuth clients, so the consent page must be protected, and ChatGPT reaches the
+ * runtime over the public internet, so the advertised issuer must be HTTPS. Loopback HTTP stays available for local
+ * development.
+ */
+function assertMcpOAuthConfiguration(options: ConnectAppOptions): void {
+  if (!options.adminToken?.trim()) {
+    throw new Error("MCP OAuth requires OOMOL_CONNECT_ADMIN_TOKEN so that only the administrator can approve clients.");
+  }
+  const origin = new URL(options.publicOrigin);
+  const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(origin.hostname);
+  if (origin.protocol !== "https:" && !(origin.protocol === "http:" && loopback)) {
+    throw new Error("MCP OAuth requires an HTTPS OOMOL_CONNECT_ORIGIN.");
+  }
 }

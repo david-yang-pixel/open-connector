@@ -34,6 +34,7 @@ import { AccessPage } from "./access-page";
 import { ActionsPage } from "./actions-page";
 import { ApiError, apiGet, apiPost } from "./api";
 import oomolConnectLogoUrl from "./assets/oomol-connect-logo.png";
+import { AuthorizePage } from "./authorize-page";
 import { HostedServicePromo } from "./hosted-service-promo";
 import { persistLang, supportedLangs } from "./i18n";
 import { MarketplacePage } from "./marketplace-page";
@@ -456,6 +457,10 @@ function AppShell(props: {
               }
             />
             <Route path="/resources" element={<ResourcesPage />} />
+            <Route
+              path="/authorize"
+              element={<AuthorizePage providers={props.data.providers} connections={props.data.connections} />}
+            />
             <Route path="*" element={<Navigate to="/overview" replace />} />
           </Routes>
         </main>
@@ -613,6 +618,9 @@ function headingForPath(pathname: string): string {
   }
   if (section === "resources") {
     return "resources";
+  }
+  if (section === "authorize") {
+    return "authorize";
   }
   return "overview";
 }

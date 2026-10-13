@@ -72,6 +72,7 @@ async function main(): Promise<void> {
       issuer: process.env.OOMOL_CONNECT_JWT_ISSUER,
       audience: process.env.OOMOL_CONNECT_JWT_AUDIENCE,
     },
+    mcpOAuth: parseBooleanEnv("OOMOL_CONNECT_MCP_OAUTH"),
     network: {
       allowPrivateNetwork: parsePrivateNetworkAccessFlag(process.env.OOMOL_CONNECT_ALLOW_PRIVATE_NETWORK),
       trustedHosts: parseEgressTrustedHosts(process.env.OOMOL_CONNECT_EGRESS_TRUSTED_HOSTS),
