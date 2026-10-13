@@ -32,7 +32,12 @@ export function providerIconsPlugin(options: ProviderIconsPluginOptions = {}): P
       }
       cachedModule ??= options.iconUrls
         ? Promise.resolve(serializeProviderIcons(options.iconUrls))
-        : loadProviderIconsModule();
+        : loadProviderIconsModule().catch((error: unknown) => {
+            // The icon map is optional: the console falls back to homepage favicons and initials, so an
+            // unavailable catalog must not fail the build and block a deployment.
+            this.warn(`${error instanceof Error ? error.message : String(error)}; using homepage favicons instead.`);
+            return serializeProviderIcons({});
+          });
       return cachedModule;
     },
   };
