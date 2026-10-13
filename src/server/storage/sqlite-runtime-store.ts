@@ -9,6 +9,7 @@ import type {
 import type { IOAuthClientConfigStore, OAuthClientConfig } from "../../oauth/oauth-client-config-service.ts";
 import type { IOAuthStateStore, OAuthAuthorizationState } from "../../oauth/oauth-flow-service.ts";
 import type { ISecretCodec } from "../secrets/secret-codec-core.ts";
+import type { RequestTransaction } from "./connection-request-store.ts";
 import type {
   CompleteIdempotencyInput,
   IdempotencyClaimInput,
@@ -25,6 +26,7 @@ import { DatabaseSync } from "node:sqlite";
 import { parseRuntimeActionHttpResult } from "../api/runtime-api.ts";
 import { PlainTextSecretCodec } from "../secrets/secret-codec-core.ts";
 import { ConnectionRequestStore } from "./connection-request-store.ts";
+import { McpOAuthStore } from "./mcp-oauth-store.ts";
 import { defaultMigrationSource } from "./migration-source.ts";
 import {
   listRunLogs,
@@ -91,6 +93,7 @@ export class SqliteRuntimeDatabase implements RuntimeDatabase {
   readonly runLogStore: SqliteRunLogStore;
   readonly idempotencyStore: SqliteIdempotencyStore;
   readonly marketplaceStore: SqliteMarketplaceStore;
+  readonly mcpOAuthStore: McpOAuthStore;
 
   private readonly database: DatabaseSync;
   private readonly secretCodec: ISecretCodec;
@@ -99,13 +102,11 @@ export class SqliteRuntimeDatabase implements RuntimeDatabase {
     this.database = new DatabaseSync(filename);
     this.secretCodec = options.secretCodec ?? new PlainTextSecretCodec();
     this.initialize(options.migrations ?? defaultMigrationSource, options.logger);
-    this.connectionRequestStore = new ConnectionRequestStore(
-      async (statements) =>
-        runInTransaction(this.database, () =>
-          statements.map(({ sql, values }) => this.database.prepare(sql).all(...values)),
-        ),
-      this.secretCodec,
-    );
+    const transaction: RequestTransaction = async (statements) =>
+      runInTransaction(this.database, () =>
+        statements.map(({ sql, values }) => this.database.prepare(sql).all(...values)),
+      );
+    this.connectionRequestStore = new ConnectionRequestStore(transaction, this.secretCodec);
     this.connectionStore = new SqliteConnectionStore(this.database, this.secretCodec);
     this.oauthClientConfigStore = new SqliteOAuthClientConfigStore(this.database, this.secretCodec);
     this.oauthStateStore = new SqliteOAuthStateStore(this.database, this.secretCodec);
@@ -114,6 +115,7 @@ export class SqliteRuntimeDatabase implements RuntimeDatabase {
     this.runLogStore = new SqliteRunLogStore(this.database, options.runLimit ?? DEFAULT_RUN_LIMIT);
     this.idempotencyStore = new SqliteIdempotencyStore(this.database, this.secretCodec);
     this.marketplaceStore = new SqliteMarketplaceStore(this.database);
+    this.mcpOAuthStore = new McpOAuthStore(transaction);
   }
 
   close(): void {
@@ -177,6 +179,8 @@ export class SqliteRuntimeDatabase implements RuntimeDatabase {
       delete from idempotency_records;
       delete from marketplace_config;
       delete from provider_preferences;
+      delete from mcp_oauth_clients;
+      delete from mcp_oauth_states;
     `);
   }
 

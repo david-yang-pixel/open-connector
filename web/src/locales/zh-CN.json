@@ -76,6 +76,9 @@
       },
       "resources": {
         "title": "资源"
+      },
+      "authorize": {
+        "title": "授权客户端"
       }
     }
   },
@@ -687,6 +690,23 @@
       "title": "OpenAPI JSON",
       "description": "在脚本或工具导入器中使用生成的规格。"
     }
+  },
+  "authorize": {
+    "title": "授权 {{client}}",
+    "description": "{{client}} 请求调用本运行时的 MCP 接口。批准后会按下方权限创建一个运行时令牌，并交给 {{client}} 使用。",
+    "warning": "只批准你自己刚刚发起的请求，例如你刚在 ChatGPT 中添加了这个服务器。任何能访问本服务器的人都可以给你发送授权链接。",
+    "client": "客户端",
+    "clientNameHint": "（名称由客户端自行上报）",
+    "callback": "授权后返回",
+    "requestedAt": "发起时间",
+    "expiresAt": "过期时间",
+    "tokenName": "令牌名称",
+    "approve": "批准",
+    "deny": "拒绝",
+    "loading": "正在加载授权请求...",
+    "notFound": "这个授权请求不存在、已过期或已处理。请回到 ChatGPT 重新发起连接。",
+    "failed": "无法完成授权请求。",
+    "revokeHint": "该令牌会显示在 API Key 页面，你可以随时修改它的权限或将其吊销。"
   },
   "hostedPromo": {
     "title": "欢迎使用 Open Connect",

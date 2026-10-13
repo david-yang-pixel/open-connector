@@ -22,6 +22,11 @@ export interface LocalAuthOptions {
   hasRuntimeTokens?(): Promise<boolean>;
   resolveRuntimeToken?(token: string): Promise<RuntimeGrant | undefined>;
   verifyRuntimeJwt?: RuntimeJwtVerifier;
+  /**
+   * RFC 9728 metadata URL of the /mcp OAuth authorization server. Setting it always requires runtime authentication,
+   * even before any runtime token exists, and makes /mcp 401 responses carry the discovery challenge.
+   */
+  mcpResourceMetadataUrl?: string;
 }
 
 export interface LocalAuthSession {
@@ -45,7 +50,8 @@ export function createLocalAuthMiddleware(options: LocalAuthOptions): Middleware
     !runtimeToken &&
     !options.hasRuntimeTokens &&
     !options.resolveRuntimeToken &&
-    !options.verifyRuntimeJwt
+    !options.verifyRuntimeJwt &&
+    !options.mcpResourceMetadataUrl
   ) {
     return async (_context, next) => {
       await next();
@@ -100,8 +106,17 @@ export function createLocalAuthMiddleware(options: LocalAuthOptions): Middleware
         message: "A valid administrator bearer token is required.",
       });
     }
+    if (options.mcpResourceMetadataUrl && isMcpPath(context.req.path)) {
+      context.header("WWW-Authenticate", mcpBearerChallenge(context, options.mcpResourceMetadataUrl));
+    }
     return jsonError(context, 401, "unauthorized", "A valid local bearer token is required.");
   };
+}
+
+/** RFC 6750 challenge pointing OAuth clients such as ChatGPT at the RFC 9728 protected resource metadata. */
+function mcpBearerChallenge(context: Context, resourceMetadataUrl: string): string {
+  const invalidToken = readBearerToken(context) ? ', error="invalid_token"' : "";
+  return `Bearer resource_metadata="${resourceMetadataUrl}", scope="mcp"${invalidToken}`;
 }
 
 async function installLocalAuthCookie(context: Context, options: LocalAuthOptions): Promise<void> {
@@ -124,6 +139,9 @@ function isPublicPath(path: string, method: string): boolean {
     path === "/health" ||
     path === "/oauth/callback" ||
     path.startsWith("/oauth/callback/") ||
+    (method === "GET" && path === "/oauth/authorize") ||
+    (method === "POST" && (path === "/oauth/register" || path === "/oauth/token")) ||
+    (method === "GET" && path.startsWith("/.well-known/")) ||
     (method === "GET" && path === "/api/auth/session") ||
     (method === "POST" && path === "/api/auth/logout") ||
     (method === "GET" && path.startsWith("/api/files/")) ||
@@ -173,7 +191,7 @@ async function hasValidToken(context: Context, options: LocalAuthOptions, scope:
     const hasRuntimeTokens = options.hasRuntimeTokens
       ? await options.hasRuntimeTokens()
       : options.resolveRuntimeToken !== undefined;
-    if (!hasRuntimeTokens && !options.verifyRuntimeJwt) {
+    if (!hasRuntimeTokens && !options.verifyRuntimeJwt && !options.mcpResourceMetadataUrl) {
       return true;
     }
     return hasValidRuntimeToken(context, options);
@@ -259,7 +277,11 @@ function normalizeToken(token: string | undefined): string | undefined {
 
 function readAuthScope(path: string): AuthScope {
   if (isConnectionManagementPath(path)) return "admin";
-  return path === "/mcp" || path.startsWith("/mcp/") || path === "/v1" || path.startsWith("/v1/") ? "runtime" : "admin";
+  return isMcpPath(path) || path === "/v1" || path.startsWith("/v1/") ? "runtime" : "admin";
+}
+
+function isMcpPath(path: string): boolean {
+  return path === "/mcp" || path.startsWith("/mcp/");
 }
 
 function canUseAdminAuth(path: string, method: string): boolean {

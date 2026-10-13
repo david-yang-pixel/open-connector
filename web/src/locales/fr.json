@@ -76,6 +76,9 @@
       },
       "resources": {
         "title": "Ressources"
+      },
+      "authorize": {
+        "title": "Autoriser le client"
       }
     }
   },
@@ -710,6 +713,23 @@
       "title": "JSON OpenAPI",
       "description": "Utilisez la spec générée depuis des scripts ou des importateurs d’outils."
     }
+  },
+  "authorize": {
+    "title": "Autoriser {{client}}",
+    "description": "{{client}} demande à appeler le point de terminaison MCP de ce runtime. L’approbation crée un jeton runtime avec les autorisations ci-dessous et le transmet à {{client}}.",
+    "warning": "N’approuvez qu’une demande que vous venez de lancer vous-même, par exemple en ajoutant ce serveur dans ChatGPT. Toute personne pouvant joindre ce serveur peut vous envoyer un lien d’autorisation.",
+    "client": "Client",
+    "clientNameHint": "(nom déclaré par le client)",
+    "callback": "Retour vers",
+    "requestedAt": "Demandé",
+    "expiresAt": "Expire",
+    "tokenName": "Nom du jeton",
+    "approve": "Approuver",
+    "deny": "Refuser",
+    "loading": "Chargement de la demande d’autorisation...",
+    "notFound": "Cette demande d’autorisation n’existe pas, a expiré ou a déjà reçu une réponse. Relancez la connexion depuis ChatGPT.",
+    "failed": "Impossible de terminer la demande d’autorisation.",
+    "revokeHint": "Le jeton apparaît dans API Key, où vous pouvez modifier ses autorisations ou le révoquer à tout moment."
   },
   "hostedPromo": {
     "title": "Bienvenue sur Open Connect",

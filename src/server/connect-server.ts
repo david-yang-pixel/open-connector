@@ -9,6 +9,7 @@ import type { IProviderLoader } from "../providers/provider-loader.ts";
 import type { LocalAuthOptions } from "./api/auth.ts";
 import type { RuntimeActionHttpResult } from "./api/runtime-api.ts";
 import type { ITransitFileService } from "./files/transit-file-store.ts";
+import type { McpOAuthService } from "./mcp-oauth/mcp-oauth-service.ts";
 import type { IIdempotencyStore } from "./storage/idempotency-store.ts";
 import type { IRuntimePolicyStore } from "./storage/runtime-policy-store.ts";
 import type { RunLogCaller, RunLogListInput } from "./storage/runtime-store.ts";
@@ -45,6 +46,7 @@ import { clearLocalAuthCookie, createLocalAuthMiddleware, readLocalAuthSession, 
 import { getResponseCachePolicy } from "./api/cache-policy.ts";
 import { createConnectionRoutes } from "./api/connection-routes.ts";
 import { HttpRequestError, internalError, jsonError, notFound, readJsonBody } from "./api/http-utils.ts";
+import { createMcpOAuthRoutes } from "./api/mcp-oauth-routes.ts";
 import { renderOAuthCompletionPage } from "./api/oauth-completion-page.ts";
 import { policyRequestMaxBytes, readRuntimePolicyRules, readTokenPolicy } from "./api/policy-input.ts";
 import {
@@ -123,6 +125,8 @@ export interface IConnectServerOptions {
   oauthClientConfigs: OAuthClientConfigService;
   oauthFlow: OAuthFlowService;
   runtimeTokens: RuntimeTokenService;
+  /** Present when ChatGPT custom connectors may obtain /mcp tokens through OAuth. */
+  mcpOAuth?: McpOAuthService;
   actions: ActionRunner;
   idempotency: IIdempotencyStore;
   transitFiles: ITransitFileService;
@@ -283,6 +287,7 @@ export class ConnectServer {
     );
     app.post("/api/oauth/authorizations", (context) => this.createOAuthAuthorization(context));
     app.get("/oauth/callback", (context) => this.completeOAuth(context));
+    if (this.options.mcpOAuth) app.route("/", createMcpOAuthRoutes({ mcpOAuth: this.options.mcpOAuth }));
     app.post("/mcp", (context) => this.handleMcp(context));
     app.get("/mcp", (context) => this.rejectMcpMethod(context));
     app.delete("/mcp", (context) => this.rejectMcpMethod(context));

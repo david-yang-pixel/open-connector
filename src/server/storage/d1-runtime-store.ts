@@ -10,6 +10,7 @@ import type { IOAuthClientConfigStore, OAuthClientConfig } from "../../oauth/oau
 import type { IOAuthStateStore, OAuthAuthorizationState } from "../../oauth/oauth-flow-service.ts";
 import type { D1DatabaseBinding } from "../cloudflare/cloudflare-bindings.ts";
 import type { ISecretCodec } from "../secrets/secret-codec-core.ts";
+import type { RequestTransaction } from "./connection-request-store.ts";
 import type {
   CompleteIdempotencyInput,
   IdempotencyClaimInput,
@@ -25,6 +26,7 @@ import type { IRuntimeTokenStore, RuntimeTokenRecord } from "./runtime-token-ser
 import { parseRuntimeActionHttpResult } from "../api/runtime-api.ts";
 import { PlainTextSecretCodec } from "../secrets/secret-codec-core.ts";
 import { ConnectionRequestStore } from "./connection-request-store.ts";
+import { McpOAuthStore } from "./mcp-oauth-store.ts";
 import {
   listRunLogs,
   parseJson,
@@ -110,13 +112,15 @@ export class D1RuntimeDatabase implements RuntimeDatabase {
   readonly runLogStore: D1RunLogStore;
   readonly idempotencyStore: D1IdempotencyStore;
   readonly marketplaceStore: IMarketplaceStore;
+  readonly mcpOAuthStore: McpOAuthStore;
 
   constructor(database: D1DatabaseBinding, options: D1RuntimeDatabaseOptions = {}) {
     const secretCodec = options.secretCodec ?? new PlainTextSecretCodec();
-    this.connectionRequestStore = new ConnectionRequestStore(async (statements) => {
+    const transaction: RequestTransaction = async (statements) => {
       const results = await database.batch(statements.map(({ sql, values }) => database.prepare(sql).bind(...values)));
       return results.map((result) => result.results ?? []);
-    }, secretCodec);
+    };
+    this.connectionRequestStore = new ConnectionRequestStore(transaction, secretCodec);
     this.connectionStore = new D1ConnectionStore(database, secretCodec);
     this.oauthClientConfigStore = new D1OAuthClientConfigStore(database, secretCodec);
     this.oauthStateStore = new D1OAuthStateStore(database, secretCodec);
@@ -129,6 +133,7 @@ export class D1RuntimeDatabase implements RuntimeDatabase {
     );
     this.idempotencyStore = new D1IdempotencyStore(database, secretCodec);
     this.marketplaceStore = new D1MarketplaceStore(database);
+    this.mcpOAuthStore = new McpOAuthStore(transaction);
   }
 }
 

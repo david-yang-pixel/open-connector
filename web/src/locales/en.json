@@ -76,6 +76,9 @@
       },
       "resources": {
         "title": "Resources"
+      },
+      "authorize": {
+        "title": "Authorize Client"
       }
     }
   },
@@ -704,6 +707,23 @@
       "title": "OpenAPI JSON",
       "description": "Use the generated spec from scripts or tool importers."
     }
+  },
+  "authorize": {
+    "title": "Authorize {{client}}",
+    "description": "{{client}} is asking to call this runtime's MCP endpoint. Approving creates a runtime token with the permissions below and sends it to {{client}}.",
+    "warning": "Only approve a request you just started yourself, for example by adding this server in ChatGPT. Anyone who can reach this server can send you an authorization link.",
+    "client": "Client",
+    "clientNameHint": "(name reported by the client)",
+    "callback": "Returns to",
+    "requestedAt": "Requested",
+    "expiresAt": "Expires",
+    "tokenName": "Token name",
+    "approve": "Approve",
+    "deny": "Deny",
+    "loading": "Loading authorization request...",
+    "notFound": "This authorization request does not exist, has expired, or was already answered. Start the connection again from ChatGPT.",
+    "failed": "Could not complete the authorization request.",
+    "revokeHint": "The token is listed under API Key, where you can change its permissions or revoke it at any time."
   },
   "hostedPromo": {
     "title": "Welcome to Open Connect",

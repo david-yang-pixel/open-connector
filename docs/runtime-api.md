@@ -95,6 +95,10 @@ authentication coexists with existing runtime tokens and does not apply to admin
 [Configuration](configuration.md#jwt-access-tokens) for the resource-server scope and Node-only
 limitations.
 
+With `OOMOL_CONNECT_MCP_OAUTH=true`, ChatGPT custom connectors can obtain a persistent runtime token
+for `/mcp` through OAuth with administrator approval in the Web Console. See
+[Configuration](configuration.md#chatgpt-custom-connectors-mcp-oauth).
+
 Admin endpoints under `/api/*`, `/docs`, and the Web Console use `OOMOL_CONNECT_ADMIN_TOKEN` when it
 is configured.
 

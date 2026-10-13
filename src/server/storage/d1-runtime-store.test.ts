@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { AesGcmSecretCodec } from "../secrets/secret-codec.ts";
 import { connectionRequestStoreTests } from "./connection-request-store.cases.ts";
 import { D1RuntimeDatabase, listD1RuntimeServices, listD1RuntimeServicesForToken } from "./d1-runtime-store.ts";
+import { mcpOAuthStoreTests } from "./mcp-oauth-store.cases.ts";
 import { defaultMigrationSource } from "./migration-source.ts";
 import { RuntimeTokenService } from "./runtime-token-service.ts";
 
@@ -768,4 +769,5 @@ describe("D1 connection requests", () => {
     database = new D1RuntimeDatabase(new SqliteD1Database());
   });
   connectionRequestStoreTests(() => database);
+  mcpOAuthStoreTests(() => database);
 });

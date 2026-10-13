@@ -80,6 +80,16 @@ describe("registerStaticRoutes in embedded mode", () => {
     });
   });
 
+  it("keeps JSON 404 responses for well-known discovery paths", async () => {
+    const app = await createEmbeddedApp();
+
+    // OAuth clients probe several /.well-known documents; an HTML console shell would break their discovery.
+    const response = await app.request("/.well-known/openid-configuration");
+
+    expect(response.status).toBe(404);
+    expect(response.headers.get("content-type")).toContain("application/json");
+  });
+
   it("does not serve assets for POST requests", async () => {
     const app = await createEmbeddedApp();
 

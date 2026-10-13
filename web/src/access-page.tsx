@@ -1084,7 +1084,7 @@ function policyRisk(policy: RuntimePolicyState, providers: ProviderDefinition[])
   return actionsBlocked && proxiesBlocked ? "all" : actionsBlocked ? "actions" : proxiesBlocked ? "proxies" : null;
 }
 
-function emptyPolicyRules(): PolicyRules {
+export function emptyPolicyRules(): PolicyRules {
   return { allowedActions: [], blockedActions: [], allowedProxies: [], blockedProxies: [] };
 }
 
@@ -1219,7 +1219,7 @@ export function connectionGrantOptions(
   });
 }
 
-function connectionGrantIssue(draft: ConnectionGrantDraft): "required" | "too_many" | undefined {
+export function connectionGrantIssue(draft: ConnectionGrantDraft): "required" | "too_many" | undefined {
   if (draft.mode !== "restricted") {
     return undefined;
   }

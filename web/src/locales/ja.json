@@ -76,6 +76,9 @@
       },
       "resources": {
         "title": "リソース"
+      },
+      "authorize": {
+        "title": "クライアントの承認"
       }
     }
   },
@@ -690,6 +693,23 @@
       "title": "OpenAPI JSON",
       "description": "生成された spec を script や tool importer で使用します。"
     }
+  },
+  "authorize": {
+    "title": "{{client}} を承認",
+    "description": "{{client}} がこのランタイムの MCP エンドポイントの呼び出しを求めています。承認すると、以下の権限でランタイムトークンを作成し、{{client}} に渡します。",
+    "warning": "自分で開始したばかりのリクエスト（たとえば ChatGPT でこのサーバーを追加した直後）だけを承認してください。このサーバーにアクセスできる人は誰でも承認リンクを送れます。",
+    "client": "クライアント",
+    "clientNameHint": "（クライアントが自己申告した名前）",
+    "callback": "承認後の戻り先",
+    "requestedAt": "リクエスト日時",
+    "expiresAt": "有効期限",
+    "tokenName": "トークン名",
+    "approve": "承認",
+    "deny": "拒否",
+    "loading": "承認リクエストを読み込んでいます...",
+    "notFound": "この承認リクエストは存在しないか、期限切れか、すでに処理されています。ChatGPT から接続をやり直してください。",
+    "failed": "承認リクエストを完了できませんでした。",
+    "revokeHint": "このトークンは API Key ページに表示され、いつでも権限の変更や取り消しができます。"
   },
   "hostedPromo": {
     "title": "Open Connect へようこそ",
