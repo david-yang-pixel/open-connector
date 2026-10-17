@@ -46,6 +46,10 @@ jobs:
   # Build each architecture natively and push it to GHCR by digest (no tags yet).
   build:
     name: Build ${{ matrix.platform }}
+    # Only the upstream repository has the Blacksmith runners this job needs;
+    # anywhere else it would queue until GitHub cancels it after 24 hours.
+    # The jobs that depend on it are skipped along with it.
+    if: github.repository_owner == 'oomol-lab'
     strategy:
       fail-fast: false
       matrix:

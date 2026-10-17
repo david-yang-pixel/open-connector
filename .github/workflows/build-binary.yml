@@ -106,6 +106,10 @@ env:
 jobs:
   build:
     name: Build all targets
+    # Only the upstream repository has the Blacksmith runners this job needs;
+    # anywhere else it would queue until GitHub cancels it after 24 hours.
+    # The jobs that depend on it are skipped along with it.
+    if: github.repository_owner == 'oomol-lab'
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 30
     services:
