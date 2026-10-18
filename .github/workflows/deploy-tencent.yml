@@ -28,6 +28,8 @@ jobs:
        github.event.workflow_run.head_repository.full_name == github.repository))
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    outputs:
+      deployed: ${{ steps.current.outputs.deploy }}
     env:
       DEPLOY_HOST: ${{ vars.TENCENT_DEPLOY_HOST }}
       DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
@@ -95,3 +97,62 @@ jobs:
       - name: Check public health endpoint
         if: steps.current.outputs.deploy == 'true'
         run: curl --fail --silent --show-error --retry 3 --max-time 15 https://openconnector.smlershou.top/health | jq -e '.ok == true'
+
+  # Tag every successful deployment of the last 30 days that has no tag yet,
+  # this one included, as deploy-YYYYMMDD-HHMM in the Beijing time its health
+  # check passed. Deriving the name from the Actions history keeps it the same
+  # whichever run computes it. This runs as its own job so that only these API
+  # calls hold `contents: write`; the job that builds and ships the image keeps
+  # a read-only token.
+  tag:
+    needs: deploy
+    if: needs.deploy.outputs.deployed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Tag deployments of the last 30 days
+        run: |
+          set -euo pipefail
+          since="$(date -u -d '30 days ago' +%Y-%m-%dT%H:%M:%SZ)"
+          existing="$(gh api --paginate "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/deploy-" \
+            --jq '.[] | "\(.ref | ltrimstr("refs/tags/")) \(.object.sha)"')"
+          runs="$(gh api --paginate --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/deploy-tencent.yml/runs" \
+            -f created=">=$since" -f per_page=100 --jq '.workflow_runs[].id')"
+          conflicts=0
+          current_tagged=false
+          for run_id in $runs; do
+            # Every attempt counts: re-running a run deploys again. Superseded
+            # commits skip the health check because nothing was deployed.
+            deployments="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/jobs?filter=all&per_page=100" \
+              --jq '.jobs[] | select(.name == "deploy" and .conclusion == "success")
+                | "\(.head_sha) \(.steps[] | select(.name == "Check public health endpoint" and .conclusion == "success") | .completed_at)"')"
+            while read -r sha deployed_at; do
+              if [ -z "$sha" ]; then
+                continue
+              fi
+              tag="deploy-$(TZ=Asia/Shanghai date -d "$deployed_at" +%Y%m%d-%H%M)"
+              tagged_sha="$(awk -v tag="$tag" '$1 == tag { print $2 }' <<< "$existing")"
+              if [ -z "$tagged_sha" ]; then
+                gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$sha" > /dev/null
+                existing+=$'\n'"$tag $sha"
+                echo "Tagged $sha as $tag (run $run_id)"
+              elif [ "$tagged_sha" != "$sha" ]; then
+                echo "::error::$tag already points at $tagged_sha, not at $sha deployed by run $run_id"
+                conflicts=$((conflicts + 1))
+                continue
+              fi
+              if [ "$run_id" = "$GITHUB_RUN_ID" ]; then
+                current_tagged=true
+              fi
+            done <<< "$deployments"
+          done
+          if [ "$current_tagged" != true ]; then
+            echo "::error::The Actions history does not show this run's deployment yet; the next deployment will tag it."
+            exit 1
+          fi
+          test "$conflicts" -eq 0
