@@ -28,9 +28,6 @@ jobs:
        github.event.workflow_run.head_repository.full_name == github.repository))
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    outputs:
-      sha: ${{ steps.record.outputs.sha }}
-      tag: ${{ steps.record.outputs.tag }}
     env:
       DEPLOY_HOST: ${{ vars.TENCENT_DEPLOY_HOST }}
       DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
@@ -98,34 +95,3 @@ jobs:
       - name: Check public health endpoint
         if: steps.current.outputs.deploy == 'true'
         run: curl --fail --silent --show-error --retry 3 --max-time 15 https://openconnector.smlershou.top/health | jq -e '.ok == true'
-
-      - name: Record the deployment
-        id: record
-        if: steps.current.outputs.deploy == 'true'
-        run: |
-          echo "sha=$DEPLOY_SHA" >> "$GITHUB_OUTPUT"
-          echo "tag=deploy-$(TZ=Asia/Shanghai date +%Y%m%d-%H%M)" >> "$GITHUB_OUTPUT"
-
-  # Tag each successful deployment with its Beijing time. This runs as its own
-  # job so that only this API call holds `contents: write`; the job that builds
-  # and ships the image keeps a read-only token.
-  tag:
-    needs: deploy
-    if: needs.deploy.outputs.tag != ''
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: write
-    env:
-      DEPLOY_SHA: ${{ needs.deploy.outputs.sha }}
-      DEPLOY_TAG: ${{ needs.deploy.outputs.tag }}
-      GH_TOKEN: ${{ github.token }}
-    steps:
-      - name: Tag the deployed commit
-        run: |
-          set -euo pipefail
-          if ! gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$DEPLOY_TAG" -f sha="$DEPLOY_SHA" >/dev/null; then
-            # A re-run within the same minute finds its own tag; any other existing tag is a real conflict.
-            test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$DEPLOY_TAG" --jq '.object.sha')" = "$DEPLOY_SHA"
-          fi
-          echo "Tagged $DEPLOY_SHA as $DEPLOY_TAG"
