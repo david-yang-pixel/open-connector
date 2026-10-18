@@ -8,15 +8,15 @@ The workflow can also be started manually from GitHub Actions, but only for the
 current `main` commit after a successful push CI run. Star History-only updates
 do not redeploy the service.
 
-After the public health check passes, a separate `tag` job tags the deployed
-commit as `deploy-YYYYMMDD-HHMM` in Beijing time (Asia/Shanghai), for example
-`deploy-20261018-1804`, so the code of every deployment can be found by date.
-Only that job gets `contents: write`; the job that builds and ships the image
-keeps a read-only token. Skipped and failed deployments are not tagged. List
-the deployments with `git fetch --tags && git tag -l 'deploy-*'`.
-Deployments from before the `tag` job existed are tagged the same way by
-running the **Backfill deployment tags** workflow by hand, which reads the
-health-check time of each past successful deployment from the Actions history.
+After the public health check passes, a separate `tag` job tags deployed
+commits as `deploy-YYYYMMDD-HHMM`, using the Beijing time (Asia/Shanghai) at
+which each deployment passed its health check, for example
+`deploy-20261018-1804`. It reads the successful deployments of the last 30
+days from the Actions history and tags every one that has no tag yet, the
+current one included, so a deployment whose tag job failed is caught up by the
+next deployment. Only that job gets `contents: write`; the job that builds and
+ships the image keeps a read-only token. Skipped and failed deployments are not
+tagged. List the deployments with `git fetch --tags && git tag -l 'deploy-*'`.
 
 The deployment SSH key is restricted by `authorized_keys` to the installed
 `/usr/local/sbin/openconnector-deploy-receiver` command. It cannot open a shell,
