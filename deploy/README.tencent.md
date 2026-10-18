@@ -14,6 +14,9 @@ commit as `deploy-YYYYMMDD-HHMM` in Beijing time (Asia/Shanghai), for example
 Only that job gets `contents: write`; the job that builds and ships the image
 keeps a read-only token. Skipped and failed deployments are not tagged. List
 the deployments with `git fetch --tags && git tag -l 'deploy-*'`.
+Deployments from before the `tag` job existed are tagged the same way by
+running the **Backfill deployment tags** workflow by hand, which reads the
+health-check time of each past successful deployment from the Actions history.
 
 The deployment SSH key is restricted by `authorized_keys` to the installed
 `/usr/local/sbin/openconnector-deploy-receiver` command. It cannot open a shell,

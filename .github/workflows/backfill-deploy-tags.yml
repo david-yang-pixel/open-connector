@@ -1,0 +1,43 @@
+name: Backfill deployment tags
+
+# Tag the Tencent deployments that ran before Deploy Tencent Cloud had its `tag`
+# job, using the time each deployment passed its public health check. Start it
+# by hand from the Actions tab. Running it again is harmless: a tag that already
+# points at the deployed commit is kept, and runs with a `tag` job are skipped.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  backfill:
+    if: github.repository == 'david-yang-pixel/open-connector'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Tag past deployments
+        run: |
+          set -euo pipefail
+          runs="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/deploy-tencent.yml/runs?status=success&per_page=100" --jq '.workflow_runs[].id')"
+          for run_id in $runs; do
+            jobs="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/jobs")"
+            if jq -e '.jobs[] | select(.name == "tag")' <<< "$jobs" > /dev/null; then
+              continue
+            fi
+            # A superseded commit skips the health check because nothing was deployed.
+            deployed_at="$(jq -r '.jobs[] | select(.name == "deploy") | .steps[] | select(.name == "Check public health endpoint" and .conclusion == "success") | .completed_at' <<< "$jobs")"
+            if [ -z "$deployed_at" ]; then
+              continue
+            fi
+            sha="$(jq -r '.jobs[] | select(.name == "deploy") | .head_sha' <<< "$jobs")"
+            tag="deploy-$(TZ=Asia/Shanghai date -d "$deployed_at" +%Y%m%d-%H%M)"
+            if ! gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$sha" > /dev/null; then
+              test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq '.object.sha')" = "$sha"
+            fi
+            echo "$tag -> $sha (run $run_id)"
+          done
