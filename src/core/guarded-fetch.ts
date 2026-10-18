@@ -1,3 +1,5 @@
+import type { LookupFunction } from "node:net";
+
 import { assertPublicHttpUrl, classifyIpAddress, isEgressTrustedHost, isIpAddress, isIpv4Address } from "./request.ts";
 
 /**
@@ -353,6 +355,22 @@ export async function resolveGuardedEgressTarget(
     lookup,
   });
   return { url, addresses };
+}
+
+/**
+ * Return a `node:net` lookup that answers with addresses already screened by
+ * {@link resolveGuardedEgressTarget}, so a socket transport connects to exactly
+ * those addresses instead of resolving the hostname a second time.
+ */
+export function createPinnedLookup(addresses: ResolvedAddress[]): LookupFunction {
+  return ((_hostname, options, callback) => {
+    if (typeof options === "object" && options.all) {
+      callback(null, addresses);
+      return;
+    }
+    const first = addresses[0]!;
+    callback(null, first.address, first.family);
+  }) as LookupFunction;
 }
 
 interface ResolvedAddressPolicy {
