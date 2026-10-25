@@ -8,6 +8,9 @@ ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     OOMOL_CONNECT_DATA_DIR=/app/data
 
+# The SSH provider drives the OpenSSH client.
+RUN apk add --no-cache openssh-client
+
 # The upstream image and this checkout have identical package lockfiles. Reuse
 # its production dependencies while replacing every application-owned path.
 COPY package.json package-lock.json ./

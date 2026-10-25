@@ -30,10 +30,7 @@ export const sshActions: ProviderActionDefinition[] = [
       { optional: ["timeoutSeconds"] },
     ),
     outputSchema: s.object("Result of the command.", {
-      exitCode: s.nullableInteger(
-        "The command's exit status, or null when it was ended by a signal or the server reported none.",
-      ),
-      signal: s.nullableString("The signal that ended the command, such as SIGKILL, or null when it exited normally."),
+      exitCode: s.nullableInteger("The command's exit status, or null when it was ended by a signal."),
       stdout: s.string(`Standard output decoded as UTF-8, cut after ${sshOutputByteLimit / 1024} KiB.`),
       stderr: s.string(`Standard error decoded as UTF-8, cut after ${sshOutputByteLimit / 1024} KiB.`),
       stdoutTruncated: s.boolean("Whether standard output was longer than the limit and was cut."),

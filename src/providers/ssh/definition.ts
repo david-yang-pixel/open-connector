@@ -8,14 +8,14 @@ export const provider: ProviderDefinition = {
   service: "ssh",
   displayName: "SSH Server",
   description:
-    "Unavailable on Cloudflare Workers. Run shell commands on your own Linux or Unix server over SSH and get the output back.",
+    "Unavailable on Cloudflare Workers and Windows, and needs the OpenSSH client (ssh 8.5 or later) installed where Open Connector runs. Run shell commands on your own Linux or Unix server over SSH and get the output back.",
   categories: ["Infrastructure", "Developer Tools"],
   authTypes: ["custom_credential"],
   auth: [
     {
       type: "custom_credential",
       description:
-        "Connect one server per connection. Provide either a password or a private key. Prefer a dedicated low-privilege account over root, because every agent allowed to use this connection can run any command that account can.",
+        "Connect one server per connection. Provide a password or a private key, or set the authentication method to none for a server whose username already carries the access token. Prefer a dedicated low-privilege account over root, because every agent allowed to use this connection can run any command that account can.",
       fields: [
         {
           key: "host",
@@ -44,6 +44,16 @@ export const provider: ProviderDefinition = {
           secret: false,
           placeholder: "deploy",
           description: "The account to log in as. Commands run with this account's permissions.",
+        },
+        {
+          key: "authMethod",
+          label: "Authentication Method",
+          inputType: "text",
+          required: false,
+          secret: false,
+          placeholder: "password, privateKey, or none",
+          description:
+            "How to log in: password, privateKey, or none. Use none for servers such as access gateways that accept the username alone, for example a username carrying an access token. When empty, the password and private key you provide are used.",
         },
         {
           key: "password",
@@ -81,7 +91,7 @@ export const provider: ProviderDefinition = {
           secret: false,
           placeholder: "SHA256:...",
           description:
-            "Optional SHA256 fingerprint of the server host key, as printed by `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` on the server. When empty, the key presented while the connection is saved is trusted and every later command requires the same key.",
+            "Optional SHA256 fingerprint of the server host key, as printed by `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` on the server. For a server that presents an OpenSSH host certificate, use the fingerprint of the certified key, which `ssh-keygen -lf` also prints for the certificate file. When empty, the key presented while the connection is saved is trusted and every later command requires the same key.",
         },
       ],
     },

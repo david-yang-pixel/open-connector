@@ -1,14 +1,9 @@
 import type { GuardedFetchDnsLookup } from "../../core/guarded-fetch.ts";
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { Socket, TcpNetConnectOpts } from "node:net";
-import type { ClientChannel } from "ssh2";
+import type { OpenSshCommandResult, OpenSshLogin, SshHostKey } from "./openssh.ts";
 
-import { Buffer } from "node:buffer";
-import { createHash } from "node:crypto";
-import { connect as connectSocket } from "node:net";
-import { Client } from "ssh2";
 import { optionalIntegerLike, optionalString } from "../../core/cast.ts";
-import { createPinnedLookup, resolveGuardedEgressTarget } from "../../core/guarded-fetch.ts";
+import { resolveGuardedEgressTarget } from "../../core/guarded-fetch.ts";
 import { isPrivateNetworkAccessAllowed } from "../../core/request.ts";
 import {
   providerInputError,
@@ -16,28 +11,41 @@ import {
   requiredInputString,
   runProviderRequest,
 } from "../provider-runtime.ts";
-import { sshDefaultTimeoutSeconds, sshOutputByteLimit } from "./actions.ts";
+import { sshDefaultTimeoutSeconds } from "./actions.ts";
+import { OpenSshError, readSshHostKey, runSshCommandWithOpenSsh, scanSshHostKey, verifySshLogin } from "./openssh.ts";
 
 const defaultSshPort = 22;
 
 /** Whether a connection is being saved or used; it decides how credential failures are reported. */
 type SshPhase = "validate" | "execute";
 
+/**
+ * How the account logs in. `none` sends neither a password nor a key, for
+ * servers such as access gateways whose username already carries the token.
+ */
+type SshAuthMethod = "password" | "privateKey" | "none";
+
 interface SshCredential {
   host: string;
   port: number;
   username: string;
+  authMethod: SshAuthMethod | undefined;
   password?: string;
   privateKey?: string;
   passphrase?: string;
-  /** SHA256 fingerprint the server host key must match; unset trusts any key. */
+  /** SHA256 fingerprint the server host key must match; unset trusts the key presented on first use. */
   hostKeyFingerprint?: string;
+  /** Host key recorded when the connection was saved, as a known_hosts `<type> <base64>` line. */
+  hostKey?: string;
 }
 
-/** Replaceable DNS and TCP primitives, so tests can reach a local server through the egress guard. */
+/** Replaceable DNS lookup and client settings, so tests can reach a local server through the egress guard. */
 export interface SshDependencies {
   lookup?: GuardedFetchDnsLookup;
-  connectSocket?: (options: TcpNetConnectOpts) => Socket;
+  /** The OpenSSH client executable. Defaults to `ssh` on PATH. */
+  sshPath?: string;
+  /** Maps the screened address to the one ssh actually dials. */
+  dialAddress?: (address: string) => string;
 }
 
 export interface SshActionContext {
@@ -46,26 +54,11 @@ export interface SshActionContext {
   dependencies?: SshDependencies;
 }
 
-interface SshCommandResult {
-  exitCode: number | null;
-  signal: string | null;
-  stdout: string;
-  stderr: string;
-  stdoutTruncated: boolean;
-  stderrTruncated: boolean;
-}
-
 interface SshSessionOptions {
   credential: SshCredential;
   phase: SshPhase;
   signal: AbortSignal;
   dependencies: SshDependencies;
-}
-
-interface SshSession {
-  client: Client;
-  /** SHA256 fingerprint of the host key the server presented during the handshake. */
-  hostKeyFingerprint: string;
 }
 
 /**
@@ -77,22 +70,36 @@ export function readSshCredential(
   values: Record<string, string>,
   metadata: Record<string, unknown> = {},
 ): SshCredential {
+  const authMethod = readSshAuthMethod(values.authMethod);
   const password = optionalString(values.password);
   const privateKey = optionalString(values.privateKey)?.replaceAll("\\n", "\n");
-  if (!password && !privateKey) {
-    throw providerInputError("Provide either a password or a private key.");
+  if (authMethod === "none" && (password || privateKey)) {
+    throw providerInputError("authMethod none logs in without a password or private key; leave both empty.");
+  }
+  if (authMethod === "password" && !password) {
+    throw providerInputError("authMethod password needs a password.");
+  }
+  if (authMethod === "privateKey" && !privateKey) {
+    throw providerInputError("authMethod privateKey needs a private key.");
+  }
+  if (authMethod === undefined && !password && !privateKey) {
+    throw providerInputError(
+      "Provide either a password or a private key, or set authMethod to none for a server that needs neither.",
+    );
   }
   const configuredFingerprint = optionalString(values.hostKeyFingerprint);
   return {
     host: readSshHost(values.host),
     port: readSshPort(values.port),
     username: requiredInputString(values.username, "username"),
-    password,
-    privateKey,
-    passphrase: optionalString(values.passphrase),
+    authMethod,
+    password: authMethod === "privateKey" ? undefined : password,
+    privateKey: authMethod === "password" ? undefined : privateKey,
+    passphrase: authMethod === "password" ? undefined : optionalString(values.passphrase),
     hostKeyFingerprint: configuredFingerprint
       ? normalizeHostKeyFingerprint(configuredFingerprint)
       : optionalString(metadata.hostKeyFingerprint),
+    hostKey: optionalString(metadata.hostKey),
   };
 }
 
@@ -103,14 +110,14 @@ export function readSshCredential(
 export async function runSshCommand(
   input: Record<string, unknown>,
   context: SshActionContext,
-): Promise<SshCommandResult> {
+): Promise<OpenSshCommandResult> {
   const command = requiredInputString(input.command, "command");
   const timeoutSeconds =
     optionalIntegerLike(input.timeoutSeconds, "timeoutSeconds", providerInputError) ?? sshDefaultTimeoutSeconds;
   return runProviderRequest({ signal: context.signal, label: "SSH", timeoutMs: timeoutSeconds * 1000 }, (signal) =>
-    withSshSession(
+    withSshLogin(
       { credential: context.credential, phase: "execute", signal, dependencies: context.dependencies ?? {} },
-      (session) => execCommand(session.client, command),
+      (login, hostKey) => runSshCommandWithOpenSsh(login, hostKey, command, signal),
     ),
   );
 }
@@ -125,22 +132,36 @@ export async function validateSshCredential(
   dependencies: SshDependencies = {},
 ): Promise<CredentialValidationResult> {
   const credential = readSshCredential(values);
-  const hostKeyFingerprint = await runProviderRequest({ signal, label: "SSH" }, (requestSignal) =>
-    withSshSession(
-      { credential, phase: "validate", signal: requestSignal, dependencies },
-      async (session) => session.hostKeyFingerprint,
-    ),
+  const hostKey = await runProviderRequest({ signal, label: "SSH" }, (requestSignal) =>
+    withSshLogin({ credential, phase: "validate", signal: requestSignal, dependencies }, async (login, trusted) => {
+      await verifySshLogin(login, trusted, requestSignal);
+      return trusted;
+    }),
   );
   const account = `${credential.username}@${credential.host}${credential.port === defaultSshPort ? "" : `:${credential.port}`}`;
   return {
     profile: { accountId: account, displayName: account, grantedScopes: [] },
     grantedScopes: [],
-    metadata: { hostKeyFingerprint },
+    metadata: { hostKeyFingerprint: hostKey.fingerprint, hostKey: hostKey.line },
   };
 }
 
-async function withSshSession<T>(options: SshSessionOptions, use: (session: SshSession) => Promise<T>): Promise<T> {
+/**
+ * Screen the host with the egress guard, settle which host key to trust, and
+ * hand both to `use`. The OpenSSH client dials the screened address and
+ * accepts only that key, so neither DNS nor the server can redirect the login.
+ */
+async function withSshLogin<T>(
+  options: SshSessionOptions,
+  use: (login: OpenSshLogin, hostKey: SshHostKey) => Promise<T>,
+): Promise<T> {
   const { credential, signal, dependencies } = options;
+  if (process.platform === "win32") {
+    throw new ProviderRequestError(
+      501,
+      "The SSH provider drives the OpenSSH client through POSIX shell helpers and is not available on Windows.",
+    );
+  }
   signal.throwIfAborted();
   const target = await resolveGuardedEgressTarget(`https://${credential.host}`, {
     fieldName: "host",
@@ -149,133 +170,89 @@ async function withSshSession<T>(options: SshSessionOptions, use: (session: SshS
     allowPrivateNetwork: isPrivateNetworkAccessAllowed(),
     lookup: dependencies.lookup,
   });
-  if (target.addresses.length === 0) {
+  const address = (target.addresses.find((entry) => entry.family === 4) ?? target.addresses[0])?.address;
+  if (address === undefined) {
     throw new ProviderRequestError(502, "host could not be resolved for validation");
   }
-  signal.throwIfAborted();
-
-  const socket = (dependencies.connectSocket ?? connectSocket)({
-    host: target.url.hostname,
+  const login: OpenSshLogin = {
+    sshPath: dependencies.sshPath ?? "ssh",
+    address: dependencies.dialAddress?.(address) ?? address,
+    host: credential.host,
     port: credential.port,
-    lookup: createPinnedLookup(target.addresses),
-    autoSelectFamily: true,
-  });
-  const client = new Client();
-  let presentedFingerprint: string | undefined;
-  let stopWatching = (): void => {};
-  // Settles only on failure: an abort, a connection error, or the server
-  // closing the connection while the session is still in use.
-  const failure = new Promise<never>((_resolve, reject) => {
-    const onAbort = (): void => reject(signal.reason);
-    signal.addEventListener("abort", onAbort, { once: true });
-    client.on("error", reject);
-    client.on("close", () => reject(new Error("the server closed the connection")));
-    stopWatching = () => signal.removeEventListener("abort", onAbort);
-  });
-  failure.catch(() => undefined);
-
+    username: credential.username,
+    password: credential.password,
+    privateKey: credential.privateKey,
+    passphrase: credential.passphrase,
+  };
   try {
-    const ready = new Promise<void>((resolve) => client.once("ready", resolve));
-    client.connect({
-      sock: socket,
-      username: credential.username,
-      password: credential.password,
-      privateKey: credential.privateKey,
-      passphrase: credential.passphrase,
-      hostVerifier: (key: Buffer): boolean => {
-        presentedFingerprint = fingerprintHostKey(key);
-        return credential.hostKeyFingerprint === undefined || presentedFingerprint === credential.hostKeyFingerprint;
-      },
-    });
-    await Promise.race([ready, failure]);
-    return await Promise.race([use({ client, hostKeyFingerprint: presentedFingerprint! }), failure]);
+    return await use(login, await trustedHostKey(login, options));
   } catch (error) {
-    throw toSshError(error, options, presentedFingerprint);
-  } finally {
-    stopWatching();
-    client.end();
-    socket.destroy();
+    throw toSshError(error, options);
   }
 }
 
-function execCommand(client: Client, command: string): Promise<SshCommandResult> {
-  return new Promise((resolve, reject) => {
-    client.exec(command, (error: Error | undefined, channel: ClientChannel) => {
-      if (error) {
-        reject(error);
-        return;
-      }
-      const stdout = new BoundedOutput();
-      const stderr = new BoundedOutput();
-      let exitCode: number | null = null;
-      let exitSignal: string | null = null;
-      channel.on("data", (chunk: Buffer) => stdout.append(chunk));
-      channel.stderr.on("data", (chunk: Buffer) => stderr.append(chunk));
-      channel.on("exit", (code: number | null, signalName?: string) => {
-        exitCode = code;
-        exitSignal = signalName ?? null;
-      });
-      channel.once("close", () =>
-        resolve({
-          exitCode,
-          signal: exitSignal,
-          stdout: stdout.text(),
-          stderr: stderr.text(),
-          stdoutTruncated: stdout.truncated,
-          stderrTruncated: stderr.truncated,
-        }),
-      );
-      // Commands that read stdin see end-of-file instead of waiting for input.
-      channel.end();
-    });
-  });
+/**
+ * Use the host key recorded at save time when it still matches the pinned
+ * fingerprint; otherwise read the key the server presents and check it
+ * against the fingerprint before any credential is sent.
+ */
+async function trustedHostKey(login: OpenSshLogin, options: SshSessionOptions): Promise<SshHostKey> {
+  const { credential, phase, signal } = options;
+  const expected = credential.hostKeyFingerprint;
+  const recorded = credential.hostKey ? readSshHostKey(credential.hostKey) : undefined;
+  if (recorded && (expected === undefined || recorded.fingerprint === expected)) {
+    return recorded;
+  }
+  const presented = await scanSshHostKey(login, signal);
+  if (expected !== undefined && presented.fingerprint !== expected) {
+    throw new ProviderRequestError(
+      phase === "validate" ? 400 : 502,
+      `SSH host key mismatch: ${credential.host} presented ${presented.fingerprint}, but the connection expects ${expected}. If the server key was changed on purpose, update the connection.`,
+    );
+  }
+  return presented;
 }
 
-/** Keeps the first {@link sshOutputByteLimit} bytes of a stream and remembers whether more arrived. */
-class BoundedOutput {
-  private readonly chunks: Buffer[] = [];
-  private size = 0;
-  truncated = false;
-
-  append(chunk: Buffer): void {
-    const room = sshOutputByteLimit - this.size;
-    if (chunk.length > room) {
-      this.truncated = true;
-    }
-    if (room > 0) {
-      const kept = chunk.subarray(0, room);
-      this.chunks.push(kept);
-      this.size += kept.length;
-    }
-  }
-
-  text(): string {
-    return Buffer.concat(this.chunks).toString("utf8");
-  }
-}
-
-function toSshError(error: unknown, options: SshSessionOptions, presentedFingerprint: string | undefined): unknown {
-  if (!(error instanceof Error) || error instanceof ProviderRequestError) {
+function toSshError(error: unknown, options: SshSessionOptions): unknown {
+  if (!(error instanceof OpenSshError)) {
     return error;
   }
   const { credential, phase } = options;
-  const expectedFingerprint = credential.hostKeyFingerprint;
-  if (expectedFingerprint && presentedFingerprint && presentedFingerprint !== expectedFingerprint) {
-    return new ProviderRequestError(
-      phase === "validate" ? 400 : 502,
-      `SSH host key mismatch: ${credential.host} presented ${presentedFingerprint}, but the connection expects ${expectedFingerprint}. If the server key was changed on purpose, update the connection.`,
-    );
+  switch (error.kind) {
+    case "authentication":
+      return new ProviderRequestError(
+        phase === "validate" ? 400 : 401,
+        credential.authMethod === "none"
+          ? `SSH authentication failed for ${credential.username}@${credential.host}. The server did not accept a login without a password or private key; check the username.`
+          : `SSH authentication failed for ${credential.username}@${credential.host}. Check the password or private key.`,
+      );
+    case "private-key":
+      return providerInputError(error.message);
+    case "host-key":
+      return new ProviderRequestError(
+        phase === "validate" ? 400 : 502,
+        `SSH host key verification failed for ${credential.host}: ${error.message}. If the server key was changed on purpose, update the connection.`,
+      );
+    case "client-missing":
+    case "connection":
+      return error;
   }
-  if ((error as { level?: unknown }).level === "client-authentication") {
-    return new ProviderRequestError(
-      phase === "validate" ? 400 : 401,
-      `SSH authentication failed for ${credential.username}@${credential.host}. Check the password or private key.`,
-    );
+}
+
+function readSshAuthMethod(value: unknown): SshAuthMethod | undefined {
+  const method = optionalString(value)?.toLowerCase();
+  switch (method) {
+    case undefined:
+      return undefined;
+    case "password":
+      return "password";
+    case "privatekey":
+      return "privateKey";
+    case "none":
+      return "none";
+    default:
+      throw providerInputError("authMethod must be password, privateKey, or none.");
   }
-  if (error.message.startsWith("Cannot parse privateKey")) {
-    return providerInputError(error.message);
-  }
-  return error;
 }
 
 function readSshHost(value: unknown): string {
@@ -301,8 +278,4 @@ function normalizeHostKeyFingerprint(value: string): string {
     throw providerInputError("hostKeyFingerprint must be a SHA256 fingerprint such as SHA256:AbC...");
   }
   return `SHA256:${digest}`;
-}
-
-function fingerprintHostKey(key: Buffer): string {
-  return `SHA256:${createHash("sha256").update(key).digest("base64").replace(/=+$/, "")}`;
 }

@@ -16,6 +16,8 @@ ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOST=0.0.0.0
 ENV OOMOL_CONNECT_DATA_DIR=/app/data
+# The SSH provider drives the OpenSSH client.
+RUN apk add --no-cache openssh-client
 COPY package.json package-lock.json ./
 COPY scripts/healthcheck.ts ./scripts/healthcheck.ts
 COPY scripts/ensure-generated.ts ./scripts/ensure-generated.ts
