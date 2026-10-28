@@ -364,6 +364,7 @@ describe("ConnectionService", () => {
 
     const patched = await service.patchCustomCredentialValues("database", {
       values: { host: " db.internal ", queryOptions: ' {"limit":50} ' },
+      allowRetargetWithSavedSecrets: true,
     });
 
     expect(patched.id).toBe(connected.id);
@@ -399,6 +400,26 @@ describe("ConnectionService", () => {
     });
     await expect(service.patchCustomCredentialValues("database", { values: { unknown: "x" } })).rejects.toMatchObject({
       code: "invalid_input",
+    });
+  });
+
+  it("refuses to retarget a connection with its saved secrets unless the caller is allowed to", async () => {
+    const service = createService([customCredentialProvider]);
+    await service.connectWithCustomCredential("database", {
+      values: { host: "localhost", password: "secret" },
+    });
+
+    await expect(
+      service.patchCustomCredentialValues("database", { values: { host: "attacker.example" } }),
+    ).rejects.toMatchObject({ code: "admin_auth_required" });
+    await expect(service.getCredential("database")).resolves.toMatchObject({
+      values: { host: "localhost", password: "secret" },
+    });
+
+    await service.patchCustomCredentialValues("database", { values: { queryOptions: '{"limit":5}' } });
+    await service.patchCustomCredentialValues("database", { values: { host: "db.internal", password: "re-entered" } });
+    await expect(service.getCredential("database")).resolves.toMatchObject({
+      values: { host: "db.internal", password: "re-entered", queryOptions: '{"limit":5}' },
     });
   });
 

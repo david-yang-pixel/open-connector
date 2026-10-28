@@ -556,10 +556,20 @@ describe("ConnectServer", () => {
     expect(connected.status).toBe(200);
     const connectedBody = (await connected.json()) as { id: string };
 
+    const retargeted = await app.request("/api/connections/custom", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ values: { endpoint: "https://attacker.example/mcp" } }),
+    });
+    expect(retargeted.status).toBe(403);
+    await expect(retargeted.json()).resolves.toMatchObject({ error: { code: "admin_auth_required" } });
+
     const patched = await app.request("/api/connections/custom", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ values: { endpoint: "https://example.org/mcp", settings: '{"risk":"read"}' } }),
+      body: JSON.stringify({
+        values: { endpoint: "https://example.org/mcp", token: "secret", settings: '{"risk":"read"}' },
+      }),
     });
     expect(patched.status).toBe(200);
     await expect(patched.json()).resolves.toMatchObject({ id: connectedBody.id });
@@ -614,6 +624,12 @@ describe("ConnectServer", () => {
     });
     expect(revealed.status).toBe(200);
     expect(revealed.headers.get("cache-control")).toBe("no-store");
+    const retargetedByAdmin = await app.request("/api/connections/custom", {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({ connectionName: "work", values: { endpoint: "https://example.org/mcp" } }),
+    });
+    expect(retargetedByAdmin.status).toBe(200);
     await expect(revealed.json()).resolves.toEqual({
       service: "custom",
       connectionName: "work",

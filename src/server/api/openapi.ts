@@ -1353,7 +1353,7 @@ function createConnectionPath(): Record<string, unknown> {
       tags: ["Connections"],
       summary: "Patch saved custom credential values.",
       description:
-        "Keeps omitted fields, including secrets, revalidates the merged credential, keeps the connection ID, and rejects undeclared fields.",
+        "Keeps omitted fields, including secrets, revalidates the merged credential, keeps the connection ID, and rejects undeclared fields. Without an admin token, changing a required non-secret field while keeping saved secrets returns 403 admin_auth_required.",
       requestBody: {
         required: true,
         content: {
@@ -1365,6 +1365,7 @@ function createConnectionPath(): Record<string, unknown> {
       responses: {
         200: jsonResponse({ $ref: "#/components/schemas/ConnectionSummary" }),
         400: jsonResponse({ $ref: "#/components/schemas/ErrorResponse" }),
+        403: jsonResponse({ $ref: "#/components/schemas/ErrorResponse" }),
         404: jsonResponse({ $ref: "#/components/schemas/ErrorResponse" }),
       },
     },

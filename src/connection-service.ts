@@ -61,6 +61,12 @@ export interface PatchCustomCredentialInput {
   connectionName?: string;
   values: Record<string, unknown>;
   signal?: AbortSignal;
+  /**
+   * Allow changing a required non-secret field, such as a host, URL, or username, while saved secrets
+   * are kept. Revalidation sends those secrets to the new target, so only an authenticated
+   * administrator, who could reveal them anyway, may do it without re-entering them.
+   */
+  allowRetargetWithSavedSecrets?: boolean;
 }
 
 /** Admin-only view of a saved custom credential: every non-secret value, and which secrets are saved. */
@@ -415,7 +421,8 @@ export class ConnectionService {
 
     const connectionName = normalizeConnectionName(input.connectionName);
     const stored = await this.getStoredCustomCredential(service, connectionName);
-    const fieldKeys = new Set(this.getCustomCredentialDefinition(provider).fields.map((field) => field.key));
+    const fields = this.getCustomCredentialDefinition(provider).fields;
+    const fieldKeys = new Set(fields.map((field) => field.key));
     if (Object.keys(input.values).length === 0) {
       throw new ConnectionError("invalid_input", "values must include at least one credential field.");
     }
@@ -431,6 +438,24 @@ export class ConnectionService {
         values[key] = value.trim();
       } else {
         throw new ConnectionError("invalid_input", `Credential field ${key} must be a string or null.`);
+      }
+    }
+
+    if (!input.allowRetargetWithSavedSecrets) {
+      const saved = stored.credential.values;
+      const retargeted = fields
+        .filter(
+          (field) => field.required && !field.secret && values[field.key] && values[field.key] !== saved[field.key],
+        )
+        .map((field) => field.key);
+      const keptSecrets = fields
+        .filter((field) => field.secret && saved[field.key] && !(field.key in input.values))
+        .map((field) => field.key);
+      if (retargeted.length > 0 && keptSecrets.length > 0) {
+        throw new ConnectionError(
+          "admin_auth_required",
+          `Changing ${retargeted.join(", ")} while keeping the saved ${keptSecrets.join(", ")} requires OOMOL_CONNECT_ADMIN_TOKEN. Re-enter ${keptSecrets.join(", ")} to change it without one.`,
+        );
       }
     }
 

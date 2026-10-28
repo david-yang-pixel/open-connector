@@ -995,12 +995,17 @@ export class ConnectServer {
     );
   }
 
+  /** Without an admin token every network peer of the console is an administrator. */
+  private get adminAuthConfigured(): boolean {
+    return Boolean(optionalString(this.options.auth?.adminToken));
+  }
+
   /**
    * Reveal one saved secret only behind the admin token. Without one, every network peer of the
    * console is an administrator, so the endpoint stays closed rather than handing out credentials.
    */
   private async revealConnectionSecret(context: Context, service: string, field: string): Promise<Response> {
-    if (!optionalString(this.options.auth?.adminToken)) {
+    if (!this.adminAuthConfigured) {
       return jsonError(
         context,
         403,
@@ -1129,6 +1134,7 @@ export class ConnectServer {
         connectionName,
         values,
         signal: context.req.raw.signal,
+        allowRetargetWithSavedSecrets: this.adminAuthConfigured,
       }),
       logContext,
     );
@@ -1420,7 +1426,12 @@ export class ConnectServer {
                 : "connection failed",
           );
         }
-        const status = error.code === "unknown_service" || error.code === "connection_not_found" ? 404 : 400;
+        const status =
+          error.code === "unknown_service" || error.code === "connection_not_found"
+            ? 404
+            : error.code === "admin_auth_required"
+              ? 403
+              : 400;
         return jsonError(context, status, error.code, error.message);
       }
 
