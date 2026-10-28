@@ -177,6 +177,94 @@ describe("RuntimeTokenService", () => {
       ],
     });
   });
+
+  it("removes a deleted connection from every token that grants it", async () => {
+    const service = new RuntimeTokenService(new MemoryRuntimeTokenStore());
+    const scoped = await service.createToken("Scoped bot", {
+      allowedActions: ["example.*"],
+      blockedActions: ["example.delete"],
+      allowedProxies: ["example"],
+      connectionPermissions: [
+        { connectionId: "deleted", access: "full" },
+        { connectionId: "kept", access: "read", toolPolicy: { mode: "all", excludedActionIds: [] } },
+      ],
+    });
+    const legacy = await service.createToken("Legacy bot", {
+      allowedActions: [],
+      blockedActions: [],
+      allowedProxies: [],
+      allowedConnections: ["kept", "deleted"],
+    });
+    const unrelated = await service.createToken("Unrelated bot", {
+      allowedActions: [],
+      blockedActions: [],
+      allowedProxies: [],
+      connectionPermissions: [{ connectionId: "kept", access: "write" }],
+    });
+
+    await service.removeConnectionGrants("deleted");
+
+    await expect(service.listTokens()).resolves.toEqual([
+      expect.objectContaining({
+        id: scoped.record.id,
+        allowedActions: ["example.*"],
+        blockedActions: ["example.delete"],
+        allowedProxies: ["example"],
+        allowedConnections: ["kept"],
+        connectionPermissions: [
+          { connectionId: "kept", access: "read", toolPolicy: { mode: "all", excludedActionIds: [] } },
+        ],
+      }),
+      expect.objectContaining({ id: legacy.record.id, allowedConnections: ["kept"], connectionPermissions: [] }),
+      expect.objectContaining({
+        id: unrelated.record.id,
+        allowedConnections: ["kept"],
+        connectionPermissions: [{ connectionId: "kept", access: "write" }],
+      }),
+    ]);
+  });
+
+  it("keeps the last deleted connection grant so a restricted token does not become unrestricted", async () => {
+    const logger = { error: vi.fn(), info: vi.fn(), warn: vi.fn() };
+    const service = new RuntimeTokenService(new MemoryRuntimeTokenStore(), logger);
+    const created = await service.createToken("Scoped bot", {
+      allowedActions: [],
+      blockedActions: [],
+      allowedProxies: [],
+      connectionPermissions: [{ connectionId: "deleted", access: "read" }],
+    });
+
+    await service.removeConnectionGrants("deleted");
+
+    await expect(service.resolveToken(created.token)).resolves.toMatchObject({
+      allowedConnections: ["deleted"],
+      connectionPermissions: [{ connectionId: "deleted", access: "read" }],
+    });
+    expect(logger.warn).toHaveBeenCalledWith(
+      { tokenId: created.record.id, connectionId: "deleted" },
+      "runtime token keeps a deleted connection grant to stay restricted",
+    );
+  });
+
+  it("logs instead of throwing when connection grant cleanup fails", async () => {
+    const store: IRuntimeTokenStore = {
+      add: vi.fn(),
+      list: vi.fn(async () => {
+        throw new Error("D1_ERROR: network connection lost");
+      }),
+      findByHash: vi.fn(),
+      updatePolicy: vi.fn(),
+      revoke: vi.fn(async () => false),
+      markUsed: vi.fn(),
+    };
+    const logger = { error: vi.fn(), info: vi.fn(), warn: vi.fn() };
+
+    await expect(new RuntimeTokenService(store, logger).removeConnectionGrants("deleted")).resolves.toBeUndefined();
+    expect(logger.warn).toHaveBeenCalledWith(
+      { connectionId: "deleted", err: expect.any(Error) },
+      "runtime token connection grant cleanup failed",
+    );
+  });
 });
 
 class MemoryRuntimeTokenStore implements IRuntimeTokenStore {

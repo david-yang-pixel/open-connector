@@ -98,6 +98,46 @@ export class RuntimeTokenService {
     return record ? summarizeRuntimeToken(record) : undefined;
   }
 
+  /**
+   * Drop a deleted connection from every token that grants it, so policies stop listing an ID
+   * that no longer resolves. An empty connection list means "any connection", so a token whose
+   * only grants point at deleted connections keeps them and stays restricted to nothing instead
+   * of silently widening. The connection is already gone when this runs, so a failed write is
+   * logged rather than failing the deletion; a stale grant authorizes nothing.
+   */
+  async removeConnectionGrants(connectionId: string): Promise<void> {
+    try {
+      for (const token of await this.store.list()) {
+        const connectionPermissions = token.connectionPermissions ?? [];
+        const remainingPermissions = connectionPermissions.filter((grant) => grant.connectionId !== connectionId);
+        const remainingConnections = token.allowedConnections.filter((id) => id !== connectionId);
+        if (
+          remainingPermissions.length === connectionPermissions.length &&
+          remainingConnections.length === token.allowedConnections.length
+        ) {
+          continue;
+        }
+        if (remainingPermissions.length === 0 && remainingConnections.length === 0) {
+          this.logger?.warn(
+            { tokenId: token.id, connectionId },
+            "runtime token keeps a deleted connection grant to stay restricted",
+          );
+          continue;
+        }
+
+        await this.store.updatePolicy(token.id, {
+          allowedActions: token.allowedActions,
+          blockedActions: token.blockedActions,
+          allowedProxies: token.allowedProxies,
+          allowedConnections: remainingConnections,
+          connectionPermissions: remainingPermissions,
+        });
+      }
+    } catch (error) {
+      this.logger?.warn({ connectionId, err: error }, "runtime token connection grant cleanup failed");
+    }
+  }
+
   async resolveToken(token: string): Promise<RuntimeGrant | undefined> {
     if (!token.startsWith(tokenPrefix)) {
       return undefined;

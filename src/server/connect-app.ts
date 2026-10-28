@@ -78,6 +78,7 @@ export async function createConnectApp(options: ConnectAppOptions): Promise<Conn
     store: options.runtimeDatabase.connectionStore,
     logger: options.logger,
     marketplace,
+    onConnectionDeleted: (connectionId) => runtimeTokens.removeConnectionGrants(connectionId),
   });
   const actions = new ActionRunner({
     catalog: options.catalog,
