@@ -543,7 +543,7 @@ describe("ConnectServer", () => {
     expect(missing.status).toBe(404);
   });
 
-  it("patches optional public connection settings without accepting secrets", async () => {
+  it("reads and patches saved connection settings without returning secrets", async () => {
     const app = createTestServer([customCredentialProvider]).createApp();
     const connected = await app.request("/api/connections/custom", {
       method: "PUT",
@@ -554,29 +554,73 @@ describe("ConnectServer", () => {
       }),
     });
     expect(connected.status).toBe(200);
+    const connectedBody = (await connected.json()) as { id: string };
 
     const patched = await app.request("/api/connections/custom", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ values: { settings: '{"risk":"read"}' } }),
+      body: JSON.stringify({ values: { endpoint: "https://example.org/mcp", settings: '{"risk":"read"}' } }),
     });
     expect(patched.status).toBe(200);
+    await expect(patched.json()).resolves.toMatchObject({ id: connectedBody.id });
 
     const settings = await app.request("/api/connections/custom/settings");
     expect(settings.status).toBe(200);
-    await expect(settings.json()).resolves.toEqual({
+    const settingsBody = await settings.json();
+    expect(settingsBody).toEqual({
       service: "custom",
       connectionName: "default",
-      values: { settings: '{"risk":"read"}' },
+      values: { endpoint: "https://example.org/mcp", settings: '{"risk":"read"}' },
+      storedSecretFields: ["token"],
     });
+    expect(JSON.stringify(settingsBody)).not.toContain("secret");
 
     const rejected = await app.request("/api/connections/custom", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ values: { token: "replacement" } }),
+      body: JSON.stringify({ values: { undeclared: "value" } }),
     });
     expect(rejected.status).toBe(400);
     await expect(rejected.json()).resolves.toMatchObject({ error: { code: "invalid_input" } });
+  });
+
+  it("reveals a saved connection secret only behind the admin token", async () => {
+    const values = { endpoint: "https://example.com/mcp", token: "secret" };
+    const open = createTestServer([customCredentialProvider]).createApp();
+    await open.request("/api/connections/custom", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ authType: "custom_credential", values }),
+    });
+    const withoutAdmin = await open.request("/api/connections/custom/settings/secrets/token");
+    expect(withoutAdmin.status).toBe(403);
+    await expect(withoutAdmin.json()).resolves.toMatchObject({ error: { code: "admin_auth_required" } });
+
+    const app = createTestServer([customCredentialProvider], { auth: { adminToken: "local-token" } }).createApp();
+    const headers = { authorization: "Bearer local-token", "content-type": "application/json" };
+    await app.request("/api/connections/custom", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ authType: "custom_credential", connectionName: "work", values }),
+    });
+
+    expect((await app.request("/api/connections/custom/settings/secrets/token?connectionName=work")).status).toBe(401);
+    const revealed = await app.request("/api/connections/custom/settings/secrets/token?connectionName=work", {
+      headers,
+    });
+    expect(revealed.status).toBe(200);
+    expect(revealed.headers.get("cache-control")).toBe("no-store");
+    await expect(revealed.json()).resolves.toEqual({
+      service: "custom",
+      connectionName: "work",
+      field: "token",
+      value: "secret",
+    });
+
+    const notSecret = await app.request("/api/connections/custom/settings/secrets/endpoint?connectionName=work", {
+      headers,
+    });
+    expect(notSecret.status).toBe(400);
   });
 
   it("rejects malformed JSON request bodies", async () => {

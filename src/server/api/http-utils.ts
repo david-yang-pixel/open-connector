@@ -81,7 +81,7 @@ export async function readRequestText(context: Context, maxBytes: number): Promi
  */
 export function jsonError(
   context: Context,
-  status: 400 | 401 | 404 | 413 | 500,
+  status: 400 | 401 | 403 | 404 | 413 | 500,
   code: string,
   message: string,
 ): Response {

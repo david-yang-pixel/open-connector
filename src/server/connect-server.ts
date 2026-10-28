@@ -264,6 +264,9 @@ export class ConnectServer {
     app.get("/api/connections/:service/settings", (context) =>
       this.getConnectionSettings(context, context.req.param("service")),
     );
+    app.get("/api/connections/:service/settings/secrets/:field", (context) =>
+      this.revealConnectionSecret(context, context.req.param("service"), context.req.param("field")),
+    );
     app.put("/api/connections/:service", (context) => this.upsertConnection(context, context.req.param("service")));
     app.patch("/api/connections/:service", (context) => this.patchConnection(context, context.req.param("service")));
     app.delete("/api/connections/:service", (context) => this.disconnect(context, context.req.param("service")));
@@ -989,6 +992,28 @@ export class ConnectServer {
     return this.writeConnectionResult(
       context,
       this.options.connections.getCustomCredentialSettings(service, connectionName),
+    );
+  }
+
+  /**
+   * Reveal one saved secret only behind the admin token. Without one, every network peer of the
+   * console is an administrator, so the endpoint stays closed rather than handing out credentials.
+   */
+  private async revealConnectionSecret(context: Context, service: string, field: string): Promise<Response> {
+    if (!optionalString(this.options.auth?.adminToken)) {
+      return jsonError(
+        context,
+        403,
+        "admin_auth_required",
+        "Set OOMOL_CONNECT_ADMIN_TOKEN before revealing saved connection secrets.",
+      );
+    }
+    const connectionName = readConnectionName(context);
+    context.header("cache-control", "no-store");
+    this.options.logger?.info({ service, connectionName, field }, "connection secret revealed");
+    return this.writeConnectionResult(
+      context,
+      this.options.connections.revealCustomCredentialSecret(service, connectionName, field),
     );
   }
 
