@@ -384,6 +384,43 @@ describe("AccessPage", () => {
     expect(markup).toContain("access.policy.tools.advancedRules");
   });
 
+  it("shows the allow rules generated from selected connections when no custom allow rule is set", () => {
+    const options = [
+      { id: githubDefaultId, service: "github", name: "default", provider: "GitHub" },
+      { id: githubWorkId, service: "github", name: "work", provider: "GitHub" },
+      { id: slackWorkId, service: "slack", name: "work", provider: "Slack" },
+    ];
+    const render = (allowedActions: string[], ids: string[]): string =>
+      renderToStaticMarkup(
+        createElement(TokenPermissionEditor, {
+          draft: {
+            rules: { allowedActions, blockedActions: [], allowedProxies: [], blockedProxies: [] },
+            actionAllowMode: allowedActions.length > 0 ? "restricted" : "unrestricted",
+            proxyAllowMode: "unrestricted",
+          },
+          providers: [],
+          connections: createConnectionGrantDraft(ids),
+          connectionOptions: options,
+          onDraftChange: vi.fn(),
+          onConnectionsChange: vi.fn(),
+        }),
+      );
+
+    const generated = render([], [githubDefaultId, githubWorkId, slackWorkId]);
+    expect(generated).toContain("access.policy.tools.generatedRuleCount");
+    expect(generated).toContain("access.policy.tools.generatedRulesHint");
+    expect(generated).toContain("<code>github.*</code>");
+    expect(generated).toContain("<code>slack.*</code>");
+    expect(generated.match(/<code>github\.\*<\/code>/g)).toHaveLength(1);
+
+    const custom = render(["github.get_repository"], [githubDefaultId]);
+    expect(custom).not.toContain("access.policy.tools.generatedRules");
+    expect(custom).toContain("access.policy.tools.customRuleCount");
+
+    const unrestricted = render([], []);
+    expect(unrestricted).not.toContain("access.policy.tools.generatedRules");
+  });
+
   it("serializes one policy rule per non-empty trimmed line", () => {
     const rules = policyRulesFromDraft({
       allowedActions: " github.*\n\ngithub.create_issue ",

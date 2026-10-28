@@ -625,6 +625,9 @@
         "advancedRules": "高度なアクションルール（任意）",
         "advancedRulesHint": "接続をまたぐ例外的な許可・拒否にのみ使用します。通常のアクセスレベルとツール選択には不要です。",
         "customRuleCount": "カスタムルール {{count}} 件",
+        "generatedRuleCount": "自動許可 {{count}} サービス",
+        "generatedRules": "選択した接続から自動許可",
+        "generatedRulesHint": "許可ルールが空の場合、保存時に選択した接続から以下のルールを生成します。カスタム許可ルールを追加すると、そちらが優先されます。",
         "legacyUnrestricted": "旧形式：現在および将来の全接続",
         "legacyUnrestrictedHint": "この Token は接続ごとの権限を区別できません。維持するか、現在の全接続を読み取り専用へ変換できます。",
         "convertLegacy": "接続ごとの読み取り専用へ変換"

@@ -952,6 +952,10 @@ interface TokenPermissionEditorProps {
 export function TokenPermissionEditor(props: TokenPermissionEditorProps): ReactNode {
   const t = useTranslate();
   const customRuleCount = props.draft.rules.allowedActions.length + props.draft.rules.blockedActions.length;
+  const generatedActions =
+    props.draft.rules.allowedActions.length === 0
+      ? connectionScopedAllowedActions([], props.connections, props.connectionOptions)
+      : [];
   return (
     <div className="token-permission-editor">
       <section className="token-permission-primary">
@@ -975,11 +979,27 @@ export function TokenPermissionEditor(props: TokenPermissionEditorProps): ReactN
             <strong>{t("access.policy.tools.advancedRules")}</strong>
             <small>{t("access.policy.tools.advancedRulesHint")}</small>
           </span>
-          {customRuleCount > 0 ? (
-            <Badge>{t("access.policy.tools.customRuleCount", { count: customRuleCount })}</Badge>
-          ) : null}
+          <div className="token-permission-advanced-badges">
+            {generatedActions.length > 0 ? (
+              <Badge>{t("access.policy.tools.generatedRuleCount", { count: generatedActions.length })}</Badge>
+            ) : null}
+            {customRuleCount > 0 ? (
+              <Badge>{t("access.policy.tools.customRuleCount", { count: customRuleCount })}</Badge>
+            ) : null}
+          </div>
         </summary>
         <div className="token-permission-advanced-body">
+          {generatedActions.length > 0 ? (
+            <div className="token-permission-generated">
+              <strong>{t("access.policy.tools.generatedRules")}</strong>
+              <span>{t("access.policy.tools.generatedRulesHint")}</span>
+              <div>
+                {generatedActions.map((rule) => (
+                  <code key={rule}>{rule}</code>
+                ))}
+              </div>
+            </div>
+          ) : null}
           <PolicyEditor
             draft={props.draft}
             providers={props.providers}

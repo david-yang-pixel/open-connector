@@ -78,6 +78,8 @@ export interface ConnectionServiceOptions {
   store: IConnectionStore;
   logger?: RuntimeLogger;
   marketplace?: MarketplaceService;
+  /** Removes references other records hold to a stored connection after it is deleted, such as runtime token grants. */
+  onConnectionDeleted?: (connectionId: string) => Promise<void>;
 }
 
 export interface StoredConnection {
@@ -154,6 +156,7 @@ export class ConnectionService {
   private readonly store: IConnectionStore;
   private readonly logger?: RuntimeLogger;
   private readonly marketplace?: MarketplaceService;
+  private readonly onConnectionDeleted?: (connectionId: string) => Promise<void>;
 
   constructor(input: ConnectionServiceOptions) {
     this.catalog = input.catalog;
@@ -162,6 +165,7 @@ export class ConnectionService {
     this.store = input.store;
     this.logger = input.logger;
     this.marketplace = input.marketplace;
+    this.onConnectionDeleted = input.onConnectionDeleted;
   }
 
   async listConnections(): Promise<ConnectionSummary[]> {
@@ -570,7 +574,11 @@ export class ConnectionService {
     connectionNameInput?: string,
   ): Promise<ConnectionSummary | DisconnectedConnectionSummary> {
     const connectionName = normalizeConnectionName(connectionNameInput);
+    const stored = await this.store.get(service, connectionName);
     await this.store.delete(service, connectionName);
+    if (stored) {
+      await this.onConnectionDeleted?.(stored.id);
+    }
     const provider = this.catalog.providers.find((provider) => provider.service === service);
     if (provider && this.supportsAuth(provider, "no_auth")) {
       return this.connectWithoutAuth(service, { connectionName });

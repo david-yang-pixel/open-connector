@@ -872,6 +872,45 @@
   padding-top: 12px;
 }
 
+.token-permission-advanced-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.token-permission-generated {
+  display: grid;
+  gap: 6px;
+  padding-top: 12px;
+}
+
+.token-permission-generated > strong {
+  font-size: 12px;
+}
+
+.token-permission-generated > span {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+.token-permission-generated > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.token-permission-generated code {
+  max-width: 100%;
+  overflow: hidden;
+  padding: 3px 6px;
+  border-radius: 5px;
+  background: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-overflow: ellipsis;
+}
+
 .token-legacy-permission {
   display: flex;
   align-items: center;

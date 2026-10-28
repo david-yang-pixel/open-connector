@@ -622,6 +622,9 @@
         "advancedRules": "進階動作規則（選用）",
         "advancedRulesHint": "僅用於跨連線的特殊允許或阻擋規則；一般存取級別與工具選擇無需設定。",
         "customRuleCount": "{{count}} 條自訂規則",
+        "generatedRuleCount": "自動允許 {{count}} 個服務",
+        "generatedRules": "依已選連線自動允許",
+        "generatedRulesHint": "允許規則留空時，儲存會依已選連線產生以下規則；新增自訂允許規則後，以自訂規則為準。",
         "legacyUnrestricted": "舊版：允許目前及未來的所有連線",
         "legacyUnrestrictedHint": "此 Token 無法依連線區分權限。可繼續保留，或將目前所有連線轉為唯讀。",
         "convertLegacy": "轉換為逐連線唯讀"

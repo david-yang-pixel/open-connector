@@ -275,6 +275,21 @@ describe("ConnectionService", () => {
     });
   });
 
+  it("reports the deleted connection ID after disconnecting a stored connection", async () => {
+    const onConnectionDeleted = vi.fn(async () => {});
+    const service = createService([apiKeyProvider], { onConnectionDeleted });
+    const connected = await service.connectWithApiKey("uptimerobot", {
+      connectionName: "work",
+      values: { apiKey: "test-key", accountId: "account-1" },
+    });
+
+    await service.disconnect("uptimerobot", "work");
+    await service.disconnect("uptimerobot", "work");
+
+    expect(onConnectionDeleted).toHaveBeenCalledTimes(1);
+    expect(onConnectionDeleted).toHaveBeenCalledWith(connected.id);
+  });
+
   it("requires declared API key extra fields", async () => {
     const service = createService([apiKeyProvider]);
 
@@ -1095,6 +1110,7 @@ interface CreateServiceOptions {
   oauthCredentials?: OAuthCredentialRefreshService;
   providerLoader?: IProviderLoader;
   store?: MemoryConnectionStore;
+  onConnectionDeleted?: (connectionId: string) => Promise<void>;
 }
 
 function createService(providers: ProviderDefinition[], options: CreateServiceOptions = {}): ConnectionService {
@@ -1106,6 +1122,7 @@ function createService(providers: ProviderDefinition[], options: CreateServiceOp
     oauthCredentials: options.oauthCredentials,
     providerLoader: options.providerLoader ?? new FakeProviderLoader(),
     store: options.store ?? new MemoryConnectionStore(),
+    onConnectionDeleted: options.onConnectionDeleted,
   });
 }
 
