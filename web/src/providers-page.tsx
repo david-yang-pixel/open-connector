@@ -1495,6 +1495,7 @@ function ConnectionForm(props: ConnectionFormProps): ReactNode {
   const [storedSecretFields, setStoredSecretFields] = useState<string[]>([]);
   const [clearedSecretFields, setClearedSecretFields] = useState<string[]>([]);
   const [revealedSecretFields, setRevealedSecretFields] = useState<string[]>([]);
+  const [fetchedSecretValues, setFetchedSecretValues] = useState<Record<string, string>>({});
   const stopOAuthRefreshPolling = useRef<(() => void) | undefined>(undefined);
   const authDescription = props.auth.type === "custom_credential" ? props.auth.description : undefined;
   const connectedCustomCredential = props.connection != null && props.auth.type === "custom_credential";
@@ -1548,17 +1549,13 @@ function ConnectionForm(props: ConnectionFormProps): ReactNode {
       return;
     }
     let active = true;
-    setValues({});
-    setStoredSecretFields([]);
-    setClearedSecretFields([]);
-    setRevealedSecretFields([]);
+    applyCustomSettings({ values: {}, storedSecretFields: [] });
     setCustomSettingsLoaded(false);
     setStatus(t("providers.connectionMessages.loadingAdvancedSettings"));
     void apiGet<CustomCredentialSettingsResponse>(connectionSettingsPath(props.provider.service, props.connectionName))
       .then((response) => {
         if (!active) return;
-        setValues(response.values);
-        setStoredSecretFields(response.storedSecretFields ?? []);
+        applyCustomSettings(response);
         setCustomSettingsLoaded(true);
         setStatus(null);
       })
@@ -1612,6 +1609,11 @@ function ConnectionForm(props: ConnectionFormProps): ReactNode {
             `/api/connections/${props.provider.service}`,
             customCredentialSettingsPatchBody(connectionName, fields, values, clearedSecretFields),
           );
+          applyCustomSettings(
+            await apiGet<CustomCredentialSettingsResponse>(
+              connectionSettingsPath(props.provider.service, connectionName),
+            ),
+          );
         } else {
           await apiPut(
             `/api/connections/${props.provider.service}`,
@@ -1664,13 +1666,30 @@ function ConnectionForm(props: ConnectionFormProps): ReactNode {
     }
   }
 
+  /** Reset the form to the saved settings, dropping any revealed, cleared, or typed secret state. */
+  function applyCustomSettings(
+    settings: Pick<CustomCredentialSettingsResponse, "values" | "storedSecretFields">,
+  ): void {
+    setValues(settings.values);
+    setStoredSecretFields(settings.storedSecretFields ?? []);
+    setClearedSecretFields([]);
+    setRevealedSecretFields([]);
+    setFetchedSecretValues({});
+  }
+
   async function revealSecret(field: string): Promise<void> {
+    if (values[field]) {
+      // The field already holds a value the user typed or revealed earlier; show it without refetching over it.
+      setRevealedSecretFields((current) => [...current.filter((key) => key !== field), field]);
+      return;
+    }
     setStatus(t("providers.secretField.revealing"));
     try {
       const response = await apiGet<CustomCredentialSecretResponse>(
         connectionSecretPath(props.provider.service, props.connectionName, field),
       );
       setValues((current) => ({ ...current, [field]: response.value }));
+      setFetchedSecretValues((current) => ({ ...current, [field]: response.value }));
       setRevealedSecretFields((current) => [...current.filter((key) => key !== field), field]);
       setStatus(null);
     } catch (error) {
@@ -1680,6 +1699,10 @@ function ConnectionForm(props: ConnectionFormProps): ReactNode {
 
   function hideSecret(field: string): void {
     setRevealedSecretFields((current) => current.filter((key) => key !== field));
+    // An unchanged revealed value goes back to "saved, kept when blank", so nothing stays on screen.
+    if (fetchedSecretValues[field] !== undefined && values[field] === fetchedSecretValues[field]) {
+      setValues((current) => ({ ...current, [field]: "" }));
+    }
   }
 
   function setSecretCleared(field: string, cleared: boolean): void {

@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 
 interface CredentialInputProps {
   field: CredentialField;
@@ -27,7 +28,11 @@ export function CredentialInput(props: CredentialInputProps): ReactNode {
       <span>{props.field.label}</span>
       {props.field.inputType === "textarea" || props.field.inputType === "json" ? (
         <Textarea
-          className="min-h-24 resize-y font-mono text-xs leading-relaxed"
+          className={cn(
+            "min-h-24 resize-y font-mono text-xs leading-relaxed",
+            // A textarea has no password type, so mask a hidden secret the way browsers mask password inputs.
+            props.field.secret && props.revealed === false && "[-webkit-text-security:disc]",
+          )}
           value={props.value}
           placeholder={placeholder}
           onChange={(event) => props.onChange(event.target.value)}

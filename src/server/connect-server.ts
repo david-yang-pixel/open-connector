@@ -1010,10 +1010,15 @@ export class ConnectServer {
     }
     const connectionName = readConnectionName(context);
     context.header("cache-control", "no-store");
-    this.options.logger?.info({ service, connectionName, field }, "connection secret revealed");
     return this.writeConnectionResult(
       context,
-      this.options.connections.revealCustomCredentialSecret(service, connectionName, field),
+      this.options.connections.revealCustomCredentialSecret(service, connectionName, field).then((secret) => {
+        this.options.logger?.info(
+          { service, connectionName: secret.connectionName, field },
+          "connection secret revealed",
+        );
+        return secret;
+      }),
     );
   }
 

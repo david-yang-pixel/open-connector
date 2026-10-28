@@ -596,7 +596,11 @@ describe("ConnectServer", () => {
     expect(withoutAdmin.status).toBe(403);
     await expect(withoutAdmin.json()).resolves.toMatchObject({ error: { code: "admin_auth_required" } });
 
-    const app = createTestServer([customCredentialProvider], { auth: { adminToken: "local-token" } }).createApp();
+    const { entries, logger } = createTestLogger();
+    const app = createTestServer([customCredentialProvider], {
+      auth: { adminToken: "local-token" },
+      logger,
+    }).createApp();
     const headers = { authorization: "Bearer local-token", "content-type": "application/json" };
     await app.request("/api/connections/custom", {
       method: "PUT",
@@ -621,6 +625,16 @@ describe("ConnectServer", () => {
       headers,
     });
     expect(notSecret.status).toBe(400);
+
+    const revealLogs = entries.filter((entry) => entry.message === "connection secret revealed");
+    expect(revealLogs).toEqual([
+      {
+        level: "info",
+        fields: { service: "custom", connectionName: "work", field: "token" },
+        message: "connection secret revealed",
+      },
+    ]);
+    expect(JSON.stringify(entries)).not.toContain('secret"');
   });
 
   it("rejects malformed JSON request bodies", async () => {
