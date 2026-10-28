@@ -22,6 +22,9 @@ import {
   Cloud,
   Database,
   ExternalLink,
+  Eraser,
+  Eye,
+  EyeOff,
   FileText,
   Megaphone,
   MessagesSquare,
@@ -31,6 +34,7 @@ import {
   ShoppingBag,
   SquareKanban,
   Trash2,
+  Undo2,
   X,
 } from "lucide-react";
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
@@ -141,6 +145,20 @@ interface CustomCredentialSettingsResponse {
   service: string;
   connectionName: string;
   values: Record<string, string>;
+  storedSecretFields: string[];
+}
+
+/** Input overrides for a secret field that already has a saved value. */
+interface SavedSecretInputProps {
+  placeholder?: string;
+  required?: boolean;
+  revealed?: boolean;
+  actions?: ReactNode;
+}
+
+interface CustomCredentialSecretResponse {
+  field: string;
+  value: string;
 }
 
 interface ConnectionManagerProps {
@@ -1249,21 +1267,32 @@ export function connectionSettingsPath(service: string, connectionName: string):
   return `/api/connections/${encodeURIComponent(service)}/settings?connectionName=${encodeURIComponent(connectionName)}`;
 }
 
-export function editableCustomCredentialFields(auth: AuthDefinition): CredentialField[] {
-  return auth.type === "custom_credential"
-    ? (auth.fields ?? []).filter((field) => !field.required && !field.secret)
-    : [];
+export function connectionSecretPath(service: string, connectionName: string, field: string): string {
+  return `/api/connections/${encodeURIComponent(service)}/settings/secrets/${encodeURIComponent(field)}?connectionName=${encodeURIComponent(connectionName)}`;
 }
 
+/**
+ * Build the patch for a saved custom credential. Non-secret fields are always sent, so a blank one
+ * is removed. A blank secret is omitted so the saved value is kept, unless the user cleared it.
+ */
 export function customCredentialSettingsPatchBody(
   connectionName: string,
   fields: CredentialField[],
   values: Record<string, string>,
+  clearedSecretFields: string[] = [],
 ): { connectionName: string; values: Record<string, string | null> } {
-  return {
-    connectionName,
-    values: Object.fromEntries(fields.map((field) => [field.key, values[field.key]?.trim() || null])),
-  };
+  const patch: Record<string, string | null> = {};
+  for (const field of fields) {
+    const value = values[field.key]?.trim() || null;
+    if (!field.secret) {
+      patch[field.key] = value;
+    } else if (clearedSecretFields.includes(field.key)) {
+      patch[field.key] = null;
+    } else if (value) {
+      patch[field.key] = value;
+    }
+  }
+  return { connectionName, values: patch };
 }
 
 export function credentialConnectionRequestBody(
@@ -1463,12 +1492,14 @@ function ConnectionForm(props: ConnectionFormProps): ReactNode {
   );
   const [status, setStatus] = useState<string | null>(null);
   const [customSettingsLoaded, setCustomSettingsLoaded] = useState(false);
+  const [storedSecretFields, setStoredSecretFields] = useState<string[]>([]);
+  const [clearedSecretFields, setClearedSecretFields] = useState<string[]>([]);
+  const [revealedSecretFields, setRevealedSecretFields] = useState<string[]>([]);
+  const [fetchedSecretValues, setFetchedSecretValues] = useState<Record<string, string>>({});
   const stopOAuthRefreshPolling = useRef<(() => void) | undefined>(undefined);
   const authDescription = props.auth.type === "custom_credential" ? props.auth.description : undefined;
   const connectedCustomCredential = props.connection != null && props.auth.type === "custom_credential";
-  const fields = connectedCustomCredential
-    ? editableCustomCredentialFields(props.auth)
-    : credentialFieldsFor(props.auth);
+  const fields = credentialFieldsFor(props.auth);
   const showActions = shouldShowConnectionActions(props.auth);
   const connected = props.connection != null;
   const customOAuthClientAvailable =
@@ -1518,13 +1549,13 @@ function ConnectionForm(props: ConnectionFormProps): ReactNode {
       return;
     }
     let active = true;
-    setValues({});
+    applyCustomSettings({ values: {}, storedSecretFields: [] });
     setCustomSettingsLoaded(false);
     setStatus(t("providers.connectionMessages.loadingAdvancedSettings"));
     void apiGet<CustomCredentialSettingsResponse>(connectionSettingsPath(props.provider.service, props.connectionName))
       .then((response) => {
         if (!active) return;
-        setValues(response.values);
+        applyCustomSettings(response);
         setCustomSettingsLoaded(true);
         setStatus(null);
       })
@@ -1576,8 +1607,9 @@ function ConnectionForm(props: ConnectionFormProps): ReactNode {
         if (connectedCustomCredential) {
           await apiPatch(
             `/api/connections/${props.provider.service}`,
-            customCredentialSettingsPatchBody(connectionName, fields, values),
+            customCredentialSettingsPatchBody(connectionName, fields, values, clearedSecretFields),
           );
+          await reloadCustomSettingsAfterSave(connectionName);
         } else {
           await apiPut(
             `/api/connections/${props.provider.service}`,
@@ -1628,6 +1660,117 @@ function ConnectionForm(props: ConnectionFormProps): ReactNode {
     } catch (error) {
       setStatus(error instanceof Error ? error.message : t("providers.connectionMessages.disconnectFailed"));
     }
+  }
+
+  /** Reset the form to the saved settings, dropping any revealed, cleared, or typed secret state. */
+  function applyCustomSettings(
+    settings: Pick<CustomCredentialSettingsResponse, "values" | "storedSecretFields">,
+  ): void {
+    setValues(settings.values);
+    setStoredSecretFields(settings.storedSecretFields ?? []);
+    setClearedSecretFields([]);
+    setRevealedSecretFields([]);
+    setFetchedSecretValues({});
+  }
+
+  /**
+   * Re-read the saved settings after a successful save. The save already went through, so a failed
+   * re-read derives the saved state from what was submitted instead of reporting the save as failed.
+   */
+  async function reloadCustomSettingsAfterSave(connectionName: string): Promise<void> {
+    try {
+      applyCustomSettings(
+        await apiGet<CustomCredentialSettingsResponse>(connectionSettingsPath(props.provider.service, connectionName)),
+      );
+    } catch {
+      const submitted = (key: string): string => values[key]?.trim() ?? "";
+      applyCustomSettings({
+        values: Object.fromEntries(
+          fields
+            .filter((field) => !field.secret && submitted(field.key))
+            .map((field) => [field.key, submitted(field.key)]),
+        ),
+        storedSecretFields: fields
+          .filter(
+            (field) =>
+              field.secret &&
+              !clearedSecretFields.includes(field.key) &&
+              (storedSecretFields.includes(field.key) || submitted(field.key) !== ""),
+          )
+          .map((field) => field.key),
+      });
+    }
+  }
+
+  async function revealSecret(field: string): Promise<void> {
+    if (values[field]) {
+      // The field already holds a value the user typed or revealed earlier; show it without refetching over it.
+      setRevealedSecretFields((current) => [...current.filter((key) => key !== field), field]);
+      return;
+    }
+    setStatus(t("providers.secretField.revealing"));
+    try {
+      const response = await apiGet<CustomCredentialSecretResponse>(
+        connectionSecretPath(props.provider.service, props.connectionName, field),
+      );
+      setValues((current) => ({ ...current, [field]: response.value }));
+      setFetchedSecretValues((current) => ({ ...current, [field]: response.value }));
+      setRevealedSecretFields((current) => [...current.filter((key) => key !== field), field]);
+      setStatus(null);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : t("providers.secretField.revealFailed"));
+    }
+  }
+
+  function hideSecret(field: string): void {
+    setRevealedSecretFields((current) => current.filter((key) => key !== field));
+    // An unchanged revealed value goes back to "saved, kept when blank", so nothing stays on screen.
+    if (fetchedSecretValues[field] !== undefined && values[field] === fetchedSecretValues[field]) {
+      setValues((current) => ({ ...current, [field]: "" }));
+    }
+  }
+
+  function setSecretCleared(field: string, cleared: boolean): void {
+    setClearedSecretFields((current) => [...current.filter((key) => key !== field), ...(cleared ? [field] : [])]);
+    if (cleared) {
+      setValues((current) => ({ ...current, [field]: "" }));
+      hideSecret(field);
+    }
+  }
+
+  function savedSecretInputProps(field: CredentialField): SavedSecretInputProps {
+    if (!connectedCustomCredential || !field.secret || !storedSecretFields.includes(field.key)) return {};
+    const cleared = clearedSecretFields.includes(field.key);
+    const revealed = revealedSecretFields.includes(field.key);
+    return {
+      placeholder: t(cleared ? "providers.secretField.clearedPlaceholder" : "providers.secretField.savedPlaceholder"),
+      required: cleared ? field.required : false,
+      revealed,
+      actions: cleared ? (
+        <Button variant="outline" size="sm" type="button" onClick={() => setSecretCleared(field.key, false)}>
+          <Undo2 size={14} />
+          {t("providers.secretField.undoClear")}
+        </Button>
+      ) : (
+        <>
+          <Button
+            variant="outline"
+            size="sm"
+            type="button"
+            onClick={() => (revealed ? hideSecret(field.key) : void revealSecret(field.key))}
+          >
+            {revealed ? <EyeOff size={14} /> : <Eye size={14} />}
+            {t(revealed ? "providers.secretField.hide" : "providers.secretField.reveal")}
+          </Button>
+          {field.required ? null : (
+            <Button variant="outline" size="sm" type="button" onClick={() => setSecretCleared(field.key, true)}>
+              <Eraser size={14} />
+              {t("providers.secretField.clear")}
+            </Button>
+          )}
+        </>
+      ),
+    };
   }
 
   return (
@@ -1753,6 +1896,7 @@ function ConnectionForm(props: ConnectionFormProps): ReactNode {
           field={field}
           value={values[field.key] ?? ""}
           onChange={(value) => setValues((current) => ({ ...current, [field.key]: value }))}
+          {...savedSecretInputProps(field)}
         />
       ))}
       {showActions ? (

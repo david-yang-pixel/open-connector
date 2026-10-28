@@ -11,12 +11,12 @@ import {
   configurableConnectionsForProvider,
   connectionDeletePath,
   connectionDisplayLabel,
+  connectionSecretPath,
   connectionSettingsPath,
   connectionSubmitLabel,
   createOAuthPopupFeatures,
   customCredentialSettingsPatchBody,
   credentialConnectionRequestBody,
-  editableCustomCredentialFields,
   isProviderLocallyAvailable,
   oauthAuthorizationRequestBody,
   oauthConfigForProvider,
@@ -55,27 +55,35 @@ describe("custom credential settings", () => {
     ],
   };
 
-  it("only exposes optional non-secret fields for in-place editing", () => {
-    expect(editableCustomCredentialFields(auth).map((field) => field.key)).toEqual([
-      "requestTimeoutMs",
-      "fallbackServerUrls",
-    ]);
-  });
-
-  it("builds named settings paths and clears blank values explicitly", () => {
-    const fields = editableCustomCredentialFields(auth);
+  it("builds named settings and secret paths", () => {
     expect(connectionSettingsPath("custom_mcp", "dify signoz")).toBe(
       "/api/connections/custom_mcp/settings?connectionName=dify%20signoz",
     );
+    expect(connectionSecretPath("custom_mcp", "dify signoz", "token")).toBe(
+      "/api/connections/custom_mcp/settings/secrets/token?connectionName=dify%20signoz",
+    );
+  });
+
+  it("sends every non-secret field and keeps blank secrets unless they were cleared", () => {
+    const fields = auth.type === "custom_credential" ? (auth.fields ?? []) : [];
     expect(
       customCredentialSettingsPatchBody("dify signoz", fields, {
+        serverUrl: " https://example.com/mcp ",
+        token: "",
         requestTimeoutMs: " 180000 ",
         fallbackServerUrls: "",
       }),
     ).toEqual({
       connectionName: "dify signoz",
-      values: { requestTimeoutMs: "180000", fallbackServerUrls: null },
+      values: { serverUrl: "https://example.com/mcp", requestTimeoutMs: "180000", fallbackServerUrls: null },
     });
+    expect(
+      customCredentialSettingsPatchBody("work", fields, { serverUrl: "https://example.com/mcp", token: " new " }).values
+        .token,
+    ).toBe("new");
+    expect(
+      customCredentialSettingsPatchBody("work", fields, { serverUrl: "https://example.com/mcp" }, ["token"]).values,
+    ).toMatchObject({ token: null });
   });
 });
 

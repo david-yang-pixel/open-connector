@@ -53,18 +53,37 @@ export interface ConnectWithCredentialInput {
   comment?: string | null;
 }
 
-/** Patch optional, non-secret custom credential settings while retaining connection secrets. */
+/**
+ * Patch saved custom credential values. Omitted fields keep their saved value, a string replaces
+ * it, and null or a blank string removes it; the merged values are validated like a new connection.
+ */
 export interface PatchCustomCredentialInput {
   connectionName?: string;
   values: Record<string, unknown>;
   signal?: AbortSignal;
+  /**
+   * Allow changing a required or secret field, such as a host, server URL, or username, while other
+   * saved secrets are kept. Any of those can point the connection somewhere else, and revalidation
+   * sends the kept secrets there, so only an authenticated administrator, who could reveal them
+   * anyway, may do it without re-entering them. Optional non-secret fields are always patchable.
+   */
+  allowRetargetWithSavedSecrets?: boolean;
 }
 
-/** Admin-only view of configured optional fields that the provider marks non-secret. */
+/** Admin-only view of a saved custom credential: every non-secret value, and which secrets are saved. */
 export interface CustomCredentialSettingsSummary {
   service: string;
   connectionName: string;
   values: Record<string, string>;
+  storedSecretFields: string[];
+}
+
+/** One saved secret custom credential value, returned only when an administrator asks to reveal it. */
+export interface CustomCredentialSecretValue {
+  service: string;
+  connectionName: string;
+  field: string;
+  value: string;
 }
 
 export interface ConnectWithoutAuthInput {
@@ -402,29 +421,17 @@ export class ConnectionService {
     }
 
     const connectionName = normalizeConnectionName(input.connectionName);
-    const stored = await this.store.get(service, connectionName);
-    if (!stored) {
-      throw new ConnectionError("connection_not_found", `${service} connection not found: ${connectionName}.`);
-    }
-    if (stored.credential.authType !== "custom_credential") {
-      throw new ConnectionError("unsupported_auth_type", `${service} connection does not use custom_credential.`);
-    }
-
-    const auth = this.getCustomCredentialDefinition(provider);
-    const patchableFields = new Map(
-      auth.fields.filter((field) => !field.required && !field.secret).map((field) => [field.key, field]),
-    );
+    const stored = await this.getStoredCustomCredential(service, connectionName);
+    const fields = this.getCustomCredentialDefinition(provider).fields;
+    const fieldKeys = new Set(fields.map((field) => field.key));
     if (Object.keys(input.values).length === 0) {
-      throw new ConnectionError("invalid_input", "values must include at least one patchable credential field.");
+      throw new ConnectionError("invalid_input", "values must include at least one credential field.");
     }
 
     const values = { ...stored.credential.values };
     for (const [key, value] of Object.entries(input.values)) {
-      if (!patchableFields.has(key)) {
-        throw new ConnectionError(
-          "invalid_input",
-          `Credential field ${key} cannot be patched; only optional non-secret fields are allowed.`,
-        );
+      if (!fieldKeys.has(key)) {
+        throw new ConnectionError("invalid_input", `Unexpected credential field: ${key}.`);
       }
       if (value === null || (typeof value === "string" && !value.trim())) {
         delete values[key];
@@ -432,6 +439,24 @@ export class ConnectionService {
         values[key] = value.trim();
       } else {
         throw new ConnectionError("invalid_input", `Credential field ${key} must be a string or null.`);
+      }
+    }
+
+    if (!input.allowRetargetWithSavedSecrets) {
+      const saved = stored.credential.values;
+      const retargeted = fields
+        .filter(
+          (field) => (field.required || field.secret) && values[field.key] && values[field.key] !== saved[field.key],
+        )
+        .map((field) => field.key);
+      const keptSecrets = fields
+        .filter((field) => field.secret && saved[field.key] && !(field.key in input.values))
+        .map((field) => field.key);
+      if (retargeted.length > 0 && keptSecrets.length > 0) {
+        throw new ConnectionError(
+          "admin_auth_required",
+          `Changing ${retargeted.join(", ")} while keeping the saved ${keptSecrets.join(", ")} requires OOMOL_CONNECT_ADMIN_TOKEN. Re-enter ${keptSecrets.join(", ")} to change it without one.`,
+        );
       }
     }
 
@@ -452,6 +477,48 @@ export class ConnectionService {
       throw new ConnectionError("unsupported_auth_type", `${service} does not support custom_credential.`);
     }
     const connectionName = normalizeConnectionName(connectionNameInput);
+    const stored = await this.getStoredCustomCredential(service, connectionName);
+    const fields = this.getCustomCredentialDefinition(provider).fields;
+    const savedValues = stored.credential.values;
+    return {
+      service,
+      connectionName,
+      values: Object.fromEntries(
+        fields
+          .filter((field) => !field.secret && savedValues[field.key])
+          .map((field) => [field.key, savedValues[field.key]]),
+      ),
+      storedSecretFields: fields.filter((field) => field.secret && savedValues[field.key]).map((field) => field.key),
+    };
+  }
+
+  /** Return one saved secret value so an administrator can check what a connection was configured with. */
+  async revealCustomCredentialSecret(
+    service: string,
+    connectionNameInput: string | undefined,
+    fieldKey: string,
+  ): Promise<CustomCredentialSecretValue> {
+    const provider = this.getProvider(service);
+    if (!this.supportsAuth(provider, "custom_credential")) {
+      throw new ConnectionError("unsupported_auth_type", `${service} does not support custom_credential.`);
+    }
+    const connectionName = normalizeConnectionName(connectionNameInput);
+    const stored = await this.getStoredCustomCredential(service, connectionName);
+    const field = this.getCustomCredentialDefinition(provider).fields.find((candidate) => candidate.key === fieldKey);
+    if (!field?.secret) {
+      throw new ConnectionError("invalid_input", `${fieldKey} is not a secret credential field of ${service}.`);
+    }
+    const value = stored.credential.values[fieldKey];
+    if (!value) {
+      throw new ConnectionError("invalid_input", `${service} connection ${connectionName} has no saved ${fieldKey}.`);
+    }
+    return { service, connectionName, field: fieldKey, value };
+  }
+
+  private async getStoredCustomCredential(
+    service: string,
+    connectionName: string,
+  ): Promise<StoredConnection & { credential: Extract<ResolvedCredential, { authType: "custom_credential" }> }> {
     const stored = await this.store.get(service, connectionName);
     if (!stored) {
       throw new ConnectionError("connection_not_found", `${service} connection not found: ${connectionName}.`);
@@ -459,17 +526,7 @@ export class ConnectionService {
     if (stored.credential.authType !== "custom_credential") {
       throw new ConnectionError("unsupported_auth_type", `${service} connection does not use custom_credential.`);
     }
-
-    const visibleFields = new Set(
-      this.getCustomCredentialDefinition(provider)
-        .fields.filter((field) => !field.required && !field.secret)
-        .map((field) => field.key),
-    );
-    return {
-      service,
-      connectionName,
-      values: Object.fromEntries(Object.entries(stored.credential.values).filter(([key]) => visibleFields.has(key))),
-    };
+    return { ...stored, credential: stored.credential };
   }
 
   async setOAuthCredential(

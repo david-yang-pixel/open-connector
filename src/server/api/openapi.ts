@@ -344,6 +344,7 @@ export function createOpenApiDocument(
     }),
     "/api/connections/{service}": createConnectionPath(),
     "/api/connections/{service}/settings": createConnectionSettingsPath(),
+    "/api/connections/{service}/settings/secrets/{field}": createConnectionSecretPath(),
     "/api/oauth/configs": getOperation("OAuth", "List local OAuth client configurations.", {
       type: "array",
       items: { $ref: "#/components/schemas/OAuthClientConfigSummary" },
@@ -1350,9 +1351,9 @@ function createConnectionPath(): Record<string, unknown> {
     },
     patch: {
       tags: ["Connections"],
-      summary: "Patch optional non-secret custom credential settings.",
+      summary: "Patch saved custom credential values.",
       description:
-        "Retains required fields and secrets, revalidates the merged credential, and rejects secret, required, or undeclared fields.",
+        "Keeps omitted fields, including secrets, revalidates the merged credential, keeps the connection ID, and rejects undeclared fields. Without an admin token, changing a required non-secret field while keeping saved secrets returns 403 admin_auth_required.",
       requestBody: {
         required: true,
         content: {
@@ -1364,6 +1365,7 @@ function createConnectionPath(): Record<string, unknown> {
       responses: {
         200: jsonResponse({ $ref: "#/components/schemas/ConnectionSummary" }),
         400: jsonResponse({ $ref: "#/components/schemas/ErrorResponse" }),
+        403: jsonResponse({ $ref: "#/components/schemas/ErrorResponse" }),
         404: jsonResponse({ $ref: "#/components/schemas/ErrorResponse" }),
       },
     },
@@ -1396,7 +1398,7 @@ function createConnectionSettingsPath(): Record<string, unknown> {
   return {
     get: {
       tags: ["Connections"],
-      summary: "Read configured optional non-secret custom credential settings.",
+      summary: "Read saved custom credential values, without secrets.",
       parameters: [queryParameter("connectionName", "Optional local connection name. Defaults to default.")],
       responses: {
         200: jsonResponse(
@@ -1407,13 +1409,49 @@ function createConnectionSettingsPath(): Record<string, unknown> {
               values: {
                 type: "object",
                 additionalProperties: { type: "string" },
-                description: "Configured optional fields declared non-secret by the provider.",
+                description: "Saved fields declared non-secret by the provider.",
+              },
+              storedSecretFields: {
+                type: "array",
+                items: { type: "string" },
+                description:
+                  "Secret fields that have a saved value. Their values are only returned by the secret endpoint.",
               },
             },
-            { required: ["service", "connectionName", "values"] },
+            { required: ["service", "connectionName", "values", "storedSecretFields"] },
           ),
         ),
         400: jsonResponse({ $ref: "#/components/schemas/ErrorResponse" }),
+        404: jsonResponse({ $ref: "#/components/schemas/ErrorResponse" }),
+      },
+    },
+  };
+}
+
+function createConnectionSecretPath(): Record<string, unknown> {
+  return {
+    get: {
+      tags: ["Connections"],
+      summary: "Reveal one saved secret custom credential value.",
+      description: "Available only when an admin token is configured. Responses are marked no-store.",
+      parameters: [
+        { name: "field", in: "path", required: true, schema: { type: "string" }, description: "Secret field key." },
+        queryParameter("connectionName", "Optional local connection name. Defaults to default."),
+      ],
+      responses: {
+        200: jsonResponse(
+          jsonSchema.object(
+            {
+              service: jsonSchema.string(),
+              connectionName: jsonSchema.string(),
+              field: jsonSchema.string(),
+              value: jsonSchema.string(),
+            },
+            { required: ["service", "connectionName", "field", "value"] },
+          ),
+        ),
+        400: jsonResponse({ $ref: "#/components/schemas/ErrorResponse" }),
+        403: jsonResponse({ $ref: "#/components/schemas/ErrorResponse" }),
         404: jsonResponse({ $ref: "#/components/schemas/ErrorResponse" }),
       },
     },
@@ -1681,12 +1719,13 @@ function createConnectionPatchRequestSchema(): JsonSchema {
         additionalProperties: {
           anyOf: [{ type: "string" }, { type: "null" }],
         },
-        description: "Optional non-secret credential fields to set; null or an empty string removes a field.",
+        description:
+          "Credential fields to set; omitted fields keep their saved value, and null or an empty string removes a field.",
       },
     },
     {
       required: ["values"],
-      description: "Connection settings patch that never accepts required fields or secrets.",
+      description: "Connection settings patch merged over the saved credential values.",
     },
   );
 }

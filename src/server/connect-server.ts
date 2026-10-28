@@ -264,6 +264,9 @@ export class ConnectServer {
     app.get("/api/connections/:service/settings", (context) =>
       this.getConnectionSettings(context, context.req.param("service")),
     );
+    app.get("/api/connections/:service/settings/secrets/:field", (context) =>
+      this.revealConnectionSecret(context, context.req.param("service"), context.req.param("field")),
+    );
     app.put("/api/connections/:service", (context) => this.upsertConnection(context, context.req.param("service")));
     app.patch("/api/connections/:service", (context) => this.patchConnection(context, context.req.param("service")));
     app.delete("/api/connections/:service", (context) => this.disconnect(context, context.req.param("service")));
@@ -992,6 +995,38 @@ export class ConnectServer {
     );
   }
 
+  /** Without an admin token every network peer of the console is an administrator. */
+  private get adminAuthConfigured(): boolean {
+    return Boolean(optionalString(this.options.auth?.adminToken));
+  }
+
+  /**
+   * Reveal one saved secret only behind the admin token. Without one, every network peer of the
+   * console is an administrator, so the endpoint stays closed rather than handing out credentials.
+   */
+  private async revealConnectionSecret(context: Context, service: string, field: string): Promise<Response> {
+    if (!this.adminAuthConfigured) {
+      return jsonError(
+        context,
+        403,
+        "admin_auth_required",
+        "Set OOMOL_CONNECT_ADMIN_TOKEN before revealing saved connection secrets.",
+      );
+    }
+    const connectionName = readConnectionName(context);
+    context.header("cache-control", "no-store");
+    return this.writeConnectionResult(
+      context,
+      this.options.connections.revealCustomCredentialSecret(service, connectionName, field).then((secret) => {
+        this.options.logger?.info(
+          { service, connectionName: secret.connectionName, field },
+          "connection secret revealed",
+        );
+        return secret;
+      }),
+    );
+  }
+
   private async upsertConnection(context: Context, service: string): Promise<Response> {
     const body = await readJsonBody(context);
     const authType = optionalString(body.authType);
@@ -1099,6 +1134,7 @@ export class ConnectServer {
         connectionName,
         values,
         signal: context.req.raw.signal,
+        allowRetargetWithSavedSecrets: this.adminAuthConfigured,
       }),
       logContext,
     );
@@ -1390,7 +1426,12 @@ export class ConnectServer {
                 : "connection failed",
           );
         }
-        const status = error.code === "unknown_service" || error.code === "connection_not_found" ? 404 : 400;
+        const status =
+          error.code === "unknown_service" || error.code === "connection_not_found"
+            ? 404
+            : error.code === "admin_auth_required"
+              ? 403
+              : 400;
         return jsonError(context, status, error.code, error.message);
       }
 
