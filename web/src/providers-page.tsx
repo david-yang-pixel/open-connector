@@ -1609,11 +1609,7 @@ function ConnectionForm(props: ConnectionFormProps): ReactNode {
             `/api/connections/${props.provider.service}`,
             customCredentialSettingsPatchBody(connectionName, fields, values, clearedSecretFields),
           );
-          applyCustomSettings(
-            await apiGet<CustomCredentialSettingsResponse>(
-              connectionSettingsPath(props.provider.service, connectionName),
-            ),
-          );
+          await reloadCustomSettingsAfterSave(connectionName);
         } else {
           await apiPut(
             `/api/connections/${props.provider.service}`,
@@ -1675,6 +1671,35 @@ function ConnectionForm(props: ConnectionFormProps): ReactNode {
     setClearedSecretFields([]);
     setRevealedSecretFields([]);
     setFetchedSecretValues({});
+  }
+
+  /**
+   * Re-read the saved settings after a successful save. The save already went through, so a failed
+   * re-read derives the saved state from what was submitted instead of reporting the save as failed.
+   */
+  async function reloadCustomSettingsAfterSave(connectionName: string): Promise<void> {
+    try {
+      applyCustomSettings(
+        await apiGet<CustomCredentialSettingsResponse>(connectionSettingsPath(props.provider.service, connectionName)),
+      );
+    } catch {
+      const submitted = (key: string): string => values[key]?.trim() ?? "";
+      applyCustomSettings({
+        values: Object.fromEntries(
+          fields
+            .filter((field) => !field.secret && submitted(field.key))
+            .map((field) => [field.key, submitted(field.key)]),
+        ),
+        storedSecretFields: fields
+          .filter(
+            (field) =>
+              field.secret &&
+              !clearedSecretFields.includes(field.key) &&
+              (storedSecretFields.includes(field.key) || submitted(field.key) !== ""),
+          )
+          .map((field) => field.key),
+      });
+    }
   }
 
   async function revealSecret(field: string): Promise<void> {
