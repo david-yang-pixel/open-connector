@@ -645,6 +645,9 @@
         "advancedRules": "Règles d’action avancées (facultatif)",
         "advancedRulesHint": "Uniquement pour les exceptions d’autorisation ou de blocage entre connexions. Les niveaux d’accès et la sélection d’outils n’en ont pas besoin.",
         "customRuleCount": "{{count}} règles personnalisées",
+        "generatedRuleCount": "{{count}} services autorisés automatiquement",
+        "generatedRules": "Autorisé automatiquement selon les connexions sélectionnées",
+        "generatedRulesHint": "Sans règle d’autorisation, l’enregistrement génère ces règles à partir des connexions sélectionnées. Ajouter une règle d’autorisation personnalisée les remplace.",
         "legacyUnrestricted": "Ancien format : toutes les connexions actuelles et futures",
         "legacyUnrestrictedHint": "Ce Token ne distingue pas les droits par connexion. Conservez-le ou convertissez toutes les connexions actuelles en lecture seule.",
         "convertLegacy": "Convertir en lecture seule par connexion"

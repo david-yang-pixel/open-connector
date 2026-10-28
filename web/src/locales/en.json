@@ -639,6 +639,9 @@
         "advancedRules": "Advanced action rules (optional)",
         "advancedRulesHint": "Only for exceptional cross-connection allow or block rules. Normal access levels and tool selection need no rules.",
         "customRuleCount": "{{count}} custom rules",
+        "generatedRuleCount": "{{count}} auto-allowed services",
+        "generatedRules": "Auto-allowed from selected connections",
+        "generatedRulesHint": "With no allow rules, saving generates these rules from the selected connections. Adding a custom allow rule replaces them.",
         "legacyUnrestricted": "Legacy: all current and future connections",
         "legacyUnrestrictedHint": "This token cannot distinguish access per connection. Keep it or convert all current connections to read only.",
         "convertLegacy": "Convert to per-connection read only"

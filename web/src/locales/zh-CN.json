@@ -622,6 +622,9 @@
         "advancedRules": "高级动作规则（可选）",
         "advancedRulesHint": "仅用于跨连接的特殊允许或阻止规则；普通读写和工具选择无需配置。",
         "customRuleCount": "{{count}} 条自定义规则",
+        "generatedRuleCount": "自动允许 {{count}} 个服务",
+        "generatedRules": "按已选连接自动允许",
+        "generatedRulesHint": "允许规则留空时，保存会按已选连接生成以下规则；添加自定义允许规则后，以自定义规则为准。",
         "legacyUnrestricted": "旧版：允许所有当前及未来连接",
         "legacyUnrestrictedHint": "该 Token 无法逐连接区分权限。可以继续保留，也可以转换为当前连接全部只读。",
         "convertLegacy": "转换为逐连接只读"
