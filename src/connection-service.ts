@@ -62,9 +62,10 @@ export interface PatchCustomCredentialInput {
   values: Record<string, unknown>;
   signal?: AbortSignal;
   /**
-   * Allow changing a required non-secret field, such as a host, URL, or username, while saved secrets
-   * are kept. Revalidation sends those secrets to the new target, so only an authenticated
-   * administrator, who could reveal them anyway, may do it without re-entering them.
+   * Allow changing a required or secret field, such as a host, server URL, or username, while other
+   * saved secrets are kept. Any of those can point the connection somewhere else, and revalidation
+   * sends the kept secrets there, so only an authenticated administrator, who could reveal them
+   * anyway, may do it without re-entering them. Optional non-secret fields are always patchable.
    */
   allowRetargetWithSavedSecrets?: boolean;
 }
@@ -445,7 +446,7 @@ export class ConnectionService {
       const saved = stored.credential.values;
       const retargeted = fields
         .filter(
-          (field) => field.required && !field.secret && values[field.key] && values[field.key] !== saved[field.key],
+          (field) => (field.required || field.secret) && values[field.key] && values[field.key] !== saved[field.key],
         )
         .map((field) => field.key);
       const keptSecrets = fields

@@ -423,6 +423,35 @@ describe("ConnectionService", () => {
     });
   });
 
+  it("treats a changed secret destination field as retargeting while another secret is kept", async () => {
+    const provider: ProviderDefinition = {
+      ...customCredentialProvider,
+      service: "secret_url",
+      auth: [
+        {
+          type: "custom_credential",
+          fields: [
+            { key: "serverUrl", label: "URL", inputType: "password", required: true, secret: true },
+            { key: "token", label: "Token", inputType: "password", required: false, secret: true },
+          ],
+        },
+      ],
+    };
+    const service = createService([provider]);
+    await service.connectWithCustomCredential("secret_url", {
+      values: { serverUrl: "https://mcp.example/abc", token: "secret" },
+    });
+
+    await expect(
+      service.patchCustomCredentialValues("secret_url", { values: { serverUrl: "https://attacker.example/" } }),
+    ).rejects.toMatchObject({ code: "admin_auth_required" });
+    await service.patchCustomCredentialValues("secret_url", { values: { token: null } });
+    await service.patchCustomCredentialValues("secret_url", { values: { serverUrl: "https://mcp.example/new" } });
+    await expect(service.getCredential("secret_url")).resolves.toMatchObject({
+      values: { serverUrl: "https://mcp.example/new" },
+    });
+  });
+
   it("reveals one saved secret custom credential field on request", async () => {
     const service = createService([customCredentialProvider]);
     await service.connectWithCustomCredential("database", {
