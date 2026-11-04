@@ -19,6 +19,7 @@ const hostKeyFingerprint = `SHA256:${createHash("sha256")
   .replace(/=+$/, "")}`;
 
 const passwordValues = { host: "ssh.example.com", username: "deploy", password: "secret" };
+const usernameOnlyValues = { host: "ssh.example.com", port: "2222", username: "ibssh_test_token" };
 
 const commands: Record<string, (channel: ServerChannel) => void> = {
   report(channel) {
@@ -46,6 +47,10 @@ beforeAll(async () => {
   const userPublicKey = parsePublicKey(userKey.public);
   server = new Server({ hostKeys: [hostKey.private] }, (client) => {
     client.on("authentication", (context) => {
+      if (context.method === "none" && context.username === usernameOnlyValues.username) {
+        context.accept();
+        return;
+      }
       if (context.method === "password" && context.username === "deploy" && context.password === "secret") {
         context.accept();
         return;
@@ -156,6 +161,46 @@ describe("ssh runtime", () => {
     expect(result.exitCode).toBe(3);
   });
 
+  it("validates and runs commands with a token as the username and no password or private key", async () => {
+    const dependencies = localServer();
+    const validation = await validateSshCredential(usernameOnlyValues, undefined, dependencies);
+
+    expect(validation.profile).toMatchObject({ accountId: "ibssh_test_token@ssh.example.com:2222" });
+    expect(validation.metadata).toEqual({ hostKeyFingerprint });
+
+    const result = await runSshCommand(
+      { command: "report" },
+      {
+        credential: readSshCredential({ ...usernameOnlyValues, password: "", privateKey: "  " }, validation.metadata),
+        dependencies,
+      },
+    );
+
+    expect(result).toMatchObject({ exitCode: 3, stdout: "hello\n", stderr: "warning\n" });
+    expect(dependencies.connectSocket).toHaveBeenCalledTimes(2);
+    expect(dependencies.connectSocket).toHaveBeenCalledWith(
+      expect.objectContaining({ host: "ssh.example.com", port: 2222 }),
+    );
+  });
+
+  it.each(["deploy", "ibssh_invalid_token"])(
+    "rejects username-only login when the server rejects %s",
+    async (username) => {
+      const values = { ...usernameOnlyValues, username };
+
+      const validateError = await rejectionOf(validateSshCredential(values, undefined, localServer()));
+      const executeError = await rejectionOf(
+        runSshCommand({ command: "report" }, { credential: readSshCredential(values), dependencies: localServer() }),
+      );
+
+      expect(validateError.status).toBe(400);
+      expect(executeError.status).toBe(401);
+      expect(validateError.message).toBe(
+        `SSH authentication failed for ${username}@ssh.example.com. Check the username or token, password, or private key.`,
+      );
+    },
+  );
+
   it("records the host key on validation and refuses a different one later", async () => {
     const validation = await validateSshCredential(passwordValues, undefined, localServer());
 
@@ -202,7 +247,7 @@ describe("ssh runtime", () => {
     expect(executeError.status).toBe(401);
     expect(validateError.status).toBe(400);
     expect(validateError.message).toBe(
-      "SSH authentication failed for deploy@ssh.example.com. Check the password or private key.",
+      "SSH authentication failed for deploy@ssh.example.com. Check the username or token, password, or private key.",
     );
   });
 
@@ -226,10 +271,9 @@ describe("ssh runtime", () => {
     expect(dependencies.connectSocket).not.toHaveBeenCalled();
   });
 
-  it("rejects credentials that cannot identify a server or log in", () => {
-    expect(() => readSshCredential({ host: "ssh.example.com", username: "deploy" })).toThrow(
-      "Provide either a password or a private key.",
-    );
+  it("rejects credentials that cannot identify a server or username", () => {
+    expect(() => readSshCredential({ host: "", username: "deploy" })).toThrow("host is required");
+    expect(() => readSshCredential({ host: "ssh.example.com", username: "" })).toThrow("username is required");
     expect(() => readSshCredential({ ...passwordValues, host: "deploy@ssh.example.com" })).toThrow(
       "host must be a hostname or IPv4 address",
     );

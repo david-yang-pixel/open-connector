@@ -71,7 +71,8 @@ interface SshSession {
 /**
  * Read the stored credential fields. `metadata` carries the host key recorded
  * when the connection was saved, which pins the server whenever the user left
- * the fingerprint field empty.
+ * the fingerprint field empty. Password and private key may both be absent for
+ * servers that accept username-only authentication.
  */
 export function readSshCredential(
   values: Record<string, string>,
@@ -79,9 +80,6 @@ export function readSshCredential(
 ): SshCredential {
   const password = optionalString(values.password);
   const privateKey = optionalString(values.privateKey)?.replaceAll("\\n", "\n");
-  if (!password && !privateKey) {
-    throw providerInputError("Provide either a password or a private key.");
-  }
   const configuredFingerprint = optionalString(values.hostKeyFingerprint);
   return {
     host: readSshHost(values.host),
@@ -269,7 +267,7 @@ function toSshError(error: unknown, options: SshSessionOptions, presentedFingerp
   if ((error as { level?: unknown }).level === "client-authentication") {
     return new ProviderRequestError(
       phase === "validate" ? 400 : 401,
-      `SSH authentication failed for ${credential.username}@${credential.host}. Check the password or private key.`,
+      `SSH authentication failed for ${credential.username}@${credential.host}. Check the username or token, password, or private key.`,
     );
   }
   if (error.message.startsWith("Cannot parse privateKey")) {
