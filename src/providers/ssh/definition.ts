@@ -15,7 +15,7 @@ export const provider: ProviderDefinition = {
     {
       type: "custom_credential",
       description:
-        "Connect one server per connection. Provide either a password or a private key. Prefer a dedicated low-privilege account over root, because every agent allowed to use this connection can run any command that account can.",
+        "Connect one server per connection. Provide a password or a private key, or leave both empty if the server accepts username-only login (such as an Instabox SSH token). Prefer a dedicated low-privilege account over root, because every agent allowed to use this connection can run any command that account can.",
       fields: [
         {
           key: "host",
@@ -25,7 +25,7 @@ export const provider: ProviderDefinition = {
           secret: false,
           placeholder: "server.example.com",
           description:
-            "The server hostname or IPv4 address. Servers on a private network are reachable only when the runtime enables OOMOL_CONNECT_ALLOW_PRIVATE_NETWORK.",
+            "The server hostname or IPv4 address, without a username, port, or scheme. For user@host, enter only host here. Servers on a private network are reachable only when the runtime enables OOMOL_CONNECT_ALLOW_PRIVATE_NETWORK.",
         },
         {
           key: "port",
@@ -39,11 +39,12 @@ export const provider: ProviderDefinition = {
         {
           key: "username",
           label: "Username",
-          inputType: "text",
+          inputType: "password",
           required: true,
-          secret: false,
+          secret: true,
           placeholder: "deploy",
-          description: "The account to log in as. Commands run with this account's permissions.",
+          description:
+            "The account to log in as. For gateways such as Instabox, enter the SSH token before @. Commands run with this account's permissions.",
         },
         {
           key: "password",
@@ -51,7 +52,7 @@ export const provider: ProviderDefinition = {
           inputType: "password",
           required: false,
           secret: true,
-          placeholder: "Leave empty when using a private key",
+          placeholder: "Leave empty for private-key or username-only login",
           description: "The account password, used when the server allows password login.",
         },
         {

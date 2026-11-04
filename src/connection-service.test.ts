@@ -9,6 +9,7 @@ import { createCatalogStore } from "./catalog-store.ts";
 import { ConnectionService } from "./connection-service.ts";
 import { OAuthClientConfigService } from "./oauth/oauth-client-config-service.ts";
 import { OAuthCredentialRefreshService } from "./oauth/oauth-credential-refresh-service.ts";
+import { provider as sshProvider } from "./providers/ssh/definition.ts";
 
 const hackernewsProvider: ProviderDefinition = {
   service: "hackernews",
@@ -382,6 +383,25 @@ describe("ConnectionService", () => {
       values: { host: "db.internal", queryOptions: '{"limit":50}' },
       storedSecretFields: ["password"],
     });
+  });
+
+  it("hides saved SSH token usernames and preserves them when editing settings", async () => {
+    const service = createService([{ ...sshProvider, actions: [] }]);
+    const values = { host: "ssh.example.com", port: "2222", username: "ibssh_test_token" };
+    await service.connectWithCustomCredential("ssh", { values });
+
+    await expect(service.getCustomCredentialSettings("ssh")).resolves.toEqual({
+      service: "ssh",
+      connectionName: "default",
+      values: { host: "ssh.example.com", port: "2222" },
+      storedSecretFields: ["username"],
+    });
+
+    await service.patchCustomCredentialValues("ssh", { values: { host: values.host, port: values.port } });
+    await expect(service.getCredential("ssh")).resolves.toMatchObject({ values });
+    await expect(
+      service.patchCustomCredentialValues("ssh", { values: { host: "attacker.example" } }),
+    ).rejects.toMatchObject({ code: "admin_auth_required" });
   });
 
   it("replaces secrets in custom credential patches and still enforces required fields", async () => {
