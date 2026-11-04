@@ -165,7 +165,12 @@ describe("ssh runtime", () => {
     const dependencies = localServer();
     const validation = await validateSshCredential(usernameOnlyValues, undefined, dependencies);
 
-    expect(validation.profile).toMatchObject({ accountId: "ibssh_test_token@ssh.example.com:2222" });
+    expect(validation.profile).toEqual({
+      accountId: "ssh.example.com:2222",
+      displayName: "ssh.example.com:2222",
+      grantedScopes: [],
+    });
+    expect(JSON.stringify(validation)).not.toContain(usernameOnlyValues.username);
     expect(validation.metadata).toEqual({ hostKeyFingerprint });
 
     const result = await runSshCommand(
@@ -196,8 +201,10 @@ describe("ssh runtime", () => {
       expect(validateError.status).toBe(400);
       expect(executeError.status).toBe(401);
       expect(validateError.message).toBe(
-        `SSH authentication failed for ${username}@ssh.example.com. Check the username or token, password, or private key.`,
+        "SSH authentication failed for ssh.example.com. Check the username or token, password, or private key.",
       );
+      expect(validateError.message).not.toContain(username);
+      expect(executeError.message).not.toContain(username);
     },
   );
 
@@ -205,8 +212,8 @@ describe("ssh runtime", () => {
     const validation = await validateSshCredential(passwordValues, undefined, localServer());
 
     expect(validation.profile).toEqual({
-      accountId: "deploy@ssh.example.com",
-      displayName: "deploy@ssh.example.com",
+      accountId: "ssh.example.com",
+      displayName: "ssh.example.com",
       grantedScopes: [],
     });
     expect(validation.metadata).toEqual({ hostKeyFingerprint });
@@ -247,7 +254,7 @@ describe("ssh runtime", () => {
     expect(executeError.status).toBe(401);
     expect(validateError.status).toBe(400);
     expect(validateError.message).toBe(
-      "SSH authentication failed for deploy@ssh.example.com. Check the username or token, password, or private key.",
+      "SSH authentication failed for ssh.example.com. Check the username or token, password, or private key.",
     );
   });
 

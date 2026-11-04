@@ -129,7 +129,8 @@ export async function validateSshCredential(
       async (session) => session.hostKeyFingerprint,
     ),
   );
-  const account = `${credential.username}@${credential.host}${credential.port === defaultSshPort ? "" : `:${credential.port}`}`;
+  // A gateway username may be an authentication token, so public profiles identify only the server.
+  const account = `${credential.host}${credential.port === defaultSshPort ? "" : `:${credential.port}`}`;
   return {
     profile: { accountId: account, displayName: account, grantedScopes: [] },
     grantedScopes: [],
@@ -267,7 +268,7 @@ function toSshError(error: unknown, options: SshSessionOptions, presentedFingerp
   if ((error as { level?: unknown }).level === "client-authentication") {
     return new ProviderRequestError(
       phase === "validate" ? 400 : 401,
-      `SSH authentication failed for ${credential.username}@${credential.host}. Check the username or token, password, or private key.`,
+      `SSH authentication failed for ${credential.host}. Check the username or token, password, or private key.`,
     );
   }
   if (error.message.startsWith("Cannot parse privateKey")) {

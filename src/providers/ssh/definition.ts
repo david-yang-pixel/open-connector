@@ -39,9 +39,9 @@ export const provider: ProviderDefinition = {
         {
           key: "username",
           label: "Username",
-          inputType: "text",
+          inputType: "password",
           required: true,
-          secret: false,
+          secret: true,
           placeholder: "deploy",
           description:
             "The account to log in as. For gateways such as Instabox, enter the SSH token before @. Commands run with this account's permissions.",
