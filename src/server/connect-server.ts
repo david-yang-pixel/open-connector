@@ -290,7 +290,8 @@ export class ConnectServer {
     );
     app.post("/api/oauth/authorizations", (context) => this.createOAuthAuthorization(context));
     app.get("/oauth/callback", (context) => this.completeOAuth(context));
-    if (this.options.mcpOAuth) app.route("/", createMcpOAuthRoutes({ mcpOAuth: this.options.mcpOAuth }));
+    if (this.options.mcpOAuth)
+      app.route("/", createMcpOAuthRoutes({ mcpOAuth: this.options.mcpOAuth, logger: this.options.logger }));
     app.post("/mcp", (context) => this.handleMcp(context));
     app.get("/mcp", (context) => this.rejectMcpMethod(context));
     app.delete("/mcp", (context) => this.rejectMcpMethod(context));

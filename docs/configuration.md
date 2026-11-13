@@ -178,6 +178,9 @@ Each entry must be an HTTPS URL without a fragment or credentials and is compare
 OAuth client ID and client secret fields empty: the client registers itself and there is no
 pre-issued client to enter.
 
+When the client does not show its redirect URI, try to connect once and read it from the server log:
+a rejected registration is logged as `mcp oauth request rejected` with the refused URI in `reason`.
+
 Enabling it requires a bearer token on `/mcp` and `/v1` even before any runtime token exists, so
 clients that relied on an open runtime API must be given a token. The discovery documents are served
 at the host root; when `OOMOL_CONNECT_ORIGIN` includes a mount path, a reverse proxy must forward
