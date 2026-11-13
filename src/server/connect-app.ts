@@ -32,6 +32,8 @@ export interface ConnectAppOptions {
   verifyRuntimeJwt?: RuntimeJwtVerifier;
   /** Let ChatGPT custom connectors obtain /mcp runtime tokens through OAuth with administrator approval. */
   mcpOAuth?: boolean;
+  /** Callbacks of other MCP clients that may register for MCP OAuth besides ChatGPT, matched exactly. */
+  mcpOAuthRedirectUris?: string[];
   actionPolicy?: ActionPolicyService;
   registerStaticRoutes?: (app: Hono) => void;
   logger?: RuntimeLogger;
@@ -60,6 +62,7 @@ export async function createConnectApp(options: ConnectAppOptions): Promise<Conn
         store: options.runtimeDatabase.mcpOAuthStore,
         runtimeTokens,
         publicOrigin: options.publicOrigin,
+        allowedRedirectUris: options.mcpOAuthRedirectUris,
       })
     : undefined;
   const allowedCustomOAuth = new Set(options.allowedCustomOAuth);
@@ -139,7 +142,7 @@ export async function createConnectApp(options: ConnectAppOptions): Promise<Conn
 /**
  * Only the administrator may approve OAuth clients, so the consent page must be protected, and ChatGPT reaches the
  * runtime over the public internet, so the advertised issuer must be HTTPS. Loopback HTTP stays available for local
- * development.
+ * development. Additional client callbacks receive authorization codes, so each must be a plain HTTPS URL.
  */
 function assertMcpOAuthConfiguration(options: ConnectAppOptions): void {
   if (!options.adminToken?.trim()) {
@@ -149,5 +152,13 @@ function assertMcpOAuthConfiguration(options: ConnectAppOptions): void {
   const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(origin.hostname);
   if (origin.protocol !== "https:" && !(origin.protocol === "http:" && loopback)) {
     throw new Error("MCP OAuth requires an HTTPS OOMOL_CONNECT_ORIGIN.");
+  }
+  for (const redirectUri of options.mcpOAuthRedirectUris ?? []) {
+    const url = URL.canParse(redirectUri) ? new URL(redirectUri) : undefined;
+    if (url?.protocol !== "https:" || url.hash || url.username || url.password) {
+      throw new Error(
+        `OOMOL_CONNECT_MCP_OAUTH_REDIRECT_URIS must list HTTPS URLs without a fragment or credentials: ${redirectUri}.`,
+      );
+    }
   }
 }

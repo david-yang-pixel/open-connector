@@ -44,6 +44,11 @@ export interface McpOAuthServiceOptions {
   runtimeTokens: RuntimeTokenService;
   /** Public origin of this runtime; the issuer and the base of every advertised endpoint. */
   publicOrigin: string;
+  /**
+   * Callbacks of other MCP clients, such as the Gemini app, that may register besides ChatGPT. Each is matched
+   * exactly, so an authorization code still only reaches a callback the operator named.
+   */
+  allowedRedirectUris?: string[];
 }
 
 /** Where `/oauth/authorize` sends the browser next. */
@@ -96,9 +101,10 @@ interface AuthorizationCode {
 }
 
 /**
- * Authorization server for the /mcp endpoint, built for ChatGPT custom connectors.
+ * Authorization server for the /mcp endpoint, built for ChatGPT custom connectors and usable by other MCP clients
+ * whose callback the operator allowed.
  *
- * ChatGPT registers itself dynamically, sends the administrator to the console consent page, and exchanges the
+ * The client registers itself dynamically, sends the administrator to the console consent page, and exchanges the
  * approved authorization code for an ordinary runtime token. The token carries the policy chosen on the consent page,
  * appears with the console's other runtime tokens, and stays valid until it is revoked there.
  */
@@ -106,11 +112,13 @@ export class McpOAuthService {
   private readonly store: McpOAuthStore;
   private readonly runtimeTokens: RuntimeTokenService;
   private readonly origin: string;
+  private readonly allowedRedirectUris: Set<string>;
 
   constructor(options: McpOAuthServiceOptions) {
     this.store = options.store;
     this.runtimeTokens = options.runtimeTokens;
     this.origin = options.publicOrigin.replace(/\/+$/, "");
+    this.allowedRedirectUris = new Set(options.allowedRedirectUris);
   }
 
   /** The protected resource identifier: the /mcp endpoint URL. */
@@ -149,9 +157,19 @@ export class McpOAuthService {
     };
   }
 
-  /** RFC 7591 dynamic client registration. Only ChatGPT connector callbacks are accepted as redirect URIs. */
+  /**
+   * RFC 7591 dynamic client registration. Only ChatGPT connector callbacks and the callbacks the operator allowed
+   * are accepted as redirect URIs.
+   */
   async registerClient(body: JsonRequestBody): Promise<Record<string, unknown>> {
     const redirectUris = readRedirectUris(body.redirect_uris);
+    const rejected = redirectUris.find((uri) => !isChatGptRedirectUri(uri) && !this.allowedRedirectUris.has(uri));
+    if (rejected !== undefined) {
+      throw new McpOAuthError(
+        "invalid_redirect_uri",
+        `Only ChatGPT connector callbacks and the callbacks listed in OOMOL_CONNECT_MCP_OAUTH_REDIRECT_URIS are accepted as redirect URIs: ${rejected}.`,
+      );
+    }
     const tokenEndpointAuthMethod = readClientAuthMethod(body.token_endpoint_auth_method);
     assertSupportedValues(body.grant_types, "grant_types", "authorization_code");
     assertSupportedValues(body.response_types, "response_types", "code");
@@ -427,15 +445,7 @@ function readRedirectUris(value: unknown): string[] {
       `redirect_uris must be a non-empty array of at most ${maxRedirectUris} URIs.`,
     );
   }
-  const uris = [...new Set(value as string[])];
-  const rejected = uris.find((uri) => !isChatGptRedirectUri(uri));
-  if (rejected !== undefined) {
-    throw new McpOAuthError(
-      "invalid_redirect_uri",
-      `Only ChatGPT connector callbacks are accepted as redirect URIs: ${rejected}.`,
-    );
-  }
-  return uris;
+  return [...new Set(value as string[])];
 }
 
 function readClientAuthMethod(value: unknown): McpOAuthClientAuthMethod {

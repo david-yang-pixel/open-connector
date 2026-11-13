@@ -79,6 +79,8 @@ export interface ConnectorRuntimeOptions {
   jwt?: RuntimeJwtConfig;
   /** Let ChatGPT custom connectors obtain /mcp runtime tokens through OAuth. Requires `adminToken` and an HTTPS `publicOrigin`. */
   mcpOAuth?: boolean;
+  /** Callbacks of other MCP clients, such as the Gemini app, that may register for MCP OAuth besides ChatGPT. Each is matched exactly. */
+  mcpOAuthRedirectUris?: string[];
   postgres?: ConnectorPostgresOptions;
   network?: ConnectorNetworkOptions;
   /** Allow or block actions and proxies by name. */
@@ -224,6 +226,7 @@ async function openRuntime(options: ConnectorRuntimeOptions): Promise<ConnectorR
       runtimeToken: options.runtimeToken,
       verifyRuntimeJwt,
       mcpOAuth: options.mcpOAuth,
+      mcpOAuthRedirectUris: options.mcpOAuthRedirectUris,
       actionPolicy: new ActionPolicyService(options.actionPolicy),
       allowedCustomOAuth: options.allowedCustomOAuth,
       logger: options.logger,
