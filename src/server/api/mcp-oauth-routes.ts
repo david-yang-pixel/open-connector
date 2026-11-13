@@ -1,3 +1,4 @@
+import type { RuntimeLogger } from "../../core/types.ts";
 import type { McpOAuthService } from "../mcp-oauth/mcp-oauth-service.ts";
 import type { Context } from "hono";
 
@@ -12,14 +13,30 @@ const tokenRequestMaxBytes = 16 * 1024;
 
 interface McpOAuthRoutesOptions {
   mcpOAuth: McpOAuthService;
+  logger?: RuntimeLogger;
 }
 
 /**
  * OAuth discovery, registration, authorization and token endpoints for /mcp, plus the console consent API.
  * The public endpoints answer in RFC 6749 error format; `/api/mcp-oauth/*` requires the administrator.
  */
-export function createMcpOAuthRoutes({ mcpOAuth }: McpOAuthRoutesOptions): Hono {
+export function createMcpOAuthRoutes({ mcpOAuth, logger }: McpOAuthRoutesOptions): Hono {
   const app = new Hono();
+  /**
+   * A client only shows its own summary of a rejection, so the reason is logged too: it names, for one, the redirect
+   * URI a client tried to register, which the operator needs in order to allow it.
+   */
+  const writeOAuthError = (context: Context, error: McpOAuthError): Response => {
+    logger?.warn(
+      { path: context.req.path, errorCode: error.error, reason: error.message },
+      "mcp oauth request rejected",
+    );
+    if (error.status === 401) {
+      context.header("WWW-Authenticate", 'Basic realm="OpenConnector"');
+    }
+    context.header("Cache-Control", "no-store");
+    return context.json({ error: error.error, error_description: error.message }, error.status);
+  };
   app.onError((error, context) => {
     if (error instanceof McpOAuthError) {
       return writeOAuthError(context, error);
@@ -73,14 +90,6 @@ export function createMcpOAuthRoutes({ mcpOAuth }: McpOAuthRoutesOptions): Hono 
     return redirectUrl ? context.json({ redirectUrl }) : requestNotFound(context);
   });
   return app;
-}
-
-function writeOAuthError(context: Context, error: McpOAuthError): Response {
-  if (error.status === 401) {
-    context.header("WWW-Authenticate", 'Basic realm="OpenConnector"');
-  }
-  context.header("Cache-Control", "no-store");
-  return context.json({ error: error.error, error_description: error.message }, error.status);
 }
 
 function requestNotFound(context: Context): Response {

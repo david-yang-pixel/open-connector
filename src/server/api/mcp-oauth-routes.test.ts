@@ -1,3 +1,5 @@
+import type { RuntimeLogger } from "../../core/types.ts";
+
 import { createHash, randomBytes } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import { createCatalogStore } from "../../catalog-store.ts";
@@ -19,6 +21,7 @@ afterEach(() => {
 interface SetupOptions {
   mcpOAuth?: boolean;
   mcpOAuthRedirectUris?: string[];
+  logger?: RuntimeLogger;
   adminToken?: string;
   publicOrigin?: string;
 }
@@ -41,6 +44,7 @@ async function setup(options: SetupOptions = {}) {
     adminToken: "adminToken" in options ? options.adminToken : adminToken,
     mcpOAuth: options.mcpOAuth ?? true,
     mcpOAuthRedirectUris: options.mcpOAuthRedirectUris,
+    logger: options.logger,
   });
   const admin = (path: string, body?: unknown) =>
     app.request(path, {
@@ -305,6 +309,19 @@ describe("MCP OAuth for ChatGPT custom connectors", () => {
     expect((await register(app, { redirect_uris: [`${otherCallback}?next=1`] })).status).toBe(400);
     expect((await register(app, { redirect_uris: ["https://attacker.example.com/callback"] })).status).toBe(400);
     expect((await register(app, { redirect_uris: [chatGptCallback, otherCallback] })).status).toBe(201);
+  });
+
+  it("logs the rejected callback so the operator can find the one to allow", async () => {
+    const warnings: Record<string, unknown>[] = [];
+    const logger: RuntimeLogger = { error: () => {}, info: () => {}, warn: (fields) => warnings.push(fields) };
+    const { app } = await setup({ logger });
+    const otherCallback = "https://client.example.com/oauth/callback";
+    expect((await register(app, { redirect_uris: [otherCallback] })).status).toBe(400);
+    expect(warnings).toEqual([
+      { path: "/oauth/register", errorCode: "invalid_redirect_uri", reason: expect.stringContaining(otherCallback) },
+    ]);
+    expect((await app.request("/oauth/authorize?client_id=unknown")).status).toBe(400);
+    expect(warnings[1]).toMatchObject({ path: "/oauth/authorize", errorCode: "invalid_client" });
   });
 
   it("answers invalid authorization requests in place or on the verified callback", async () => {
