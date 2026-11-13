@@ -32,7 +32,7 @@ export interface ConnectAppOptions {
   verifyRuntimeJwt?: RuntimeJwtVerifier;
   /** Let ChatGPT custom connectors obtain /mcp runtime tokens through OAuth with administrator approval. */
   mcpOAuth?: boolean;
-  /** Callbacks of other MCP clients that may register for MCP OAuth besides ChatGPT, matched exactly. */
+  /** Callbacks of other MCP clients that may register for MCP OAuth besides ChatGPT and the Gemini app, matched exactly. */
   mcpOAuthRedirectUris?: string[];
   actionPolicy?: ActionPolicyService;
   registerStaticRoutes?: (app: Hono) => void;

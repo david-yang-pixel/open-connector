@@ -79,7 +79,7 @@ export interface ConnectorRuntimeOptions {
   jwt?: RuntimeJwtConfig;
   /** Let ChatGPT custom connectors obtain /mcp runtime tokens through OAuth. Requires `adminToken` and an HTTPS `publicOrigin`. */
   mcpOAuth?: boolean;
-  /** Callbacks of other MCP clients, such as the Gemini app, that may register for MCP OAuth besides ChatGPT. Each is matched exactly. */
+  /** Callbacks of other MCP clients that may register for MCP OAuth besides ChatGPT and the Gemini app. Each is matched exactly. */
   mcpOAuthRedirectUris?: string[];
   postgres?: ConnectorPostgresOptions;
   network?: ConnectorNetworkOptions;

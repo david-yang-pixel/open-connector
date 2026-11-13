@@ -12,6 +12,10 @@ import { SqliteRuntimeDatabase } from "../storage/sqlite-runtime-store.ts";
 const origin = "https://connect.example.com";
 const adminToken = "admin-secret";
 const chatGptCallback = "https://chatgpt.com/connector_platform_oauth_redirect";
+/** The six callbacks the Gemini app registers for one custom MCP app. */
+const geminiCallbacks = ["oauth-redirect-sandbox", "oauth-redirect-test", "oauth-redirect"].flatMap((host) =>
+  ["r", "a"].map((kind) => `https://${host}.googleusercontent.com/${kind}/user_bound_custom-mcp-1f0f6c84871c2dd5`),
+);
 const databases: SqliteRuntimeDatabase[] = [];
 
 afterEach(() => {
@@ -289,7 +293,7 @@ describe("MCP OAuth for ChatGPT custom connectors", () => {
     expect(token.status).toBe(200);
   });
 
-  it("only registers ChatGPT connector callbacks", async () => {
+  it("only registers known connector callbacks", async () => {
     const { app } = await setup();
     const rejected = await register(app, { redirect_uris: ["https://attacker.example.com/callback"] });
     expect(rejected.status).toBe(400);
@@ -297,6 +301,49 @@ describe("MCP OAuth for ChatGPT custom connectors", () => {
     expect((await register(app, { redirect_uris: ["https://chatgpt.com/connector/oauth/abc123"] })).status).toBe(201);
     expect((await register(app, { redirect_uris: ["https://chatgpt.com/connector/oauth/"] })).status).toBe(400);
     expect((await register(app, { grant_types: ["client_credentials"] })).status).toBe(400);
+  });
+
+  it("registers the callbacks of a Gemini custom MCP app in one request", async () => {
+    const { app } = await setup();
+    const registered = await register(app, { client_name: "Google", redirect_uris: geminiCallbacks });
+    expect(registered.status).toBe(201);
+    await expect(registered.json()).resolves.toMatchObject({ redirect_uris: geminiCallbacks });
+
+    const google = "https://oauth-redirect.googleusercontent.com";
+    for (const rejected of [
+      `${google}/r/some-actions-project`,
+      `${google}/r/user_bound_custom-mcp-`,
+      `${google}/r/user_bound_custom-mcp-abc/extra`,
+      `${google}/r/user_bound_custom-mcp-abc?next=1`,
+      `${google}/x/user_bound_custom-mcp-abc`,
+      `${google}:8443/r/user_bound_custom-mcp-abc`,
+      "http://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-abc",
+      "https://oauth-redirect.googleusercontent.com.attacker.example.com/r/user_bound_custom-mcp-abc",
+      "https://attacker.googleusercontent.com/r/user_bound_custom-mcp-abc",
+    ]) {
+      expect((await register(app, { redirect_uris: [rejected] })).status, rejected).toBe(400);
+    }
+  });
+
+  it("names every refused callback and logs errors returned on the client callback", async () => {
+    const warnings: Record<string, unknown>[] = [];
+    const logger: RuntimeLogger = { error: () => {}, info: () => {}, warn: (fields) => warnings.push(fields) };
+    const { app } = await setup({ logger });
+    const refused = ["https://one.example.com/callback", "https://two.example.com/callback"];
+    const rejected = await register(app, { redirect_uris: [chatGptCallback, ...refused] });
+    expect(rejected.status).toBe(400);
+    const { error_description: description } = (await rejected.json()) as { error_description: string };
+    expect(description).toContain(refused.join(", "));
+    expect(description).not.toContain(chatGptCallback);
+
+    const tooMany = Array.from({ length: 11 }, (_, index) => `https://chatgpt.com/connector/oauth/${index}`);
+    expect((await register(app, { redirect_uris: tooMany })).status).toBe(400);
+    expect(warnings[1]).toMatchObject({ reason: expect.stringContaining("11") });
+
+    const { client_id: clientId } = (await (await register(app)).json()) as { client_id: string };
+    const withoutPkce = await app.request(authorizePath(clientId, "", { code_challenge_method: "plain" }));
+    expect(withoutPkce.status).toBe(302);
+    expect(warnings[2]).toMatchObject({ path: "/oauth/authorize", errorCode: "invalid_request" });
   });
 
   it("also registers the callbacks the operator allowed, matched exactly", async () => {

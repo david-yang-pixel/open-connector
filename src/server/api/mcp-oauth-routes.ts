@@ -24,13 +24,16 @@ export function createMcpOAuthRoutes({ mcpOAuth, logger }: McpOAuthRoutesOptions
   const app = new Hono();
   /**
    * A client only shows its own summary of a rejection, so the reason is logged too: it names, for one, the redirect
-   * URI a client tried to register, which the operator needs in order to allow it.
+   * URIs a client tried to register, which the operator needs in order to allow them.
    */
-  const writeOAuthError = (context: Context, error: McpOAuthError): Response => {
+  const logRejection = (context: Context, error: McpOAuthError): void => {
     logger?.warn(
       { path: context.req.path, errorCode: error.error, reason: error.message },
       "mcp oauth request rejected",
     );
+  };
+  const writeOAuthError = (context: Context, error: McpOAuthError): Response => {
+    logRejection(context, error);
     if (error.status === 401) {
       context.header("WWW-Authenticate", 'Basic realm="OpenConnector"');
     }
@@ -58,7 +61,9 @@ export function createMcpOAuthRoutes({ mcpOAuth, logger }: McpOAuthRoutesOptions
   });
   app.get("/oauth/authorize", async (context) => {
     const result = await mcpOAuth.authorize(new URL(context.req.url).searchParams);
-    return result.type === "redirect" ? context.redirect(result.location, 302) : writeOAuthError(context, result.error);
+    if (result.type === "error") return writeOAuthError(context, result.error);
+    if (result.error) logRejection(context, result.error);
+    return context.redirect(result.location, 302);
   });
   app.post("/oauth/token", async (context) => {
     const response = await mcpOAuth.exchangeToken({
