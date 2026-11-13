@@ -20,6 +20,7 @@ export interface CloudflareEnv {
   OOMOL_CONNECT_TRANSIT_FILE_MAX_BYTES?: string;
   OOMOL_CONNECT_RUN_LIMIT?: string;
   OOMOL_CONNECT_MCP_OAUTH?: string;
+  OOMOL_CONNECT_MCP_OAUTH_REDIRECT_URIS?: string;
 }
 
 export function resolvePublicOrigin(request: Request, env: CloudflareEnv): string {

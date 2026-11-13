@@ -135,6 +135,7 @@ async function createCloudflareApp(
     adminToken: env.OOMOL_CONNECT_ADMIN_TOKEN,
     runtimeToken: env.OOMOL_CONNECT_RUNTIME_TOKEN,
     mcpOAuth: readBooleanFlag(env.OOMOL_CONNECT_MCP_OAUTH),
+    mcpOAuthRedirectUris: parseActionPolicyList(env.OOMOL_CONNECT_MCP_OAUTH_REDIRECT_URIS),
     actionPolicy: new ActionPolicyService({
       allowedActions: parseActionPolicyList(env.OOMOL_CONNECT_ALLOWED_ACTIONS),
       blockedActions: parseActionPolicyList(env.OOMOL_CONNECT_BLOCKED_ACTIONS),
@@ -228,6 +229,7 @@ function createCacheKey(env: CloudflareEnv, publicOrigin: string, runtimeService
     transitFileMaxBytes: env.OOMOL_CONNECT_TRANSIT_FILE_MAX_BYTES ?? "",
     runLimit: env.OOMOL_CONNECT_RUN_LIMIT ?? "",
     mcpOAuth: env.OOMOL_CONNECT_MCP_OAUTH ?? "",
+    mcpOAuthRedirectUris: env.OOMOL_CONNECT_MCP_OAUTH_REDIRECT_URIS ?? "",
   });
 }
 

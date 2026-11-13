@@ -18,6 +18,7 @@ afterEach(() => {
 
 interface SetupOptions {
   mcpOAuth?: boolean;
+  mcpOAuthRedirectUris?: string[];
   adminToken?: string;
   publicOrigin?: string;
 }
@@ -39,6 +40,7 @@ async function setup(options: SetupOptions = {}) {
     secretCodec: new PlainTextSecretCodec(),
     adminToken: "adminToken" in options ? options.adminToken : adminToken,
     mcpOAuth: options.mcpOAuth ?? true,
+    mcpOAuthRedirectUris: options.mcpOAuthRedirectUris,
   });
   const admin = (path: string, body?: unknown) =>
     app.request(path, {
@@ -293,6 +295,18 @@ describe("MCP OAuth for ChatGPT custom connectors", () => {
     expect((await register(app, { grant_types: ["client_credentials"] })).status).toBe(400);
   });
 
+  it("also registers the callbacks the operator allowed, matched exactly", async () => {
+    const otherCallback = "https://client.example.com/oauth/callback";
+    const { app } = await setup({ mcpOAuthRedirectUris: [otherCallback] });
+    const registered = await register(app, { client_name: "Other client", redirect_uris: [otherCallback] });
+    expect(registered.status).toBe(201);
+    await expect(registered.json()).resolves.toMatchObject({ redirect_uris: [otherCallback] });
+    expect((await register(app, { redirect_uris: [`${otherCallback}/extra`] })).status).toBe(400);
+    expect((await register(app, { redirect_uris: [`${otherCallback}?next=1`] })).status).toBe(400);
+    expect((await register(app, { redirect_uris: ["https://attacker.example.com/callback"] })).status).toBe(400);
+    expect((await register(app, { redirect_uris: [chatGptCallback, otherCallback] })).status).toBe(201);
+  });
+
   it("answers invalid authorization requests in place or on the verified callback", async () => {
     const { app } = await setup();
     const unknown = await app.request(authorizePath("unknown-client", pkce().challenge));
@@ -361,5 +375,17 @@ describe("MCP OAuth for ChatGPT custom connectors", () => {
     await expect(setup({ adminToken: undefined })).rejects.toThrow("OOMOL_CONNECT_ADMIN_TOKEN");
     await expect(setup({ publicOrigin: "http://connect.example.com" })).rejects.toThrow("HTTPS");
     await expect(setup({ publicOrigin: "http://localhost:3000" })).resolves.toBeDefined();
+  });
+
+  it("refuses to start with an allowed callback that is not a plain HTTPS URL", async () => {
+    const variable = "OOMOL_CONNECT_MCP_OAUTH_REDIRECT_URIS";
+    await expect(setup({ mcpOAuthRedirectUris: ["not a url"] })).rejects.toThrow(variable);
+    await expect(setup({ mcpOAuthRedirectUris: ["http://client.example.com/callback"] })).rejects.toThrow(variable);
+    await expect(setup({ mcpOAuthRedirectUris: ["https://client.example.com/callback#done"] })).rejects.toThrow(
+      variable,
+    );
+    await expect(setup({ mcpOAuthRedirectUris: ["https://user@client.example.com/callback"] })).rejects.toThrow(
+      variable,
+    );
   });
 });

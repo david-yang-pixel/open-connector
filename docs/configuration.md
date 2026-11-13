@@ -22,6 +22,7 @@ OpenConnector is configured with environment variables.
 | `OOMOL_CONNECT_JWT_ISSUER`                  | unset                     | Expected `iss` claim for runtime JWT access tokens.                                                                                                                         |
 | `OOMOL_CONNECT_JWT_AUDIENCE`                | unset                     | Expected API `aud` claim for runtime JWT access tokens.                                                                                                                     |
 | `OOMOL_CONNECT_MCP_OAUTH`                   | `false`                   | Lets ChatGPT custom connectors obtain `/mcp` runtime tokens through OAuth. Requires `OOMOL_CONNECT_ADMIN_TOKEN` and an HTTPS origin. See below.                             |
+| `OOMOL_CONNECT_MCP_OAUTH_REDIRECT_URIS`     | unset                     | Comma-separated OAuth callbacks of other MCP clients, such as the Gemini app, that may register besides ChatGPT. Matched exactly. See below.                                |
 | `OOMOL_CONNECT_ALLOWED_ACTIONS`             | unset                     | Comma-separated executable action allowlist. Supports exact ids, `service.*`, `*`, and `@operation:<type>`.                                                                 |
 | `OOMOL_CONNECT_BLOCKED_ACTIONS`             | unset                     | Comma-separated executable action denylist. Supports exact ids, `service.*`, `*`, and `@operation:<type>`.                                                                  |
 | `OOMOL_CONNECT_ALLOWED_PROXIES`             | unset                     | Comma-separated provider proxy allowlist. Supports service names and `*`.                                                                                                   |
@@ -160,6 +161,22 @@ and stays valid until it is revoked there; removing the connector in ChatGPT doe
 Each new authorization creates a new token. Registration accepts only ChatGPT connector callbacks
 under `https://chatgpt.com/`, so authorization codes cannot be delivered anywhere else. Only approve
 requests you started yourself: anyone who can reach the server can send you an authorization link.
+
+Other MCP clients that connect through OAuth with dynamic client registration, such as custom apps in
+the Gemini app, follow the same flow once their callback is allowed. Copy the redirect URI the client
+shows (in Gemini: "Connect to an MCP server", then the advanced settings, then "Copy redirect URI")
+and list it in `OOMOL_CONNECT_MCP_OAUTH_REDIRECT_URIS`, comma-separated when there are several:
+
+```bash
+OOMOL_CONNECT_MCP_OAUTH=true \
+OOMOL_CONNECT_MCP_OAUTH_REDIRECT_URIS="https://client.example.com/oauth/callback" \
+npm run dev
+```
+
+Each entry must be an HTTPS URL without a fragment or credentials and is compared with the registered
+`redirect_uris` character for character, so list exactly what the client shows. Leave the client's
+OAuth client ID and client secret fields empty: the client registers itself and there is no
+pre-issued client to enter.
 
 Enabling it requires a bearer token on `/mcp` and `/v1` even before any runtime token exists, so
 clients that relied on an open runtime API must be given a token. The discovery documents are served
