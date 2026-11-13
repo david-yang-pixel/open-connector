@@ -15,7 +15,8 @@ const codeTtlMs = 60_000;
 const statePurgeDelayMs = 60 * 60_000;
 const staleClientMs = 24 * 60 * 60_000;
 const maxClients = 1_000;
-const maxRedirectUris = 5;
+/** The Gemini app registers six callbacks for one custom MCP app. */
+const maxRedirectUris = 10;
 const maxClientNameLength = 100;
 const maxStateLength = 1_024;
 const clientAuthMethods: McpOAuthClientAuthMethod[] = ["none", "client_secret_basic", "client_secret_post"];
@@ -26,6 +27,17 @@ const clientAuthMethods: McpOAuthClientAuthMethod[] = ["none", "client_secret_ba
  */
 const chatGptRedirectUri = "https://chatgpt.com/connector_platform_oauth_redirect";
 const chatGptRedirectUriPrefix = "https://chatgpt.com/connector/oauth/";
+/**
+ * The Gemini app's callbacks for a custom MCP app. It registers the same per-app path under each of these hosts,
+ * once below `/r/` and once below `/a/`. The `user_bound_custom-mcp-` prefix keeps other integrations that share
+ * Google's redirect hosts from registering.
+ */
+const geminiRedirectHosts = [
+  "oauth-redirect.googleusercontent.com",
+  "oauth-redirect-sandbox.googleusercontent.com",
+  "oauth-redirect-test.googleusercontent.com",
+];
+const geminiRedirectPath = /^\/[ar]\/user_bound_custom-mcp-[A-Za-z0-9]+$/;
 
 /** An OAuth protocol error, serialized as `{ error, error_description }` per RFC 6749 section 5.2. */
 export class McpOAuthError extends Error {
@@ -51,8 +63,13 @@ export interface McpOAuthServiceOptions {
   allowedRedirectUris?: string[];
 }
 
-/** Where `/oauth/authorize` sends the browser next. */
-export type McpOAuthAuthorizeResult = { type: "redirect"; location: string } | { type: "error"; error: McpOAuthError };
+/**
+ * Where `/oauth/authorize` sends the browser next. A redirect carries `error` when it returns the request to the
+ * client callback as refused instead of sending the administrator to the consent page.
+ */
+export type McpOAuthAuthorizeResult =
+  | { type: "redirect"; location: string; error?: McpOAuthError }
+  | { type: "error"; error: McpOAuthError };
 
 /** A pending authorization request as shown to the administrator on the consent page. */
 export interface McpOAuthAuthorizationRequestSummary {
@@ -101,8 +118,8 @@ interface AuthorizationCode {
 }
 
 /**
- * Authorization server for the /mcp endpoint, built for ChatGPT custom connectors and usable by other MCP clients
- * whose callback the operator allowed.
+ * Authorization server for the /mcp endpoint, built for ChatGPT custom connectors and Gemini custom MCP apps and
+ * usable by other MCP clients whose callback the operator allowed.
  *
  * The client registers itself dynamically, sends the administrator to the console consent page, and exchanges the
  * approved authorization code for an ordinary runtime token. The token carries the policy chosen on the consent page,
@@ -158,16 +175,18 @@ export class McpOAuthService {
   }
 
   /**
-   * RFC 7591 dynamic client registration. Only ChatGPT connector callbacks and the callbacks the operator allowed
-   * are accepted as redirect URIs.
+   * RFC 7591 dynamic client registration. Only ChatGPT connector callbacks, Gemini custom MCP app callbacks and the
+   * callbacks the operator allowed are accepted as redirect URIs.
    */
   async registerClient(body: JsonRequestBody): Promise<Record<string, unknown>> {
     const redirectUris = readRedirectUris(body.redirect_uris);
-    const rejected = redirectUris.find((uri) => !isChatGptRedirectUri(uri) && !this.allowedRedirectUris.has(uri));
-    if (rejected !== undefined) {
+    const rejected = redirectUris.filter(
+      (uri) => !isChatGptRedirectUri(uri) && !isGeminiRedirectUri(uri) && !this.allowedRedirectUris.has(uri),
+    );
+    if (rejected.length > 0) {
       throw new McpOAuthError(
         "invalid_redirect_uri",
-        `Only ChatGPT connector callbacks and the callbacks listed in OOMOL_CONNECT_MCP_OAUTH_REDIRECT_URIS are accepted as redirect URIs: ${rejected}.`,
+        `Only ChatGPT and Gemini connector callbacks and the callbacks listed in OOMOL_CONNECT_MCP_OAUTH_REDIRECT_URIS are accepted as redirect URIs: ${rejected.join(", ")}.`,
       );
     }
     const tokenEndpointAuthMethod = readClientAuthMethod(body.token_endpoint_auth_method);
@@ -241,6 +260,7 @@ export class McpOAuthService {
     const fail = (error: string, description: string): McpOAuthAuthorizeResult => ({
       type: "redirect",
       location: this.callbackUrl(redirectUri, { error, error_description: description, state }),
+      error: new McpOAuthError(error, description),
     });
     if (state !== undefined && state.length > maxStateLength) {
       return fail("invalid_request", `state must not exceed ${maxStateLength} characters.`);
@@ -433,6 +453,23 @@ function isChatGptRedirectUri(value: string): boolean {
   );
 }
 
+/** Whether a redirect URI is one of the Gemini app's callbacks for a custom MCP app. */
+function isGeminiRedirectUri(value: string): boolean {
+  if (!URL.canParse(value)) return false;
+  const url = new URL(value);
+  // Comparing the serialized URL rejects spellings the parser would normalize into an accepted one.
+  return (
+    url.href === value &&
+    url.protocol === "https:" &&
+    geminiRedirectHosts.includes(url.host) &&
+    geminiRedirectPath.test(url.pathname) &&
+    !url.search &&
+    !url.hash &&
+    !url.username &&
+    !url.password
+  );
+}
+
 function readRedirectUris(value: unknown): string[] {
   if (
     !Array.isArray(value) ||
@@ -442,7 +479,7 @@ function readRedirectUris(value: unknown): string[] {
   ) {
     throw new McpOAuthError(
       "invalid_redirect_uri",
-      `redirect_uris must be a non-empty array of at most ${maxRedirectUris} URIs.`,
+      `redirect_uris must be a non-empty array of at most ${maxRedirectUris} URIs; received ${Array.isArray(value) ? value.length : "no array"}.`,
     );
   }
   return [...new Set(value as string[])];
