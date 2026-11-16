@@ -609,6 +609,42 @@ describe("refresh replay detection", () => {
     expect(await mcpStatus(app, String(tokens.access_token))).toBe(401);
   });
 
+  it("carries the backing token's connection permissions into the resolved grant", async () => {
+    const { app, deps } = await setup();
+    const { clientId } = await createManualClient(app);
+    const { verifier } = pkcePair();
+    const location = await authorizeAndApprove(app, clientId);
+    const tokens = await handleTokenPost(
+      new URLSearchParams({
+        grant_type: "authorization_code",
+        code: location.searchParams.get("code") ?? "",
+        redirect_uri: REDIRECT,
+        client_id: clientId,
+        code_verifier: verifier,
+      }),
+      deps,
+    );
+    const [backing] = await deps.runtimeTokenStore.list();
+    expect(backing).toBeDefined();
+    const connectionPermissions = [{ connectionId: "connection-1", access: "read" as const, allowProxy: false }];
+    await deps.runtimeTokenStore.updatePolicy(backing!.id, {
+      allowedActions: backing!.allowedActions,
+      blockedActions: backing!.blockedActions,
+      allowedProxies: backing!.allowedProxies,
+      allowedConnections: ["connection-1"],
+      connectionPermissions,
+    });
+
+    const grant = await resolveOAuthAccessToken(String(tokens.access_token), {
+      config: deps.config,
+      tokens: deps.tokens,
+      keys: deps.keys,
+      clients: deps.clients,
+      runtimeTokenStore: deps.runtimeTokenStore,
+    });
+    expect(grant).toMatchObject({ allowedConnections: ["connection-1"], connectionPermissions });
+  });
+
   it("rejects refresh for a deleted client", async () => {
     const { app, deps } = await setup();
     const { clientId } = await createManualClient(app);

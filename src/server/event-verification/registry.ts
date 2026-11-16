@@ -22,11 +22,22 @@ export function listChannelEventVerifiers(): [service: string, load: ChannelEven
 }
 
 /**
+ * The registered channel a request's verify route targets, or `undefined` when the request is not one.
+ * Cloudflare uses it to keep the channel in a reduced runtime catalog, since an application-scoped
+ * verifier (Slack) can run before any connection for that channel exists.
+ */
+export function readChannelEventVerifyService(path: string, method: string): string | undefined {
+  const service = /^\/v1\/providers\/([^/]+)\/events\/verify$/.exec(path)?.[1];
+  return method === "POST" && service !== undefined && Object.hasOwn(channelEventVerifiers, service)
+    ? service
+    : undefined;
+}
+
+/**
  * Whether a request targets a registered channel's verify route. That route checks
  * the dedicated event verification token itself, so the global admin/runtime
  * middleware must let it through; unregistered services stay behind normal auth.
  */
 export function isChannelEventVerifyRequest(path: string, method: string): boolean {
-  const service = /^\/v1\/providers\/([^/]+)\/events\/verify$/.exec(path)?.[1];
-  return method === "POST" && service !== undefined && Object.hasOwn(channelEventVerifiers, service);
+  return readChannelEventVerifyService(path, method) !== undefined;
 }

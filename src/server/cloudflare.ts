@@ -25,6 +25,7 @@ import {
   resolvePublicOrigin,
 } from "./cloudflare/cloudflare-env.ts";
 import { createConnectApp } from "./connect-app.ts";
+import { readChannelEventVerifyService } from "./event-verification/registry.ts";
 import { KVTransitFileService } from "./files/kv-transit-files.ts";
 import { R2TransitFileService } from "./files/r2-transit-files.ts";
 import { parseMcpOutputMode } from "./mcp-settings.ts";
@@ -289,6 +290,13 @@ function isRuntimeRequest(pathname: string): boolean {
 }
 
 async function resolveRuntimeServices(request: Request, database: CloudflareEnv["DB"]): Promise<string[]> {
+  // A verify route authenticates with the event verification token, not a runtime token, and an
+  // application-scoped channel can verify before any connection for it exists.
+  const verifyService = readChannelEventVerifyService(new URL(request.url).pathname, request.method);
+  if (verifyService) {
+    const services = await listD1RuntimeServices(database);
+    return services.includes(verifyService) ? services : [...services, verifyService].sort();
+  }
   const token = readBearerTokenFromAuthorizationHeader(request.headers.get("authorization"));
   if (token) {
     const grantedServices = await listD1RuntimeServicesForToken(database, token);

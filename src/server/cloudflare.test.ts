@@ -260,6 +260,44 @@ describe("cloudflare worker", () => {
     await expect(second.json()).resolves.toMatchObject({ data: [{ service: "example" }] });
   });
 
+  it("keeps an application-scoped verify channel in the catalog without a connection for it", async () => {
+    const env: CloudflareEnv = {
+      DB: new PermissiveRuntimeServicesD1Database(["zulu"]),
+      TRANSIT_FILES: new UnusedR2Bucket(),
+      ASSETS: memoryAssets({
+        ...chunkedCatalog(),
+        "/catalog/providers/zulu.json": { ...provider, service: "zulu" },
+        "/catalog/providers/slackbot.json": {
+          ...provider,
+          service: "slackbot",
+          auth: [
+            {
+              type: "oauth2",
+              authorizationUrl: "https://slack.com/oauth/v2/authorize",
+              tokenUrl: "https://slack.com/api/oauth.v2.access",
+              scopes: [],
+            },
+          ],
+        },
+      }),
+      OOMOL_CONNECT_EVENT_VERIFY_TOKEN: "verify-secret",
+    };
+
+    const response = await worker.fetch(
+      new Request("https://verify-catalog.example.com/v1/providers/slackbot/events/verify", {
+        method: "POST",
+        headers: { authorization: "Bearer verify-secret", "content-type": "application/json" },
+        body: JSON.stringify({ headers: {}, body: "{}" }),
+      }),
+      env,
+      createExecutionContext(),
+    );
+
+    // Without the channel in the catalog the credential lookup throws unknown_service and returns 500.
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({ errorCode: "event_verification_not_configured" });
+  });
+
   it("loads only providers reachable through an explicitly restricted stored token", async () => {
     const token = "oct_restricted";
     const env: CloudflareEnv = {
@@ -513,6 +551,16 @@ class RuntimeServicesD1Database implements D1DatabaseBinding {
       return new BoundD1Statement(() => null);
     }
     throw new Error(`Unexpected D1 query: ${query}`);
+  }
+}
+
+class PermissiveRuntimeServicesD1Database extends RuntimeServicesD1Database {
+  override prepare(query: string): D1PreparedStatementBinding {
+    try {
+      return super.prepare(query);
+    } catch {
+      return new BoundD1Statement(() => null);
+    }
   }
 }
 
