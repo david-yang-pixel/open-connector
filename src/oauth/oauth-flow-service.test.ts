@@ -985,7 +985,7 @@ describe("OAuthFlowService", () => {
             extra: {
               serverUrl: input.values.serverUrl,
               authorizationEndpoint: "https://auth.example.com/authorize",
-              tokenEndpoint: "https://auth.example.com/token",
+              tokenEndpoint: "https://auth.example.com/token/",
             },
             authorizationParams: { resource: input.values.serverUrl, scope: "tools:read" },
           };
@@ -1024,7 +1024,7 @@ describe("OAuthFlowService", () => {
     await services.flow.completeAuthorization({ state: started.state, code: "authorization-code" });
 
     expect(exchanges).toEqual([
-      { codeVerifier: expect.any(String), tokenUrl: "https://auth.example.com/token", clientId: "registered-client" },
+      { codeVerifier: expect.any(String), tokenUrl: "https://auth.example.com/token/", clientId: "registered-client" },
     ]);
     await expect(services.connections.getCredential("dynamic", "work")).resolves.toMatchObject({
       authType: "oauth2",

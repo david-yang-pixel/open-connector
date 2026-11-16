@@ -163,12 +163,15 @@ export class OAuthClientConfigService {
 
   resolveEndpointUrl(service: string, endpointUrl: string, config: OAuthClientConfig): string {
     this.getOAuthDefinition(service);
-    const resolved = endpointUrl.replaceAll(/\{(\+?)([A-Za-z0-9_]+)\}/g, (_match, rawModifier: string, key: string) => {
+    const resolved = endpointUrl.replaceAll(/\{(\+?)([A-Za-z0-9_]+)\}/g, (match, rawModifier: string, key: string) => {
       const value = config.extra[key];
       if (!value) {
         throw new OAuthClientConfigError("invalid_input", `${key} is required.`);
       }
-      return rawModifier === "+" ? value.replace(/\/+$/, "") : encodeURIComponent(value);
+      if (rawModifier !== "+") return encodeURIComponent(value);
+      // A template that is only `{+key}` holds a complete discovered endpoint, where a trailing
+      // slash is part of the path; strip it only when the value is a base URL with a suffix.
+      return match === endpointUrl ? value : value.replace(/\/+$/, "");
     });
     assertOAuthEndpointUrl(resolved);
     return resolved;
