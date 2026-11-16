@@ -45,6 +45,7 @@ import { McpToolsDialog } from "./mcp-tools-dialog";
 import {
   connectionDiscoveredToolCount,
   credentialFieldsFor,
+  usesDynamicOAuthClient,
   filterProviders,
   filterProvidersByCategory,
   isActionAvailable,
@@ -191,6 +192,8 @@ export interface OAuthAuthorizationRequestBody {
   extra?: Record<string, string>;
   secretExtra?: Record<string, string>;
   authorizationOptionIds?: string[];
+  /** Connection inputs for OAuth methods that register a client per connection. */
+  values?: Record<string, string>;
 }
 
 export interface ManualOAuthAuthorizationInput {
@@ -1308,8 +1311,9 @@ export function oauthAuthorizationRequestBody(
   connectionName: string,
   manual?: ManualOAuthAuthorizationInput,
   authorizationOptionIds?: string[],
+  values?: Record<string, string>,
 ): OAuthAuthorizationRequestBody {
-  const body: OAuthAuthorizationRequestBody = { service, connectionName, authorizationOptionIds };
+  const body: OAuthAuthorizationRequestBody = { service, connectionName, authorizationOptionIds, values };
   if (manual) {
     const { extra, secretExtra } = splitClientConfigFieldValues(
       clientConfigFieldsFor(manual.auth),
@@ -1502,25 +1506,31 @@ function ConnectionForm(props: ConnectionFormProps): ReactNode {
   const fields = credentialFieldsFor(props.auth);
   const showActions = shouldShowConnectionActions(props.auth);
   const connected = props.connection != null;
+  const dynamicOAuthClient = usesDynamicOAuthClient(props.auth);
   const customOAuthClientAvailable =
-    props.auth.type === "oauth2" && (props.oauthConfig?.customClientAvailable ?? false);
+    props.auth.type === "oauth2" && !dynamicOAuthClient && (props.oauthConfig?.customClientAvailable ?? false);
   const manualValues: ManualOAuthClientValues = {
     clientId: manualClientId,
     clientSecret: manualClientSecret,
     extraValues: manualExtraValues,
   };
   const needsOAuthClient =
-    props.auth.type === "oauth2" && props.oauthClientMode === "configured" && !props.oauthConfig?.configured;
+    props.auth.type === "oauth2" &&
+    !dynamicOAuthClient &&
+    props.oauthClientMode === "configured" &&
+    !props.oauthConfig?.configured;
   const canSubmit =
     props.connectionName.length > 0 &&
     props.connectionNameValid &&
     (!connectedCustomCredential || customSettingsLoaded) &&
     (props.oauthClientMode !== "manual" || customOAuthClientAvailable) &&
-    shouldEnableConnectionSubmit(
-      props.auth,
-      props.oauthConfig,
-      props.oauthClientMode === "manual" ? manualValues : undefined,
-    );
+    (dynamicOAuthClient
+      ? fields.every((field) => !field.required || Boolean(values[field.key]?.trim()))
+      : shouldEnableConnectionSubmit(
+          props.auth,
+          props.oauthConfig,
+          props.oauthClientMode === "manual" ? manualValues : undefined,
+        ));
   const submitLabel = connectedCustomCredential
     ? t("providers.buttons.saveAdvancedSettings")
     : props.auth.type === "oauth2"
@@ -1624,6 +1634,7 @@ function ConnectionForm(props: ConnectionFormProps): ReactNode {
             connectionName,
             props.oauthClientMode === "manual" ? { auth: props.auth, values: manualValues } : undefined,
             selectedAuthorizationOptionIds,
+            dynamicOAuthClient ? values : undefined,
           ),
         );
         if (result.authorizationUrl) {
@@ -1819,7 +1830,9 @@ function ConnectionForm(props: ConnectionFormProps): ReactNode {
                 ? t("providers.connectionMessages.manualOAuthClient", { name: props.provider.displayName })
                 : connected
                   ? t("providers.connectionMessages.connectedOAuth", { name: props.provider.displayName })
-                  : t("providers.connectionMessages.connectOAuth", { name: props.provider.displayName })}
+                  : dynamicOAuthClient
+                    ? t("providers.connectionMessages.connectDynamicOAuth", { name: props.provider.displayName })
+                    : t("providers.connectionMessages.connectOAuth", { name: props.provider.displayName })}
           </AlertDescription>
         </Alert>
       ) : null}
@@ -1912,7 +1925,7 @@ function ConnectionForm(props: ConnectionFormProps): ReactNode {
                 {props.auth.type === "oauth2" ? <ExternalLink size={16} /> : <Check size={16} />}
                 {submitLabel}
               </Button>
-              {props.auth.type === "oauth2" && props.oauthClientMode === "configured" ? (
+              {props.auth.type === "oauth2" && !dynamicOAuthClient && props.oauthClientMode === "configured" ? (
                 <Button variant="outline" type="button" onClick={props.onConfigureOAuthClient}>
                   <Settings size={16} />
                   {t("providers.buttons.editOAuthClient")}

@@ -315,6 +315,7 @@
       "manualOAuthClient": "Connectez {{name}} avec une application OAuth personnalisée.",
       "connectedOAuth": "{{name}} est connecté via OAuth.",
       "connectOAuth": "Connectez {{name}} avec son flux d’autorisation OAuth.",
+      "connectDynamicOAuth": "Saisissez l’URL du serveur MCP. Open Connector découvre son serveur d’autorisation, s’enregistre automatiquement et ouvre la fenêtre de connexion {{name}}.",
       "saving": "Enregistrement de la connexion...",
       "loadingAdvancedSettings": "Chargement des paramètres de connexion...",
       "loadAdvancedSettingsFailed": "Échec du chargement des paramètres de connexion.",

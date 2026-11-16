@@ -9,6 +9,10 @@ export type AuthDefinition =
       authorizationOptions?: OAuthAuthorizationOption[];
       clientFields?: CredentialField[];
       clientSetup?: OAuthClientSetup;
+      /** `dynamic`: each connection registers its own OAuth client, so no OAuth app is configured. */
+      clientRegistration?: "dynamic";
+      /** Inputs collected before a `dynamic` authorization, sent as `values`. */
+      connectionFields?: CredentialField[];
     };
 
 export interface OAuthAuthorizationOption {
@@ -428,7 +432,13 @@ function oauthClientConfigured(service: string, oauthConfigs: OAuthConfig[]): bo
 }
 
 export function credentialFieldsFor(auth: AuthDefinition): CredentialField[] {
+  if (auth.type === "oauth2") return auth.connectionFields ?? [];
   return auth.type === "api_key" || auth.type === "custom_credential" ? (auth.fields ?? []) : [];
+}
+
+/** Whether this OAuth method registers a client per connection instead of using a configured OAuth app. */
+export function usesDynamicOAuthClient(auth: AuthDefinition): boolean {
+  return auth.type === "oauth2" && auth.clientRegistration === "dynamic";
 }
 
 export function filterProviders(providers: ProviderDefinition[], query: string): ProviderDefinition[] {

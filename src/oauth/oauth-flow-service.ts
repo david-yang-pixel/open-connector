@@ -32,6 +32,8 @@ export interface OAuthAuthorizationStartInput {
   connectionName?: string;
   clientConfig?: OAuthClientConfigInput;
   authorizationOptionIds?: string[];
+  /** Connection inputs for providers whose OAuth client is registered per connection. */
+  values?: Record<string, string>;
 }
 
 export interface OAuthAuthorizationCompleteInput {
@@ -109,6 +111,12 @@ export class OAuthFlowService {
   async startConnectionRequest(input: OAuthConnectionRequestInput): Promise<OAuthConnectionRequestStart> {
     validateReturnUri(input.returnUri);
     const auth = this.clientConfigs.getOAuthDefinition(input.service);
+    if (auth.clientRegistration === "dynamic") {
+      throw new OAuthFlowError(
+        "unsupported_auth_type",
+        `${input.service} OAuth connections are created from the console, which collects the server URL first.`,
+      );
+    }
     let requestedScopes: string[] | undefined;
     if (input.authorizationOptionIds !== undefined) {
       if (!auth.authorizationOptions)
@@ -188,7 +196,10 @@ export class OAuthFlowService {
     const { service, connectionName } = input;
     this.connections.assertProviderAvailable(service);
     const auth = this.clientConfigs.getOAuthDefinition(service);
+    const registration =
+      auth.clientRegistration === "dynamic" ? await this.registerDynamicClient(service, auth, input.values) : undefined;
     const config =
+      registration?.config ??
       requestConfig ??
       (input.clientConfig
         ? this.resolveCustomClientConfig(service, input.clientConfig)
@@ -225,11 +236,11 @@ export class OAuthFlowService {
       pkceCodeVerifier,
       authorizationScopes:
         auth.authorizationOptions || providerOAuth?.resolveAuthorizationScopes ? authorizationScopes : undefined,
-      clientConfig: input.clientConfig ? config : undefined,
+      clientConfig: input.clientConfig || registration ? config : undefined,
     };
 
     const authorizationUrl = new URL(this.clientConfigs.resolveEndpointUrl(service, auth.authorizationUrl, config));
-    for (const [key, value] of Object.entries(auth.authorizationParams ?? {})) {
+    for (const [key, value] of Object.entries({ ...auth.authorizationParams, ...registration?.authorizationParams })) {
       authorizationUrl.searchParams.set(key, value);
     }
     setAuthorizationParam(authorizationUrl, auth.authorizationRequestFields?.clientId, "client_id", config.clientId);
@@ -289,6 +300,7 @@ export class OAuthFlowService {
       if (providerOAuth?.exchangeCode) {
         tokenResponse = await providerOAuth.exchangeCode({
           code: input.code,
+          codeVerifier: pending.pkceCodeVerifier,
           clientConfig: config,
           redirectUri,
           tokenUrl,
@@ -383,6 +395,40 @@ export class OAuthFlowService {
       }
       throw error;
     }
+  }
+
+  /** Register a connection-scoped OAuth client for a provider without a deployment-wide OAuth app. */
+  private async registerDynamicClient(
+    service: string,
+    auth: OAuth2AuthDefinition,
+    values: Record<string, string> | undefined,
+  ): Promise<{ config: OAuthClientConfig; authorizationParams: Record<string, string> }> {
+    const providerOAuth = await this.providerLoader.loadProviderOAuthRuntime?.(service);
+    if (!providerOAuth?.registerClient) {
+      throw new OAuthFlowError("unsupported_auth_type", `${service} cannot register an OAuth client.`);
+    }
+    const connectionValues: Record<string, string> = {};
+    for (const field of auth.connectionFields ?? []) {
+      const value = values?.[field.key]?.trim();
+      if (value) connectionValues[field.key] = value;
+      else if (field.required) throw new OAuthFlowError("invalid_input", `${field.key} is required.`);
+    }
+    const registration = await providerOAuth.registerClient({
+      service,
+      values: connectionValues,
+      redirectUri: this.clientConfigs.expectedRedirectUri(service),
+      createError: (message) => new OAuthFlowError("oauth_client_registration_failed", message),
+    });
+    return {
+      config: {
+        service,
+        clientId: registration.clientId,
+        clientSecret: registration.clientSecret,
+        extra: registration.extra,
+        secretExtra: {},
+      },
+      authorizationParams: registration.authorizationParams,
+    };
   }
 
   private resolveCustomClientConfig(service: string, input: OAuthClientConfigInput): OAuthClientConfig {

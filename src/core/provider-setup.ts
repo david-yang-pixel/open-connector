@@ -25,6 +25,10 @@ export type ProviderAuthSetup =
       clientSetup?: OAuth2AuthDefinition["clientSetup"];
       scopes: string[];
       authorizationOptions?: OAuth2AuthDefinition["authorizationOptions"];
+      /** `dynamic` connections register their own OAuth client, so no OAuth app needs configuring. */
+      clientRegistration?: OAuth2AuthDefinition["clientRegistration"];
+      /** Inputs sent as `values` when starting a `dynamic` authorization. */
+      connectionFields?: CredentialDefinition[];
     };
 
 /** Describe the inputs accepted by the existing connection and OAuth-client APIs. */
@@ -43,6 +47,8 @@ export function describeProviderAuth(auth: ProviderAuthDefinition): ProviderAuth
         clientSetup: auth.clientSetup,
         scopes: auth.scopes,
         authorizationOptions: auth.authorizationOptions,
+        clientRegistration: auth.clientRegistration,
+        connectionFields: auth.connectionFields,
       };
   }
 }

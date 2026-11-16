@@ -286,6 +286,24 @@ describe("ProvidersPage OAuth client settings", () => {
     expect(markup).not.toContain("Reset Default App");
   });
 
+  it("collects the server URL instead of an OAuth app for dynamically registered OAuth clients", () => {
+    const markup = renderProvidersPage(
+      { ...providerData, providers: [dynamicOAuthProvider], oauthConfigs: [] },
+      "/providers/custom_mcp",
+    );
+
+    expect(markup).toContain("MCP Server URL");
+    expect(markup).toContain("registers itself automatically");
+    expect(markup).not.toContain("Configure Default App");
+    expect(markup).not.toContain("Edit Default App");
+    expect(markup).not.toContain("Custom App");
+    expect(
+      oauthAuthorizationRequestBody("custom_mcp", "work", undefined, undefined, {
+        serverUrl: "https://mcp.example.com/mcp",
+      }),
+    ).toEqual({ service: "custom_mcp", connectionName: "work", values: { serverUrl: "https://mcp.example.com/mcp" } });
+  });
+
   it("offers manual input only when connection-scoped OAuth clients are available", () => {
     const availableMarkup = renderProvidersPage(
       {
@@ -803,6 +821,24 @@ const oauthProvider: ProviderDefinition = {
     {
       type: "oauth2",
       scopes: ["email"],
+    },
+  ],
+  actions: [],
+};
+
+const dynamicOAuthProvider: ProviderDefinition = {
+  service: "custom_mcp",
+  displayName: "Custom Remote MCP",
+  categories: ["Developer Tools"],
+  authTypes: ["oauth2"],
+  auth: [
+    {
+      type: "oauth2",
+      scopes: [],
+      clientRegistration: "dynamic",
+      connectionFields: [
+        { key: "serverUrl", label: "MCP Server URL", inputType: "text", required: true, secret: false },
+      ],
     },
   ],
   actions: [],
