@@ -197,7 +197,10 @@ export class OAuthClientConfigService {
   private listOAuthProviders(): Array<{ service: string; auth: OAuth2AuthDefinition }> {
     return this.catalog.providers.flatMap((provider) => {
       const auth = provider.auth.find((auth) => auth.type === "oauth2");
-      return auth && auth.type === "oauth2" ? [{ service: provider.service, auth }] : [];
+      // Dynamically registered clients have no deployment-wide OAuth app to configure.
+      return auth && auth.type === "oauth2" && auth.clientRegistration !== "dynamic"
+        ? [{ service: provider.service, auth }]
+        : [];
     });
   }
 

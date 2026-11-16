@@ -28,7 +28,14 @@ import {
   encodeActionSearchCursor,
   searchActions,
 } from "../core/action-search.ts";
-import { looseArray, optionalRecord, optionalString, requiredString, requiredStringArray } from "../core/cast.ts";
+import {
+  looseArray,
+  optionalRecord,
+  optionalString,
+  requiredString,
+  requiredStringArray,
+  stringRecord,
+} from "../core/cast.ts";
 import { PromiseCache } from "../core/promise-cache.ts";
 import { MarketplaceError } from "../marketplace/marketplace-service.ts";
 import { OAuthClientConfigError, OAuthClientConfigService } from "../oauth/oauth-client-config-service.ts";
@@ -1163,6 +1170,7 @@ export class ConnectServer {
         connectionName,
         clientConfig: readOAuthClientConfigInput(body),
         authorizationOptionIds: readOptionalStringArray(body, "authorizationOptionIds"),
+        values: stringRecord(optionalRecord(body.values) ?? {}),
       });
       const authorizationUrl = new URL(authorization.authorizationUrl);
       this.options.logger?.info(

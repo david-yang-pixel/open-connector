@@ -4,6 +4,41 @@ OpenConnector's `custom_mcp` provider preserves the remote MCP contract instead 
 opaque JSON provider response. This document is the maintained behavior contract for discovery, execution, safety,
 pagination, large results, and operational fallback.
 
+## Authentication
+
+A connection authenticates in one of two ways:
+
+- **Access token**: `authorizationToken` is sent as `Authorization: Bearer <token>`. Use this for servers that issue
+  static API keys or personal access tokens.
+- **OAuth**: for servers that implement MCP authorization. Choose OAuth in the console, enter the MCP server URL, and
+  sign in. No OAuth app needs to be configured first.
+
+The OAuth flow follows the MCP authorization specification:
+
+1. An unauthenticated `initialize` request reads the `WWW-Authenticate` challenge, which may name the protected
+   resource metadata URL and the scopes to request.
+2. Protected resource metadata (RFC 9728) names the authorization server, whose metadata (RFC 8414 or OpenID Connect
+   discovery) supplies the authorization, token, and registration endpoints. Servers without metadata fall back to the
+   2025-03-26 default `/authorize`, `/token`, and `/register` paths.
+3. Open Connector registers a client for this connection with dynamic client registration (RFC 7591), redirecting to
+   `<public origin>/oauth/callback`.
+4. The browser authorizes with PKCE `S256`. Authorization, code exchange, and refresh all send the RFC 8707 `resource`
+   parameter for the MCP server, so tokens are minted for that server only. An advertised resource that does not cover
+   the configured server URL is rejected.
+
+The registered client and endpoints are stored with the connection, and the access token is refreshed automatically
+when it expires. Reconnecting registers a new client.
+
+Limits of the OAuth mode:
+
+- The server URL must be public `https`; private-network MCP servers need an access token.
+- The authorization server must support dynamic client registration. Client ID metadata documents and pre-registered
+  clients are not supported yet; use an access token for those servers.
+- OAuth connections use the default timeouts, risk levels, and pagination. The optional settings in the next sections
+  apply to access-token connections.
+- OAuth connections are created from the console. The programmatic connection-request API returns
+  `unsupported_auth_type` because it cannot collect the server URL.
+
 ## Discovery And Freshness
 
 `custom_mcp.list_tools` reads the remote server on every call and follows the remote `tools/list` `nextCursor` until
