@@ -4,19 +4,16 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ProviderRuntimeHandler } from "../provider-executors.ts";
 import type { PkulawMcpServerId } from "./actions.ts";
 import type { PkulawContext } from "./runtime.ts";
 
 import { createHash } from "node:crypto";
-import {
-  defineProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-  requireApiKeyCredential,
-} from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 import { pkulawMcpServerIds } from "./actions.ts";
 import {
   callTool,
@@ -135,7 +132,6 @@ export const credentialValidators: CredentialValidators = {
     const hash = createHash("sha256").update(input.apiKey.trim()).digest("hex").slice(0, 16);
     return {
       profile: { accountId: `pkulaw:mcp:${hash}`, displayName: `PKULaw MCP · ${hash.slice(-6)}` },
-      grantedScopes: [],
       metadata: {
         mcpGateway: pkulawMcpGateway,
         availableServers: available.map((item) => item.serverId),

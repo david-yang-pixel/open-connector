@@ -1,18 +1,15 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { OAuthProviderContext } from "../provider-runtime.ts";
+import type { IntegrationDefinition } from "../../triggers/common/integration.ts";
+import type { PollDefinition } from "../../triggers/common/poll.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { OAuthProviderContext } from "../provider-executors.ts";
 
 import { randomUUID } from "node:crypto";
 import { requiredRawString, requiredString } from "../../core/cast.ts";
-import { readBoundedResponseBytes } from "../../core/request.ts";
-import { defineGoogleProviderExecutors, googleBearerProxyAuth, googleServiceAccountValidator } from "../google-auth.ts";
-import { googleJsonRequest, googleRequest } from "../google-runtime.ts";
-import {
-  defineProviderProxy,
-  providerProxyEndpointPrefixes,
-  ProviderRequestError,
-  providerResponseError,
-} from "../provider-runtime.ts";
+import { storeResponseInTransit } from "../../core/request.ts";
+import { defineProviderProxy, providerProxyEndpointPrefixes } from "../provider-proxy.ts";
+import { ProviderRequestError, providerResponseError } from "../provider-runtime.ts";
+import { defineGoogleProviderExecutors, googleBearerProxyAuth, googleServiceAccountValidator } from "./runtime-auth.ts";
 import {
   createComment,
   createPermission,
@@ -38,6 +35,7 @@ import {
   updatePermission,
   updateReply,
 } from "./runtime-collaboration.ts";
+import { googleJsonRequest, googleRequest } from "./runtime-request.ts";
 import {
   asObject,
   asOptionalObject,
@@ -58,6 +56,8 @@ import {
   resolveSupportsAllDrives,
 } from "./runtime-shared.ts";
 import { googledriveOAuthScopes } from "./scopes.ts";
+import { googleDriveChanges, googleDriveChangeListener } from "./trigger-changes.ts";
+import { googleDriveFileChange } from "./trigger-on-file-change.ts";
 
 const service = "googledrive";
 
@@ -77,6 +77,17 @@ const driveFileFields = [
   "shared",
   "starred",
   "trashed",
+  // Whether THIS caller may manage the file's sharing, computed per-user by
+  // Drive itself. A consumer that mirrors a file's access list needs to know
+  // this before it tries: `permissions.list` answers 403 wherever the caller
+  // holds no sharing right, and without the projection the only way to find
+  // out is to make the call on every file and read the failures.
+  //
+  // Projected narrowly rather than as the whole `capabilities` object, which
+  // carries ~35 booleans this provider has no use for. Drive returns exactly
+  // the requested members, so the shape is `{ canShare }`.
+  "ownedByMe",
+  "capabilities(canShare)",
 ].join(",");
 const driveFields = [
   "id",
@@ -548,12 +559,13 @@ async function downloadFile(input: Record<string, unknown>, context: ActionConte
     }),
     timeoutMs: 300_000,
   });
-  const bytes = await readBoundedResponseBytes(response, {
-    maxBytes: context.transitFiles.maxBytes,
+  const file = await storeResponseInTransit(response, context.transitFiles, {
+    name,
+    mimeType,
     fieldName: "Google Drive download",
     createError: (message) => new ProviderRequestError(413, message),
+    signal: context.signal,
   });
-  const file = await context.transitFiles.create(new File([Uint8Array.from(bytes)], name, { type: mimeType }));
 
   return {
     fileId,
@@ -584,12 +596,13 @@ async function exportFile(input: Record<string, unknown>, context: ActionContext
   const mimeType = response.headers.get("content-type") ?? requestedMimeType;
   const extension = extensionForExportMimeType(mimeType);
   const name = `${fileId}${extension}`;
-  const bytes = await readBoundedResponseBytes(response, {
-    maxBytes: context.transitFiles.maxBytes,
+  const upload = await storeResponseInTransit(response, context.transitFiles, {
+    name,
+    mimeType,
     fieldName: "Google Drive export",
     createError: (message) => new ProviderRequestError(413, message),
+    signal: context.signal,
   });
-  const upload = await context.transitFiles.create(new File([Uint8Array.from(bytes)], name, { type: mimeType }));
 
   return {
     fileId,
@@ -821,6 +834,13 @@ function normalizeDriveFile(payload: Record<string, unknown>) {
     ...(typeof payload.shared === "boolean" ? { shared: payload.shared } : {}),
     ...(typeof payload.starred === "boolean" ? { starred: payload.starred } : {}),
     ...(typeof payload.trashed === "boolean" ? { trashed: payload.trashed } : {}),
+    ...(typeof payload.ownedByMe === "boolean" ? { ownedByMe: payload.ownedByMe } : {}),
+    // Present only when Drive answered it. Omitted rather than defaulted to
+    // `false`, because "Drive did not say" and "the caller may not share" lead
+    // a consumer to opposite actions, and a default would make them the same.
+    ...(typeof asOptionalObject(payload.capabilities)?.canShare === "boolean"
+      ? { capabilities: { canShare: asOptionalObject(payload.capabilities)!.canShare as boolean } }
+      : {}),
   };
 }
 
@@ -1047,3 +1067,9 @@ export const proxy: ProviderProxyExecutor = defineProviderProxy({
   auth: googleBearerProxyAuth(googledriveOAuthScopes),
   allowedEndpoint: providerProxyEndpointPrefixes("/drive/v3", "/upload/drive/v3"),
 });
+
+export const triggers: readonly (IntegrationDefinition | PollDefinition)[] = [
+  googleDriveChanges,
+  googleDriveChangeListener,
+  googleDriveFileChange,
+];

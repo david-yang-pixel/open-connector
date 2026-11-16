@@ -1,6 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
 import { ProviderRequestError, providerUserAgent, requiredInputString } from "../provider-runtime.ts";
@@ -145,7 +144,6 @@ export async function validateTaxjarCredential(
       accountId: "taxjar-api-key",
       displayName: "TaxJar API Key",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: taxjarApiBaseUrl,
       validationEndpoint,
@@ -181,7 +179,7 @@ interface TaxjarRequestInput {
 
 async function taxjarRequest(
   input: TaxjarRequestInput,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
 ): Promise<Record<string, unknown>> {
   let response: Response;
   let payload: unknown;

@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { optionalBoolean, optionalInteger, optionalString } from "../../core/cast.ts";
 import { assertPublicHttpUrl, isPrivateNetworkAccessAllowed } from "../../core/request.ts";
@@ -92,7 +92,6 @@ export async function validateCoolifyCredential(
   const host = new URL(context.apiBaseUrl).host;
   return {
     profile: { accountId: id == null ? `coolify:${host}` : `coolify:${id}`, displayName: name ?? `Coolify ${host}` },
-    grantedScopes: [],
     metadata: { apiBaseUrl: context.apiBaseUrl, teamId: id, teamName: name },
   };
 }

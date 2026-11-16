@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { optionalRecord, optionalString, requiredRecord, requiredString } from "../../core/cast.ts";
@@ -48,7 +48,6 @@ export async function validateKeenIoCredential(
       accountId: projectId,
       displayName: `Keen IO project ${projectId}`,
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: keenIoApiBaseUrl,
       projectId,

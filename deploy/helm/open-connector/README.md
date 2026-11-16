@@ -210,4 +210,5 @@ Before going to production, **set `secret.encryptionKey` and `secret.adminToken`
 
 ## License
 
-Apache-2.0, matching the upstream OpenConnector project.
+OpenConnector License (a modified Apache License 2.0), matching the upstream OpenConnector project.
+See the upstream [LICENSE.txt](../../../LICENSE.txt) and [NOTICE.md](../../../NOTICE.md).

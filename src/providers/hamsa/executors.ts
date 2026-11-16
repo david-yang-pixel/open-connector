@@ -1,8 +1,9 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
-import { defineApiKeyProviderExecutors, defineProviderProxy } from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import { executeHamsaAction, validateHamsaCredential } from "./runtime.ts";
 
 const service = "hamsa";
@@ -26,7 +27,6 @@ export const credentialValidators: CredentialValidators = {
     const project = await validateHamsaCredential(input.apiKey, fetcher);
     return {
       profile: { displayName: typeof project.name === "string" ? project.name : "Hamsa API Key" },
-      grantedScopes: [],
       metadata: { projectId: project.id },
     };
   },

@@ -1,12 +1,9 @@
-import type { CredentialValidators, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ApiKeyProviderContext, ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderExecutors, CredentialValidators, ProviderProxyExecutor } from "../../core/types.ts";
+import type { ApiKeyProviderContext, ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-executors.ts";
 
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const baseUrl = "https://api.helcim.com/v2";
 async function request(
@@ -56,11 +53,9 @@ const handlers: ProviderActionHandlers<"helcim", ProviderRuntimeHandler<ApiKeyPr
   },
 };
 
-export const executors: import("../../core/types.ts").ProviderExecutors = defineApiKeyProviderExecutors(
-  "helcim",
-  handlers,
-  { skipDnsValidation: true },
-);
+export const executors: ProviderExecutors = defineApiKeyProviderExecutors("helcim", handlers, {
+  skipDnsValidation: true,
+});
 export const proxy: ProviderProxyExecutor = defineProviderProxy({
   service: "helcim",
   baseUrl,
@@ -80,7 +75,6 @@ export const credentialValidators: CredentialValidators = {
     >;
     return {
       profile: { accountId: "api_key", displayName: "Helcim API Token" },
-      grantedScopes: [],
       metadata: { apiBaseUrl: baseUrl, validationEndpoint: "/connection-test", connectionMessage: payload.message },
     };
   },

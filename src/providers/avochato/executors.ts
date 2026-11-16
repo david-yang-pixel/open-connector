@@ -14,18 +14,16 @@ import {
   requiredString,
   requiredStringArray,
 } from "../../core/cast.ts";
+import { requireCustomCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
 import {
-  createProviderFetch,
   createProviderProxyUrl,
-  defineProviderExecutors,
   normalizeProviderProxyHeaders,
-  providerUserAgent,
-  ProviderRequestError,
   readProviderProxyErrorMessage,
   readProviderProxyResponse,
-  requireCustomCredential,
   toProviderProxyError,
-} from "../provider-runtime.ts";
+} from "../provider-proxy.ts";
+import { createProviderFetch, providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 
 const service = "avochato";
 const baseUrl = "https://www.avochato.com";
@@ -244,7 +242,6 @@ export const credentialValidators: CredentialValidators = {
           optionalString(optionalRecord(payload.user)?.name) ||
           "Avochato Account",
       },
-      grantedScopes: [],
       metadata: { apiBaseUrl: baseUrl, validationEndpoint: "/v1/whoami" },
     };
   },

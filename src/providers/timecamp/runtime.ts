@@ -1,9 +1,13 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { booleanString, compactObject, optionalRecord, optionalRawString, optionalString } from "../../core/cast.ts";
-import { providerUserAgent, ProviderRequestError, runProviderRequest } from "../provider-runtime.ts";
+import {
+  providerUserAgent,
+  ProviderRequestError,
+  runProviderRequest,
+  providerInputError,
+} from "../provider-runtime.ts";
 
 export const timecampApiBaseUrl: string = "https://app.timecamp.com/third_party/api";
 
@@ -199,7 +203,6 @@ export async function validateTimecampCredential(
       accountId: providerAccountId,
       displayName: accountLabel,
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: timecampApiBaseUrl,
       validationEndpoint: "/me",
@@ -210,10 +213,7 @@ export async function validateTimecampCredential(
   };
 }
 
-async function requestTimerAction(
-  body: Record<string, unknown>,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
-): Promise<unknown> {
+async function requestTimerAction(body: Record<string, unknown>, context: ApiKeyProviderContext): Promise<unknown> {
   const payload = await requestTimecampJson({
     path: "/timer",
     method: "POST",
@@ -230,7 +230,7 @@ async function requestTimerAction(
 async function requestTimecampJson(input: {
   path: string;
   method: "GET" | "POST" | "PUT";
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   params?: Record<string, TimecampQueryValue>;
   body?: Record<string, unknown>;
   phase: TimecampPhase;
@@ -296,7 +296,7 @@ function createTimecampError(status: number, payload: unknown, phase: TimecampPh
   }
 
   if (phase === "validate" && (status === 401 || status === 403)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
 
   if (phase === "execute" && status === 401) {

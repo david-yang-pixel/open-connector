@@ -1,13 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean, optionalNumber, optionalRawString, optionalRecord } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError, providerInputError } from "../provider-runtime.ts";
 
 const sendfoxApiBaseUrl = "https://api.sendfox.com";
 
@@ -140,7 +137,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: readOptionalIntegerString(user?.id) ?? "api_key",
         displayName: pickAccountLabel(user),
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: sendfoxApiBaseUrl,
         validationEndpoint: "/me",
@@ -287,7 +283,7 @@ function createSendfoxError(response: Response, payload: unknown, phase: Sendfox
     return new ProviderRequestError(429, message);
   }
   if (phase === "validate" && (response.status === 401 || response.status === 403)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (response.status === 401) {
     return new ProviderRequestError(401, message);
@@ -296,7 +292,7 @@ function createSendfoxError(response: Response, payload: unknown, phase: Sendfox
     return new ProviderRequestError(403, message);
   }
   if (response.status === 404 || response.status === 400 || response.status === 409 || response.status === 422) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   return new ProviderRequestError(response.status >= 500 ? 502 : response.status, message);
 }

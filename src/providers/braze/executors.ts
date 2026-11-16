@@ -4,8 +4,7 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -16,14 +15,14 @@ import {
   requiredString,
 } from "../../core/cast.ts";
 import { assertPublicHttpUrl } from "../../core/request.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineProviderExecutors,
-  defineProviderProxy,
   isAbortLikeError,
   providerUserAgent,
   ProviderRequestError,
-  requireApiKeyCredential,
   requiredInputString,
   requiredResponseRecord,
 } from "../provider-runtime.ts";
@@ -162,7 +161,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: `braze:${endpointHost}`,
         displayName: `Braze ${endpointHost}`,
       },
-      grantedScopes: [],
       metadata: compactObject({
         restEndpoint,
         validationEndpoint: validation.path,
@@ -217,7 +215,7 @@ async function validateBrazeCredential(input: {
 }
 
 async function requestBrazeJson(input: {
-  context: Pick<BrazeActionContext, "apiKey" | "restEndpoint" | "fetcher" | "signal">;
+  context: BrazeActionContext;
   path: string;
   query?: Array<[string, unknown]>;
   phase: BrazeRequestPhase;

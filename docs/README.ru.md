@@ -4,7 +4,7 @@
 
 [English](../README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Русский](README.ru.md) | [Français](README.fr.md) | [Español](README.es.md)
 
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](../LICENSE.txt)
+[![License: Modified Apache-2.0](https://img.shields.io/badge/License-Modified%20Apache--2.0-blue.svg)](../LICENSE.txt)
 [![npm](https://img.shields.io/npm/v/@oomol-lab/open-connector.svg)](https://www.npmjs.com/package/@oomol-lab/open-connector)
 ![Node.js 22+](https://img.shields.io/badge/Node.js-22%2B-339933)
 ![Cloudflare compatible](https://img.shields.io/badge/Cloudflare-compatible-F38020)
@@ -29,7 +29,7 @@ OpenConnector — open-source connector gateway для AI agents и альтер
   <tr>
     <td width="33.33%" valign="top">Managed OAuth и hosted runtime готовы к использованию. Не нужно разворачивать runtime или настраивать OAuth apps.</td>
     <td width="33.33%" valign="top">Запуск локально или в собственной инфраструктуре через Docker или Node.js. Вы управляете storage и OAuth apps.</td>
-    <td width="33.33%" valign="top"><strong>Cloudflare</strong>, <strong>Fly.io</strong>, <strong>RepoCloud</strong>, <strong>nibrun</strong> и другие.</td>
+    <td width="33.33%" valign="top"><strong>Cloudflare</strong>, <strong>Fly.io</strong>, <strong>RepoCloud</strong>, <strong>nibrun</strong>, <strong>NEXUS AI</strong>, <strong>Pethost</strong>, <strong>ZopDay</strong> и другие.</td>
   </tr>
   <tr>
     <td width="33.33%" align="center">🚀 <a href="https://oomol.com/docs/connector-saas/"><strong>OOMOL Hosted</strong></a></td>
@@ -202,20 +202,11 @@ Actions, проверку недавних запусков и доступ к �
 
 О тегах образа, pull и запуске см. [docker-ghcr.md (на английском)](docker-ghcr.md).
 
-## Создайте desktop Agent с Wanta
+## Готовый к работе ИИ-бот Leina
 
-OpenConnector и [Wanta](https://github.com/oomol-lab/wanta) — два open-source проекта для AI Agents
-в экосистеме OOMOL. OpenConnector подключает Agents к внешним сервисам, таким как Gmail, Slack и
-Notion. Wanta предоставляет полноценное desktop Agent приложение на базе OpenCode и использует
-OpenConnector для работы с подключенными SaaS сервисами.
+Если вам нужен ИИ-бот, которым можно пользоваться сразу, попробуйте [Leina](https://leina.ai/). Leina подключается к более чем 1500 SaaS-приложениям и позволяет настроить собственного ИИ-агента, свободно комбинируя подключения к приложениям, навыки и базу знаний под рабочие процессы вашей команды.
 
-- **Локальный запуск:** используйте свою OpenAI-compatible model без учетной записи Wanta.
-- **Собственная разработка:** сделайте fork Wanta и настройте prompts, tools, interface, models и
-  branding.
-- **Hosted-сервисы:** необязательный [hosted-сервис](https://wanta.ai/) предоставляет managed models,
-  OAuth connections и team workspaces.
-
-Issues и pull requests приветствуются.
+Используйте его в Slack, Microsoft Teams, Discord или Telegram, чтобы искать информацию, составлять еженедельные отчёты, упорядочивать отзывы клиентов и готовить сообщения для дальнейшего общения с потенциальными клиентами через приложения, к которым вы предоставили доступ.
 
 ## Документация
 
@@ -260,10 +251,16 @@ Provider code находится в `src/providers/<service>`. Правила д
 ## Область Действия Лицензии
 
 Если не указано иное, исходный код, scripts, сгенерированное project scaffolding, tests и
-documentation, созданные для этого repository, лицензируются по Apache License, Version 2.0. См.
-[LICENSE.txt](../LICENSE.txt).
+documentation, созданные для этого repository, лицензируются по OpenConnector License,
+модифицированной версии Apache License 2.0. См. [LICENSE.txt](../LICENSE.txt).
 
-Лицензия Apache-2.0 для этого repository не предоставляет прав на third-party products, providers,
+Вы можете использовать, изменять и самостоятельно размещать OpenConnector для любых целей, включая
+коммерческое использование и встраивание в собственные продукты. Единственное дополнительное условие:
+для предоставления OpenConnector третьим лицам в виде hosted connector service нужна коммерческая
+лицензия OOMOL. Releases до v1.9.4 включительно остаются под немодифицированной Apache License 2.0.
+См. [NOTICE.md](../NOTICE.md).
+
+Лицензия для этого repository не предоставляет прав на third-party products, providers,
 apps, APIs, trademarks, service marks, trade names, logos, icons, brand assets, documentation,
 screenshots или другие copyrighted materials, принадлежащие соответствующим правообладателям.
 

@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import {
   compactObject,
@@ -73,7 +73,6 @@ export async function validateOrttoCredential(
       accountId: `ortto:${region}`,
       displayName: "Ortto API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: orttoRegionBaseUrls[region],
       region,
@@ -113,7 +112,7 @@ function readOrttoRegion(value: unknown): OrttoRegion {
 async function orttoPostJson(
   path: string,
   body: Record<string, unknown>,
-  context: Pick<OrttoContext, "apiKey" | "region" | "fetcher" | "signal">,
+  context: OrttoContext,
   phase: OrttoRequestPhase,
 ): Promise<unknown> {
   let response: Response;

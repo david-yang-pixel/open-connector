@@ -1,21 +1,21 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { optionalInteger, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   isAbortLikeError,
   providerInputError,
   providerUserAgent,
   ProviderRequestError,
+  defaultProviderRequestTimeoutMs,
 } from "../provider-runtime.ts";
 
 const service = "gumroad";
 const gumroadApiBaseUrl = "https://api.gumroad.com/v2";
 const gumroadValidationPath = "/user";
-const gumroadRequestTimeoutMs = 30_000;
 
 type GumroadPhase = "validate" | "execute";
 type GumroadMethod = "GET" | "PUT" | "POST";
@@ -175,7 +175,6 @@ export const credentialValidators: CredentialValidators = {
       profile: {
         displayName: label,
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: gumroadApiBaseUrl,
         validationEndpoint: gumroadValidationPath,
@@ -217,7 +216,7 @@ async function requestGumroad(input: {
     headers["content-type"] = "application/x-www-form-urlencoded;charset=UTF-8";
   }
 
-  const timeoutSignal = AbortSignal.timeout(gumroadRequestTimeoutMs);
+  const timeoutSignal = AbortSignal.timeout(defaultProviderRequestTimeoutMs);
   const signal = input.signal ? AbortSignal.any([input.signal, timeoutSignal]) : timeoutSignal;
 
   try {

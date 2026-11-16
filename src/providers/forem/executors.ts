@@ -4,23 +4,23 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { compactObject, optionalRawString, optionalRecord, optionalString } from "../../core/cast.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineProviderExecutors,
-  defineProviderProxy,
   isAbortLikeError,
   ProviderRequestError,
   providerUserAgent,
-  requireApiKeyCredential,
+  defaultProviderRequestTimeoutMs,
 } from "../provider-runtime.ts";
 import { foremArticleMutableKeys } from "./actions.ts";
 
 const service = "forem";
 const foremDefaultBaseUrl = "https://dev.to";
 const foremApiPathPrefix = "/api";
-const foremDefaultRequestTimeoutMs = 30_000;
 
 type ForemPhase = "validate" | "execute";
 type ForemMethod = "GET" | "POST" | "PUT";
@@ -242,7 +242,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: userId === undefined ? "api_key" : `forem:${baseUrl}:${userId}`,
         displayName: email ?? username ?? name ?? "Forem API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         baseUrl,
         apiBaseUrl: buildForemApiBaseUrl(baseUrl),
@@ -265,7 +264,7 @@ async function requestForemJson<T>(context: ForemActionContext, input: ForemRequ
   }
 
   const body = input.body ? JSON.stringify(input.body) : undefined;
-  const timeoutSignal = AbortSignal.timeout(foremDefaultRequestTimeoutMs);
+  const timeoutSignal = AbortSignal.timeout(defaultProviderRequestTimeoutMs);
   const signal = context.signal ? AbortSignal.any([context.signal, timeoutSignal]) : timeoutSignal;
 
   try {

@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalInteger, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
 import { encodePathSegment, queryParams } from "../../core/request.ts";
@@ -100,7 +100,6 @@ export async function validateDaffyCredential(
       accountId,
       displayName: readStringField(user, "name") ?? email ?? slug ?? userId ?? "Daffy API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: daffyApiBaseUrl,
       userId,

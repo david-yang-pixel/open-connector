@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import {
   compactObject,
@@ -140,9 +140,7 @@ export async function validateCastingwordsCredential(
   return {
     profile: {
       displayName: "CastingWords API Key",
-      grantedScopes: [],
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: castingwordsApiBaseUrl,
       validationEndpoint: "/prepay_balance",
@@ -152,7 +150,7 @@ export async function validateCastingwordsCredential(
 
 async function requestCastingwords(input: {
   path: string;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   phase: CastingwordsPhase;
   method?: "GET" | "POST";
   query?: Record<string, string | number>;
@@ -232,7 +230,7 @@ function createCastingwordsError(status: number, payload: unknown, phase: Castin
     return new ProviderRequestError(429, message);
   }
   if (status === 400) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (status === 401 || status === 403) {
     return new ProviderRequestError(phase === "validate" ? 401 : status, message);

@@ -16,6 +16,11 @@ const openrouterHeaderInputFields: Record<string, JsonSchema> = {
   xTitle: s.string("The application display name sent in the X-Title header for OpenRouter console display."),
 };
 const openrouterHeaderOptionalFields = ["httpReferer", "xTitle"];
+const includeLegacyMinimaxSchema = s.boolean({
+  description:
+    "Include legacy MiniMax text models. Otherwise prefer MiniMax-M3.1-Flash then MiniMax-M3; other models and RSS are unchanged.",
+  default: false,
+});
 
 const chatCompletionInputSchema = s.object(
   "Input parameters when creating an OpenRouter chat completion.",
@@ -263,6 +268,7 @@ export const openrouterActions: ActionDefinition[] = [
     inputSchema: s.object(
       "Input parameters when listing available models for OpenRouter.",
       {
+        includeLegacyMinimax: includeLegacyMinimaxSchema,
         category: s.nonEmptyString("Filter the model list by use case classification."),
         supportedParameters: s.nonEmptyString(
           "Filter the model list by supported parameter names. Multiple parameters can be separated by commas.",
@@ -275,7 +281,16 @@ export const openrouterActions: ActionDefinition[] = [
           "Whether to use the chat page link instead of the model details page link when returning RSS.",
         ),
       },
-      { optional: ["category", "supportedParameters", "outputModalities", "useRss", "useRssChatLinks"] },
+      {
+        optional: [
+          "includeLegacyMinimax",
+          "category",
+          "supportedParameters",
+          "outputModalities",
+          "useRss",
+          "useRssChatLinks",
+        ],
+      },
     ),
     outputSchema: s.anyOf("Response when listing available OpenRouter models.", [
       openrouterModelListOutputSchema,
@@ -325,9 +340,9 @@ export const openrouterActions: ActionDefinition[] = [
       "List models filtered by the current user's OpenRouter routing preferences, privacy settings, and guardrails.",
     inputSchema: s.object(
       "Input parameters when listing models visible to the current user.",
-      openrouterHeaderInputFields,
+      { ...openrouterHeaderInputFields, includeLegacyMinimax: includeLegacyMinimaxSchema },
       {
-        optional: openrouterHeaderOptionalFields,
+        optional: [...openrouterHeaderOptionalFields, "includeLegacyMinimax"],
       },
     ),
     outputSchema: openrouterModelListOutputSchema,

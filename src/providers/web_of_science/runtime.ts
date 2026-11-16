@@ -1,6 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalInteger, optionalRecord, optionalString, rawStringOrNull } from "../../core/cast.ts";
 import {
@@ -11,13 +10,14 @@ import {
   readProviderJsonBody,
   requiredInputString,
   setSearchParams,
+  providerInputError,
+  providerResponseError,
 } from "../provider-runtime.ts";
 
 const webOfScienceApiBaseUrl = "https://api.clarivate.com/apis/wos-starter/v1";
 
 type WebOfSciencePhase = "validate" | "execute";
-type WebOfScienceContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
-type WebOfScienceActionHandler = (input: Record<string, unknown>, context: WebOfScienceContext) => Promise<unknown>;
+type WebOfScienceActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 
 export const webOfScienceActionHandlers: ProviderActionHandlers<"web_of_science", WebOfScienceActionHandler> = {
   async search_documents(input, context) {
@@ -106,9 +106,7 @@ export async function validateWebOfScienceCredential(
     profile: {
       accountId: "web_of_science:api_key",
       displayName: "Web of Science API Key",
-      grantedScopes: [],
     },
-    grantedScopes: [],
     metadata: compactObject({
       validationEndpoint: "/journals",
       apiVersion: "v1",
@@ -126,7 +124,7 @@ interface WebOfScienceRequest {
 
 async function requestWebOfScienceJson(
   input: WebOfScienceRequest,
-  context: WebOfScienceContext,
+  context: ApiKeyProviderContext,
 ): Promise<Record<string, unknown>> {
   const timeout = createProviderTimeout(context.signal);
   try {
@@ -184,10 +182,10 @@ function createWebOfScienceError(status: number, payload: unknown, phase: WebOfS
     return new ProviderRequestError(429, message);
   }
   if (phase === "validate" && (status === 401 || status === 403)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (phase === "validate" && status >= 400 && status < 500) {
-    return new ProviderRequestError(502, message);
+    return providerResponseError(message);
   }
   if (status === 401 || status === 403) {
     return new ProviderRequestError(status, message);
@@ -293,7 +291,7 @@ function readStringArray(value: unknown): string[] {
 function requireResponseRecord(value: unknown, message: string): Record<string, unknown> {
   const record = optionalRecord(value);
   if (!record) {
-    throw new ProviderRequestError(502, message);
+    throw providerResponseError(message);
   }
   return record;
 }

@@ -128,7 +128,7 @@ export const smsAlertActions: ActionDefinition[] = [
         mobileNumber: nonEmptyString("The destination mobile number for the OTP."),
         template: s.string({
           minLength: 1,
-          pattern: "\\\\[otp(?:\\\\]|[ \\\\t\\\\n][^\\\\[]*\\\\])",
+          pattern: "\\[otp(?:\\]|[ \\t\\n][^\\[]*\\])",
           description:
             'The OTP template text, which must include the "[otp]" placeholder and may include optional length/retry/validity attributes.',
         }),

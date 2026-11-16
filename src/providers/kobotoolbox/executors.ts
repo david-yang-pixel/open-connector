@@ -6,13 +6,10 @@ import type {
 } from "../../core/types.ts";
 
 import { isPrivateNetworkAccessAllowed } from "../../core/request.ts";
-import {
-  createProviderFetch,
-  defineProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  requireApiKeyCredential,
-} from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { createProviderFetch, ProviderRequestError } from "../provider-runtime.ts";
 import { koboToolboxActionHandlers, normalizeKoboToolboxBaseUrl, validateKoboToolboxCredential } from "./runtime.ts";
 
 const service = "kobotoolbox";
@@ -63,7 +60,6 @@ export const credentialValidators: CredentialValidators = {
     );
     return {
       profile: { accountId: result.providerAccountId ?? "kobotoolbox", displayName: result.accountLabel },
-      grantedScopes: [],
       metadata: result.providerMetadata,
     };
   },

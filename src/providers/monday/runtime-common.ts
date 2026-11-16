@@ -1,6 +1,7 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
 
 import { compactObject, optionalBoolean, optionalRecord as asOptionalObject, optionalString } from "../../core/cast.ts";
+import { defaultProviderRequestTimeoutMs } from "../provider-runtime.ts";
 import {
   createProviderTimeout,
   isAbortLikeError,
@@ -9,12 +10,10 @@ import {
   ProviderRequestError,
   providerUserAgent,
 } from "../provider-runtime.ts";
-import { getMondayProviderScopeSurface } from "./scopes.ts";
 
 export const mondayApiUrl: string = "https://api.monday.com/v2";
 export const mondayApiVersion: string = "2026-04";
 export const mondayUserAgent: string = providerUserAgent;
-const mondayDefaultRequestTimeoutMs: number = 30_000;
 
 export type MondayRequestPhase = "validate" | "execute";
 type MondayGraphqlError = {
@@ -66,10 +65,6 @@ interface MondayDocBlocksFromMarkdownResult {
   blockIds: string[];
 }
 
-interface MondayCredentialValidationOptions {
-  grantedScopes?: string[];
-}
-
 export type MondayActionHandler = (input: MondayProviderActionInput, fetcher: typeof fetch) => Promise<unknown>;
 
 export interface MondayProviderActionInput {
@@ -81,7 +76,6 @@ export interface MondayProviderActionInput {
 export async function validateMondayCredential(
   input: Record<string, string>,
   fetcher: typeof fetch = providerFetch,
-  options: MondayCredentialValidationOptions = {},
 ): Promise<CredentialValidationResult> {
   const apiKey = optionalString(input.apiKey);
   if (!apiKey) {
@@ -97,7 +91,6 @@ export async function validateMondayCredential(
       accountId: profile.providerAccountId,
       displayName: profile.accountLabel,
     },
-    grantedScopes: options.grantedScopes ?? getMondayProviderScopeSurface(),
     metadata: profile.providerMetadata,
   };
 }
@@ -144,7 +137,7 @@ export async function mondayGraphqlRequest<TData>(
   fetcher: typeof fetch,
   phase: MondayRequestPhase,
 ): Promise<TData> {
-  const timeout = createProviderTimeout(undefined, mondayDefaultRequestTimeoutMs);
+  const timeout = createProviderTimeout(undefined);
   let response: Response;
   try {
     response = await fetcher(mondayApiUrl, {
@@ -169,7 +162,7 @@ export async function mondayGraphqlRequest<TData>(
     if (timeout.didTimeout() || isAbortLikeError(error)) {
       throw new ProviderRequestError(
         504,
-        `monday request timed out after ${Math.max(1, Math.ceil(mondayDefaultRequestTimeoutMs / 1000))} seconds`,
+        `monday request timed out after ${Math.max(1, Math.ceil(defaultProviderRequestTimeoutMs / 1000))} seconds`,
       );
     }
     throw new ProviderRequestError(

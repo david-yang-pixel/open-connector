@@ -1,5 +1,6 @@
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { compactObject, optionalRecord, optionalString, requiredRecord, requiredString } from "../../core/cast.ts";
 import { queryParams } from "../../core/request.ts";
@@ -134,7 +135,6 @@ export async function validateTypefullyCredential(
   profile: {
     accountId: string;
     displayName: string;
-    grantedScopes: string[];
   };
   metadata: Record<string, unknown>;
 }> {
@@ -155,7 +155,6 @@ export async function validateTypefullyCredential(
     profile: {
       accountId: userId ? `typefully:user:${userId}` : "typefully",
       displayName: apiKeyLabel ?? name ?? email ?? "Typefully API Key",
-      grantedScopes: [],
     },
     metadata: compactObject({
       validationEndpoint: typefullyValidationPath,

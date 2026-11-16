@@ -1,5 +1,5 @@
 import type { CredentialValidationResult, TransitFileWriter } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
 import { createHash, createHmac } from "node:crypto";
@@ -13,7 +13,12 @@ import {
   optionalString,
 } from "../../core/cast.ts";
 import { assertPublicHttpUrl, readBoundedResponseBytes } from "../../core/request.ts";
-import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
+import {
+  ProviderRequestError,
+  providerUserAgent,
+  providerInputError,
+  providerResponseError,
+} from "../provider-runtime.ts";
 
 export const imaApiBaseUrl = "https://ima.qq.com";
 
@@ -234,7 +239,6 @@ export async function validateImaCredential(
       accountId: clientId,
       displayName: clientId,
     },
-    grantedScopes: [],
     metadata: compactObject({
       clientId,
       validationEndpoint: "/openapi/note/v1/list_notebook",
@@ -595,7 +599,7 @@ async function uploadImaFileToKnowledgeBase(
   const contentType = optionalString(input.contentType);
   const sourceUrl = assertPublicHttpUrl(requireImaField(input.fileUrl, "fileUrl"), {
     fieldName: "fileUrl",
-    createError: (message) => new ProviderRequestError(400, message),
+    createError: providerInputError,
   });
   const duplicatePolicy = optionalString(input.duplicatePolicy) ?? "fail";
 
@@ -855,7 +859,7 @@ async function getImaKnowledgeItemOriginal(
   const bytes = await readBoundedResponseBytes(response, {
     maxBytes: maxImaDownloadBytes,
     fieldName: "IMA media URL",
-    createError: (message) => new ProviderRequestError(400, message),
+    createError: providerInputError,
   });
   const mimeType = response.headers.get("content-type") ?? "application/octet-stream";
   const name = optionalString(input.fileName) ?? inferFileNameFromUrl(mediaInfo.url, mimeType);
@@ -902,7 +906,7 @@ async function downloadUrlBytes(
     bytes: await readBoundedResponseBytes(response, {
       maxBytes: maxImaDownloadBytes,
       fieldName: "IMA upload source",
-      createError: (message) => new ProviderRequestError(400, message),
+      createError: providerInputError,
     }),
     contentType: response.headers.get("content-type") ?? undefined,
   };
@@ -960,9 +964,9 @@ function mapImaError(code: number | undefined, message: string, phase: "validate
     return new ProviderRequestError(phase === "validate" ? 400 : 401, message);
   }
   if (code != null && imaInvalidInputCodes.has(code)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
-  return new ProviderRequestError(502, message);
+  return providerResponseError(message);
 }
 
 function parseImaResponse(value: string): unknown {
@@ -1008,7 +1012,7 @@ function requireImaText(value: unknown, fieldName: string): string {
 }
 
 function readInteger(value: unknown): number | undefined {
-  return optionalIntegerLike(value, "integer", (message) => new ProviderRequestError(502, message));
+  return optionalIntegerLike(value, "integer", providerResponseError);
 }
 
 function mapNoteSortType(value: unknown): number {

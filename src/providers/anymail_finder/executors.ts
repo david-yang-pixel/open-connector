@@ -1,14 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ApiKeyProviderContext, ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ApiKeyProviderContext, ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerInputError,
-  providerUserAgent,
-  ProviderRequestError,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerInputError, providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 
 const service = "anymail_finder";
 const apiBaseUrl = "https://api.anymailfinder.com";
@@ -80,7 +76,6 @@ export const credentialValidators: CredentialValidators = {
     const email = readString(payload, "email");
     return {
       profile: { accountId: email, displayName: email },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl,
         validationEndpoint: "/v5.1/account",
@@ -117,7 +112,7 @@ async function post(
 
 async function request(
   path: string,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   init: RequestInit = {},
 ): Promise<Record<string, unknown>> {
   let response: Response;

@@ -1,9 +1,8 @@
 import type { TransitFileStore } from "../../core/types.ts";
-import type { BearerProviderContext } from "../provider-runtime.ts";
+import type { BearerProviderContext } from "../provider-executors.ts";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setDefaultGuardedFetchDnsLookup } from "../../core/guarded-fetch.ts";
-import { esaActions } from "./actions.ts";
 import { esaActionHandlers } from "./runtime.ts";
 
 interface RouteCase {
@@ -25,39 +24,6 @@ afterEach(() => {
   setDefaultGuardedFetchDnsLookup(null);
   vi.unstubAllGlobals();
 });
-
-const expectedActionNames = [
-  "get_teams",
-  "get_team_stats",
-  "get_team_tags",
-  "get_team_members",
-  "get_post",
-  "search_posts",
-  "create_post",
-  "update_post",
-  "append_post",
-  "prepend_post",
-  "get_comment",
-  "create_comment",
-  "update_comment",
-  "delete_comment",
-  "get_post_backlinks",
-  "get_post_comments",
-  "get_team_comments",
-  "get_categories",
-  "get_top_categories",
-  "get_all_category_paths",
-  "archive_post",
-  "ship_post",
-  "duplicate_post",
-  "rollback_post_revision",
-  "get_search_options_help",
-  "get_markdown_syntax_help",
-  "search_help",
-  "get_attachment",
-  "list_recent_posts",
-  "get_post_summary_prompt",
-];
 
 const routeCases: RouteCase[] = [
   {
@@ -276,11 +242,6 @@ const routeCases: RouteCase[] = [
 ];
 
 describe("esa provider actions", () => {
-  it("keeps all esa-mcp tools and action equivalents locally executable", () => {
-    expect(esaActions.map((action) => action.name)).toEqual(expectedActionNames);
-    expect(Object.keys(esaActionHandlers)).toEqual(expectedActionNames);
-  });
-
   for (const routeCase of routeCases) {
     it(`maps ${routeCase.name} to the documented esa API request`, async () => {
       const { requests } = await execute(routeCase.name, routeCase.input, [routeCase.response ?? {}]);

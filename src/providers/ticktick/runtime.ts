@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { BearerProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { BearerProviderContext } from "../provider-executors.ts";
 
 import { createHash } from "node:crypto";
 import {
@@ -14,7 +14,6 @@ import {
 import { providerInputError, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 export const ticktickApiBaseUrl = "https://api.ticktick.com";
-const ticktickProviderScopes = ["ticktick.read", "ticktick.write"] as const;
 
 type TicktickPayload = Record<string, unknown>;
 type TicktickRequestPhase = "validate" | "execute";
@@ -306,7 +305,6 @@ function validationResult(
       accountId: `ticktick:${hashAccessToken(accessToken)}`,
       displayName,
     },
-    grantedScopes: [...ticktickProviderScopes],
     metadata: compactObject({
       apiBaseUrl: ticktickApiBaseUrl,
       validationEndpoint: "/open/v1/project",

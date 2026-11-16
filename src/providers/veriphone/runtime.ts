@@ -1,6 +1,7 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { compactObject, optionalBoolean, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
 import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
@@ -63,7 +64,6 @@ export async function validateVeriphoneCredential(
       accountId: email ?? "veriphone-api-key",
       displayName: email ?? "Veriphone API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       validationEndpoint: "/v2/credits",
       apiBaseUrl: veriphoneApiBaseUrl,

@@ -1,6 +1,8 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
 
-import { defineBearerProviderExecutors, defineProviderProxy, requireBearerCredential } from "../provider-runtime.ts";
+import { requireBearerCredential } from "../provider-credentials.ts";
+import { defineBearerProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import { tiktokBusinessActionHandlers, validateTikTokBusinessCredential } from "./runtime.ts";
 
 const service = "tiktok_business";

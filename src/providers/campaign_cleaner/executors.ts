@@ -1,16 +1,13 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderTransitFile } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderTransitFile } from "../provider-files.ts";
 
 import { compactObject, optionalBoolean, optionalRecord, optionalString } from "../../core/cast.ts";
-import { readBoundedResponseBytes } from "../../core/request.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-  requiredInputString,
-} from "../provider-runtime.ts";
+import { storeResponseInTransit } from "../../core/request.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent, requiredInputString } from "../provider-runtime.ts";
 
 const service = "campaign_cleaner";
 const campaignCleanerApiBaseUrl = "https://api.campaigncleaner.com";
@@ -59,7 +56,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: service,
         displayName: "Campaign Cleaner API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: campaignCleanerApiBaseUrl,
         validationEndpoint: campaignCleanerCreditsPath,
@@ -171,12 +167,13 @@ async function getCampaignPdfAnalysis(input: Record<string, unknown>, context: A
     sanitizeFilename(
       readContentDispositionFilename(response.headers.get("content-disposition")) ?? `campaign-cleaner-${id}.pdf`,
     ) ?? `campaign-cleaner-${id}.pdf`;
-  const bytes = await readBoundedResponseBytes(response, {
-    maxBytes: context.transitFiles.maxBytes,
+  const upload = await storeResponseInTransit(response, context.transitFiles, {
+    name,
+    mimeType,
     fieldName: name,
     createError: (message) => new ProviderRequestError(413, message),
+    signal: context.signal,
   });
-  const upload = await context.transitFiles.create(new File([Uint8Array.from(bytes)], name, { type: mimeType }));
   const content: ProviderTransitFile = {
     fileId: upload.fileId,
     downloadUrl: upload.downloadUrl,

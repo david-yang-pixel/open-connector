@@ -1,7 +1,13 @@
 import type { FeishuJsonRequest } from "./client.ts";
 
-import { optionalBoolean, optionalNumber, optionalRecord, optionalString } from "../../../core/cast.ts";
-import { providerInputError, ProviderRequestError } from "../../provider-runtime.ts";
+import { objectArray, optionalBoolean, optionalNumber, optionalRecord, optionalString } from "../../../core/cast.ts";
+import {
+  providerInputError,
+  ProviderRequestError,
+  providerResponseError,
+  requiredResponseRecord,
+} from "../../provider-runtime.ts";
+import { readFeishuResponsePage } from "./response.ts";
 
 interface FeishuDriveActionHandler {
   (input: Record<string, unknown>): Promise<unknown>;
@@ -54,6 +60,15 @@ export function createFeishuDriveActionHandlers(request: FeishuJsonRequest): Rec
     list_drive_permissions(input) {
       return listDrivePermissions(input, request);
     },
+    async get_drive_permission_settings(input) {
+      const data = await request({
+        path: `/drive/v2/permissions/${encodeURIComponent(requireString(input.token, "token"))}/public`,
+        query: { type: requireString(input.resourceType, "resourceType") },
+      });
+      return {
+        permissionPublic: requiredResponseRecord(data.permission_public, "Feishu permission_public"),
+      };
+    },
     add_drive_permission(input) {
       return addDrivePermission(input, request);
     },
@@ -72,7 +87,7 @@ async function inspectDriveItem(input: Record<string, unknown>, request: FeishuJ
   let wikiNode: Record<string, unknown> | undefined = undefined;
   if (type === "wiki") {
     const wikiData = await request({
-      path: "/wiki/v2/spaces/get_node",
+      path: "/wiki/v2/spaces/node_by_token",
       query: { token },
     });
     wikiNode = optionalRecord(wikiData.node);
@@ -116,11 +131,12 @@ async function searchDriveItems(input: Record<string, unknown>, request: FeishuJ
       page_token: optionalString(input.pageToken),
     },
   });
+  const page = readFeishuResponsePage(data, "res_units");
   return {
-    items: Array.isArray(data.res_units) ? data.res_units : [],
+    items: page.items,
     total: optionalNumber(data.total),
-    hasMore: data.has_more === true,
-    pageToken: optionalString(data.page_token),
+    hasMore: page.hasMore,
+    pageToken: page.pageToken,
     notice: optionalString(data.notice),
   };
 }
@@ -136,7 +152,7 @@ async function listDriveFiles(input: Record<string, unknown>, request: FeishuJso
       direction: optionalString(input.direction),
     },
   });
-  return normalizePage(data, "files");
+  return readFeishuResponsePage(data, "files", ["page_token", "next_page_token"]);
 }
 
 async function createDriveFolder(input: Record<string, unknown>, request: FeishuJsonRequest) {
@@ -242,7 +258,7 @@ async function listDriveComments(input: Record<string, unknown>, request: Feishu
       page_token: optionalString(input.pageToken),
     },
   });
-  return normalizePage(data, "items");
+  return readFeishuResponsePage(data, "items", ["page_token", "next_page_token"]);
 }
 
 async function createDriveComment(input: Record<string, unknown>, request: FeishuJsonRequest) {
@@ -318,9 +334,11 @@ async function listDrivePermissions(input: Record<string, unknown>, request: Fei
       perm_type: optionalString(input.permType),
     },
   });
-  return {
-    members: Array.isArray(data.members) ? data.members : [],
-  };
+  // The wire key is items; accept members only when items is absent. An
+  // invalid authoritative list must not become a complete empty grant.
+  const field = Object.hasOwn(data, "items") ? "items" : "members";
+  const rows = objectArray(data[field], `Feishu response ${field}`, providerResponseError);
+  return { members: rows };
 }
 
 async function addDrivePermission(input: Record<string, unknown>, request: FeishuJsonRequest) {
@@ -345,15 +363,18 @@ async function addDrivePermission(input: Record<string, unknown>, request: Feish
 
 async function updateDrivePermission(input: Record<string, unknown>, request: FeishuJsonRequest) {
   const memberId = requireString(input.memberId, "memberId");
+  const memberType = requireString(input.memberType, "memberType");
   const data = await request({
     method: "PUT",
     path: `${permissionPath(input)}/${encodeURIComponent(memberId)}`,
     query: {
       type: requireString(input.resourceType, "resourceType"),
-      member_type: requireString(input.memberType, "memberType"),
       need_notification: optionalBoolean(input.needNotification),
     },
     body: {
+      member_type: memberType,
+      type: memberKind(memberType, optionalString(input.memberKind)),
+      perm_type: optionalString(input.permType),
       perm: requireString(input.permission, "permission"),
     },
   });
@@ -362,24 +383,20 @@ async function updateDrivePermission(input: Record<string, unknown>, request: Fe
 
 async function removeDrivePermission(input: Record<string, unknown>, request: FeishuJsonRequest) {
   const memberId = requireString(input.memberId, "memberId");
+  const memberType = requireString(input.memberType, "memberType");
   await request({
     method: "DELETE",
     path: `${permissionPath(input)}/${encodeURIComponent(memberId)}`,
     query: {
       type: requireString(input.resourceType, "resourceType"),
-      member_type: requireString(input.memberType, "memberType"),
+      member_type: memberType,
+    },
+    body: {
+      type: memberKind(memberType, optionalString(input.memberKind)),
       perm_type: optionalString(input.permType),
     },
   });
   return { deleted: true };
-}
-
-function normalizePage(data: Record<string, unknown>, itemKey: string) {
-  return {
-    items: Array.isArray(data[itemKey]) ? data[itemKey] : [],
-    hasMore: data.has_more === true,
-    pageToken: optionalString(data.page_token) ?? optionalString(data.next_page_token),
-  };
 }
 
 function commentPath(input: Record<string, unknown>) {

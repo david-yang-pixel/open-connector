@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
 import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
@@ -190,7 +190,6 @@ export async function validateUmamiCredential(
       accountId: userId ?? username ?? "umami:api-key",
       displayName: username ?? userId ?? "Umami API Key",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: umamiApiBaseUrl,
       validationEndpoint: umamiValidationPath,

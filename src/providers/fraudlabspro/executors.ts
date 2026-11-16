@@ -1,19 +1,17 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderRequestContext } from "../provider-runtime.ts";
 
 import { optionalNumber, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
 import {
-  createProviderFetch,
   createProviderProxyUrl,
-  defineApiKeyProviderExecutors,
   normalizeProviderProxyHeaders,
-  ProviderRequestError,
-  providerUserAgent,
   readProviderProxyResponse,
-  requireApiKeyCredential,
   toProviderProxyError,
-} from "../provider-runtime.ts";
+} from "../provider-proxy.ts";
+import { createProviderFetch, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "fraudlabspro";
 const fraudlabsproApiBaseUrl = "https://api.fraudlabspro.com/v2";
@@ -21,11 +19,7 @@ const fraudlabsproFetch = createProviderFetch({ skipDnsValidation: true });
 
 type FraudlabsproRequestMethod = "GET" | "POST";
 type FraudlabsproRequestValue = string | number | undefined;
-type FraudlabsproActionContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
-type FraudlabsproActionHandler = (
-  input: Record<string, unknown>,
-  context: FraudlabsproActionContext,
-) => Promise<unknown>;
+type FraudlabsproActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 
 export const fraudlabsproActionHandlers: ProviderActionHandlers<"fraudlabspro", FraudlabsproActionHandler> = {
   async screen_order(input, context) {
@@ -172,7 +166,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "fraudlabspro-api-key",
         displayName: "FraudLabs Pro API Key",
       },
-      grantedScopes: [],
       metadata: {
         validationEndpoint: "/order/result",
         apiBaseUrl: fraudlabsproApiBaseUrl,
@@ -191,7 +184,7 @@ interface FraudlabsproRequestInput {
 async function fraudlabsproRequest(
   apiKey: string,
   input: FraudlabsproRequestInput,
-  context: Pick<FraudlabsproActionContext, "fetcher" | "signal">,
+  context: ProviderRequestContext,
   phase: "execute" | "validate" = "execute",
 ): Promise<Record<string, unknown>> {
   const response = await fraudlabsproRawRequest(apiKey, input, context);
@@ -216,7 +209,7 @@ async function fraudlabsproRequest(
 async function fraudlabsproRawRequest(
   apiKey: string,
   input: FraudlabsproRequestInput,
-  context: Pick<FraudlabsproActionContext, "fetcher" | "signal">,
+  context: ProviderRequestContext,
 ): Promise<Response> {
   const url = new URL(resolveFraudlabsproPath(input.path), `${fraudlabsproApiBaseUrl}/`);
   const commonParams = compactRequestValues({

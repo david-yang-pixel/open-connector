@@ -1,6 +1,7 @@
 import type { QueryValue } from "../../core/request.ts";
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { OAuthProviderContext, ProviderFetch, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { OAuthProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 import type { OuraDocumentCollection } from "./collections.ts";
 
 import {
@@ -258,7 +259,7 @@ function mapOuraError(input: OuraErrorInput): ProviderRequestError {
     return new ProviderRequestError(input.phase === "validate" ? 400 : 401, message);
   }
   if (input.status === 400 || input.status === 422 || (input.status === 404 && input.notFoundAsInvalidInput)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
 
   return new ProviderRequestError(input.status, message);

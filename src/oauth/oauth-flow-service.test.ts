@@ -1,4 +1,4 @@
-import type { IConnectionStore, StoredConnection } from "../connection-service.ts";
+import type { IConnectionStore, StoredConnection } from "../connection-store.ts";
 import type {
   ActionExecutor,
   CredentialValidators,
@@ -12,13 +12,20 @@ import type { IOAuthClientConfigStore, OAuthClientConfig } from "./oauth-client-
 import type { IOAuthStateStore, OAuthAuthorizationState } from "./oauth-flow-service.ts";
 import type { ProviderOAuthRuntime } from "./oauth-token.ts";
 
+import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createCatalogStore } from "../catalog-store.ts";
 import { ConnectionService } from "../connection-service.ts";
+import { provider as githubProvider } from "../providers/github/definition.ts";
+import { provider as googleDriveProvider } from "../providers/googledrive/definition.ts";
+import { provider as posthogProvider } from "../providers/posthog/definition.ts";
 import { provider as slackProvider } from "../providers/slack/definition.ts";
 import { provider as slackbotProvider } from "../providers/slackbot/definition.ts";
+import { executors as slackbotExecutors } from "../providers/slackbot/executors.ts";
+import { provider as tencentDocsProvider } from "../providers/tencent_docs/definition.ts";
+import { provider as zoomProvider } from "../providers/zoom/definition.ts";
 import { AesGcmSecretCodec } from "../server/secrets/secret-codec.ts";
-import { SqliteRuntimeDatabase } from "../server/storage/sqlite-runtime-store.ts";
+import { SqliteRuntimeDatabase } from "../server/storage/sqlite/runtime-store.ts";
 import { OAuthClientConfigService } from "./oauth-client-config-service.ts";
 import { OAuthFlowService } from "./oauth-flow-service.ts";
 
@@ -63,6 +70,7 @@ const selectableOAuthProvider: ProviderDefinition = {
       tokenUrl: "https://example.com/oauth/token",
       scopes: ["core", "base", "middle", "feature"],
       tokenEndpointAuthMethod: "client_secret_post",
+      requiredScopes: ["core"],
       authorizationOptions: [
         authorizationOption("core", true),
         authorizationOption("base"),
@@ -73,15 +81,30 @@ const selectableOAuthProvider: ProviderDefinition = {
   ],
 };
 
-function authorizationOption(id: string, required = false, requires?: string[]): OAuthAuthorizationOption {
+// The "feature" option names an optional scope: off the default consent, requested by selection or
+// by a client config that names it.
+const optionalScopeOAuthProvider: ProviderDefinition = {
+  ...oauthProvider,
+  service: "optional",
+  auth: [
+    {
+      type: "oauth2",
+      authorizationUrl: "https://example.com/oauth/authorize",
+      tokenUrl: "https://example.com/oauth/token",
+      scopes: ["core"],
+      requiredScopes: ["core"],
+      tokenEndpointAuthMethod: "client_secret_post",
+      authorizationOptions: [authorizationOption("core", true), authorizationOption("feature")],
+    },
+  ],
+};
+
+function authorizationOption(id: string, _required = false, _requires?: string[]): OAuthAuthorizationOption {
   return {
     id,
     label: id,
     description: `${id} access.`,
-    required,
-    defaultSelected: required,
     risk: "standard",
-    requires,
   };
 }
 
@@ -264,6 +287,180 @@ describe("OAuthFlowService", () => {
     });
   });
 
+  it.each([undefined, "https://other.example.com"])(
+    "fails a refused request with an invalid issuer (%s)",
+    async (issuer) => {
+      const provider: ProviderDefinition = {
+        ...oauthProvider,
+        auth: [
+          {
+            type: "oauth2",
+            authorizationUrl: "https://example.com/authorize",
+            tokenUrl: "https://example.com/token",
+            issuer: "https://example.com",
+            requireIssuer: true,
+            tokenEndpointAuthMethod: "none",
+            scopes: [],
+          },
+        ],
+      };
+      const { flow, clientConfigs } = createServices([provider]);
+      await clientConfigs.upsertConfig({ service: "example", clientId: "client" });
+      const started = await flow.startConnectionRequest({ service: "example", owner: "owner" });
+      const state = new URL(started.authorizationUrl).searchParams.get("state")!;
+      await expect(flow.rejectAuthorization(state, true, issuer)).rejects.toMatchObject({
+        code: "invalid_oauth_issuer",
+      });
+      expect(await flow.getConnectionRequest(started.connectionRequestId, "owner")).toMatchObject({
+        status: "failed",
+        errorCode: "invalid_oauth_issuer",
+      });
+      expect(await flow.rejectAuthorization(state, true, "https://example.com")).toBeUndefined();
+    },
+  );
+
+  it.each([
+    { authorizationOptionIds: [] },
+    { authorizationOptionIds: ["future:scope"] },
+    { authorizationOptionIds: ["feature"] },
+  ])("连接入口保留未列出的 scope 和空数组：%j", async ({ authorizationOptionIds }) => {
+    const { flow, clientConfigs } = createServices([optionalScopeOAuthProvider]);
+    await clientConfigs.upsertConfig({ service: "optional", clientId: "client", clientSecret: "secret" });
+    const started = await flow.startConnectionRequest({
+      service: "optional",
+      owner: "owner",
+      authorizationOptionIds,
+    });
+    const actual = new URL(started.authorizationUrl).searchParams.get("scope")?.split(" ");
+    expect(actual).toEqual([...authorizationOptionIds, "core"]);
+  });
+
+  it.each(["authorization", "connection request"])("preserves Tencent Docs scope=all for %s", async (entry) => {
+    const services = createServices([{ ...tencentDocsProvider, actions: [] }]);
+    await services.clientConfigs.upsertConfig({
+      service: "tencent_docs",
+      clientId: "client-id",
+      clientSecret: "client-secret",
+    });
+
+    const started =
+      entry === "authorization"
+        ? await services.flow.startAuthorization({ service: "tencent_docs" })
+        : await services.flow.startConnectionRequest({ service: "tencent_docs", owner: "test-owner" });
+    const url = new URL(started.authorizationUrl);
+
+    expect(url.searchParams.getAll("scope")).toEqual(["all"]);
+    expect(url.searchParams.get("client_id")).toBe("client-id");
+    expect(url.searchParams.get("redirect_uri")).toBe("http://localhost:3000/oauth/callback");
+    expect(url.searchParams.get("response_type")).toBe("code");
+    expect(url.searchParams.get("state")).toBeTruthy();
+  });
+
+  // A provider registered with a custom app scheme carries its own redirect:
+  // the authorize URL and the code exchange send the SAME value, and a provider
+  // configured without one keeps the runtime callback on both legs.
+  it.each(["authorization", "connection request"])(
+    "carries a configured redirect URI override on the %s authorize URL and its code exchange",
+    async (entry) => {
+      const services = createServices([oauthProvider, pkceOAuthProvider]);
+      await services.clientConfigs.upsertConfig({
+        service: "example",
+        clientId: "client-id",
+        clientSecret: "client-secret",
+        extra: { tenant: "default" },
+        redirectUri: "app://oauth/callback",
+      });
+      await services.clientConfigs.upsertConfig({
+        service: "pkce",
+        clientId: "client-id",
+        clientSecret: "client-secret",
+      });
+      const fetcher = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) =>
+        Response.json({ access_token: "access-token", token_type: "Bearer" }),
+      );
+      vi.stubGlobal("fetch", fetcher);
+
+      for (const [service, redirectUri] of [
+        ["example", "app://oauth/callback"],
+        ["pkce", "http://localhost:3000/oauth/callback"],
+      ] as const) {
+        const started =
+          entry === "authorization"
+            ? await services.flow.startAuthorization({ service })
+            : await services.flow.startConnectionRequest({ service, owner: "test-owner" });
+        const authorizationUrl = new URL(started.authorizationUrl);
+        expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(redirectUri);
+        const state = "state" in started ? started.state : started.stateHandle;
+        await services.flow.completeAuthorization({ state, code: `${service}-code` });
+        const tokenBody = fetcher.mock.calls.at(-1)?.[1]?.body;
+        expect(tokenBody).toBeInstanceOf(URLSearchParams);
+        expect((tokenBody as URLSearchParams).get("redirect_uri")).toBe(redirectUri);
+        expect((tokenBody as URLSearchParams).get("code")).toBe(`${service}-code`);
+      }
+    },
+  );
+
+  it.each(["authorization", "connection request"])(
+    "repeats the %s redirect URI on the code exchange after the client config changes",
+    async (entry) => {
+      const services = createServices([oauthProvider]);
+      const configure = (redirectUri?: string) =>
+        services.clientConfigs.upsertConfig({
+          service: "example",
+          clientId: "client-id",
+          clientSecret: "client-secret",
+          extra: { tenant: "default" },
+          redirectUri,
+        });
+      await configure("app://oauth/callback");
+      const fetcher = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) =>
+        Response.json({ access_token: "access-token", token_type: "Bearer" }),
+      );
+      vi.stubGlobal("fetch", fetcher);
+
+      const started =
+        entry === "authorization"
+          ? await services.flow.startAuthorization({ service: "example" })
+          : await services.flow.startConnectionRequest({ service: "example", owner: "test-owner" });
+      expect(new URL(started.authorizationUrl).searchParams.get("redirect_uri")).toBe("app://oauth/callback");
+      // The administrator removes the override while the browser is at the provider.
+      await configure(undefined);
+      await services.flow.completeAuthorization({
+        state: "state" in started ? started.state : started.stateHandle,
+        code: "code",
+      });
+
+      const tokenBody = fetcher.mock.calls.at(-1)?.[1]?.body as URLSearchParams;
+      expect(tokenBody.get("redirect_uri")).toBe("app://oauth/callback");
+    },
+  );
+
+  it("falls back to the client config redirect for a pending state that predates the recorded redirect", async () => {
+    const services = createServices([oauthProvider]);
+    await services.clientConfigs.upsertConfig({
+      service: "example",
+      clientId: "client-id",
+      clientSecret: "client-secret",
+      extra: { tenant: "default" },
+      redirectUri: "app://oauth/callback",
+    });
+    await services.states.set({
+      service: "example",
+      retirementGeneration: await services.connections.getRetirementGeneration("example"),
+      state: "legacy-state",
+      createdAt: new Date().toISOString(),
+    });
+    const fetcher = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) =>
+      Response.json({ access_token: "access-token", token_type: "Bearer" }),
+    );
+    vi.stubGlobal("fetch", fetcher);
+
+    await services.flow.completeAuthorization({ state: "legacy-state", code: "code" });
+
+    const tokenBody = fetcher.mock.calls.at(-1)?.[1]?.body as URLSearchParams;
+    expect(tokenBody.get("redirect_uri")).toBe("app://oauth/callback");
+  });
+
   it("uses the requested scope subset from the OAuth client config", async () => {
     const services = createServices([oauthProvider]);
     await services.clientConfigs.upsertConfig({
@@ -319,7 +516,12 @@ describe("OAuthFlowService", () => {
     });
   });
 
-  it("resolves transitive option requirements and preserves the selected scopes", async () => {
+  it.each([
+    { scope: undefined, granted: [] },
+    { scope: "", granted: [] },
+    { scope: "core", granted: ["core"] },
+    { scope: "core feature future", granted: ["core", "feature", "future"] },
+  ])("adds required request scopes without checking returned scope $scope", async ({ scope, granted }) => {
     const services = createServices([selectableOAuthProvider]);
     await services.clientConfigs.upsertConfig({
       service: "selectable",
@@ -328,19 +530,46 @@ describe("OAuthFlowService", () => {
     });
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => Response.json({ access_token: "access-token", token_type: "Bearer" })),
+      vi.fn(async () => Response.json({ access_token: "access-token", token_type: "Bearer", scope })),
     );
 
     const started = await services.flow.startAuthorization({
       service: "selectable",
       authorizationOptionIds: ["feature"],
     });
-    expect(new URL(started.authorizationUrl).searchParams.get("scope")).toBe("core base middle feature");
+    expect(new URL(started.authorizationUrl).searchParams.get("scope")).toBe("feature core");
 
     await services.flow.completeAuthorization({ state: started.state, code: "code" });
     await expect(services.connections.getCredential("selectable")).resolves.toMatchObject({
-      profile: { grantedScopes: ["core", "base", "middle", "feature"] },
+      profile: { grantedScopes: granted },
     });
+  });
+
+  it("requests an optional scope only when an authorization option or the client config names it", async () => {
+    const services = createServices([optionalScopeOAuthProvider]);
+    await services.clientConfigs.upsertConfig({
+      service: "optional",
+      clientId: "client-id",
+      clientSecret: "client-secret",
+    });
+
+    const unnamed = await services.flow.startAuthorization({ service: "optional" });
+    expect(new URL(unnamed.authorizationUrl).searchParams.get("scope")).toBe("core");
+
+    const selected = await services.flow.startAuthorization({
+      service: "optional",
+      authorizationOptionIds: ["feature"],
+    });
+    expect(new URL(selected.authorizationUrl).searchParams.get("scope")).toBe("feature core");
+
+    await services.clientConfigs.upsertConfig({
+      service: "optional",
+      clientId: "client-id",
+      clientSecret: "client-secret",
+      requestedScopes: ["core", "feature"],
+    });
+    const configured = await services.flow.startAuthorization({ service: "optional" });
+    expect(new URL(configured.authorizationUrl).searchParams.get("scope")).toBe("core feature");
   });
 
   it("requires OAuth client config before authorization", async () => {
@@ -556,6 +785,68 @@ describe("OAuthFlowService", () => {
     await expect(services.connections.getCredential("example")).resolves.toBeUndefined();
   });
 
+  it("keeps the Slack bot install identity and excludes top-level tokens from metadata", async () => {
+    const services = createServices([{ ...slackbotProvider, actions: [] }]);
+    await services.clientConfigs.upsertConfig({
+      service: "slackbot",
+      clientId: "bot-client-id",
+      clientSecret: "bot-client-secret",
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          ok: true,
+          access_token: "xoxb-bot-secret",
+          refresh_token: "xoxe-refresh-secret",
+          token_type: "bot",
+          expires_in: 43_200,
+          scope: "chat:write,im:write",
+          bot_user_id: "UBOT0001",
+          app_id: "A0APP0001",
+          team: { id: "T0TEAM001", name: "Example Workspace" },
+          authed_user: { id: "U0ADMIN01", access_token: "xoxp-user-secret", refresh_token: "xoxe-user-secret" },
+        }),
+      ),
+    );
+
+    const started = await services.flow.startAuthorization({ service: "slackbot" });
+    await services.flow.completeAuthorization({ state: started.state, code: "bot-code" });
+
+    const credential = await services.connections.getCredential("slackbot");
+    expect(credential).toMatchObject({
+      authType: "oauth2",
+      accessToken: "xoxb-bot-secret",
+      metadata: {
+        bot_user_id: "UBOT0001",
+        app_id: "A0APP0001",
+        team: { id: "T0TEAM001", name: "Example Workspace" },
+        authed_user: { id: "U0ADMIN01" },
+      },
+    });
+    if (credential?.authType !== "oauth2") throw new Error("Expected an OAuth credential");
+    const metadata = JSON.stringify(credential.metadata);
+    expect(metadata).not.toContain("xoxb-bot-secret");
+    expect(metadata).not.toContain("xoxe-refresh-secret");
+
+    // Reading installation metadata needs no additional request with a fresh credential.
+    const slackRequests = vi.mocked(fetch).mock.calls.length;
+    const install = slackbotExecutors["slackbot.get_installation"]!;
+    await expect(
+      install({}, { getCredential: async (service) => services.connections.getCredential(service) }),
+    ).resolves.toMatchObject({
+      ok: true,
+      output: {
+        teamId: "T0TEAM001",
+        teamName: "Example Workspace",
+        authedUserId: "U0ADMIN01",
+        botUserId: "UBOT0001",
+        appId: "A0APP0001",
+      },
+    });
+    expect(vi.mocked(fetch).mock.calls.length).toBe(slackRequests);
+  });
+
   it("uses separate Slack user and bot authorization paths with the same OAuth app", async () => {
     const services = createServices([
       { ...slackProvider, actions: [] },
@@ -594,6 +885,8 @@ describe("OAuthFlowService", () => {
     const userAuthorizationUrl = new URL(userStarted.authorizationUrl);
     expect(userAuthorizationUrl.pathname).toBe("/oauth/v2_user/authorize");
     expect(userAuthorizationUrl.searchParams.get("scope")).toContain("search:read");
+    expect(userAuthorizationUrl.searchParams.get("scope")).not.toContain("search:read.public");
+    expect(userAuthorizationUrl.searchParams.get("scope")).not.toContain("search:read.private");
     await services.flow.completeAuthorization({ state: userStarted.state, code: "user-code" });
 
     const botStarted = await services.flow.startAuthorization({ service: "slackbot" });
@@ -626,6 +919,98 @@ describe("OAuthFlowService", () => {
       "https://slack.com/api/oauth.v2.user.access",
       "https://slack.com/api/oauth.v2.access",
     ]);
+  });
+
+  it("isolates Slack custom user clients and accepts the pinned top-level user token response", async () => {
+    const services = createServices(
+      [
+        { ...slackProvider, actions: [] },
+        { ...slackbotProvider, actions: [] },
+      ],
+      {
+        allowedCustomOAuth: ["slack"],
+        secretCodec: new AesGcmSecretCodec("slack-test-key"),
+      },
+    );
+    await services.clientConfigs.upsertConfig({
+      service: "slack",
+      clientId: "shared-client",
+      clientSecret: "shared-secret",
+    });
+    const requestedScopes = [
+      "channels:read",
+      "channels:history",
+      "groups:read",
+      "groups:history",
+      "im:read",
+      "im:history",
+      "mpim:read",
+      "mpim:history",
+      "users:read",
+    ];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+        expect(String(url)).toBe("https://slack.com/api/oauth.v2.user.access");
+        const body = new URLSearchParams(String(init?.body));
+        const tenant = body.get("code");
+        expect(["tenant-a", "tenant-b"]).toContain(tenant);
+        expect(body.get("client_id")).toBe(`${tenant}-client`);
+        expect(body.get("client_secret")).toBe(`${tenant}-secret`);
+        expect(body.get("redirect_uri")).toBe("http://localhost:3000/oauth/callback");
+        return Response.json({
+          ok: true,
+          access_token: `xoxp-${tenant}`,
+          refresh_token: `${tenant}-refresh`,
+          token_type: "Bearer",
+          expires_in: 43_200,
+          scope: requestedScopes.join(","),
+        });
+      }),
+    );
+    const attempts = [];
+    for (const tenant of ["tenant-a", "tenant-b"]) {
+      const started = await services.flow.startAuthorization({
+        service: "slack",
+        connectionName: tenant,
+        clientConfig: { clientId: `${tenant}-client`, clientSecret: `${tenant}-secret`, requestedScopes },
+      });
+      const url = new URL(started.authorizationUrl);
+      expect(`${url.origin}${url.pathname}`).toBe("https://slack.com/oauth/v2_user/authorize");
+      expect(url.searchParams.get("client_id")).toBe(`${tenant}-client`);
+      expect(url.searchParams.get("scope")?.split(",").sort()).toEqual([...requestedScopes].sort());
+      expect(url.searchParams.has("client_secret")).toBe(false);
+      expect(url.searchParams.has("user_scope")).toBe(false);
+      attempts.push({ tenant, started });
+    }
+    for (const { tenant, started } of attempts.reverse()) {
+      await services.flow.completeAuthorization({ state: started.state, code: tenant });
+      await expect(services.connections.getCredential("slack", tenant)).resolves.toMatchObject({
+        authType: "oauth2",
+        accessToken: `xoxp-${tenant}`,
+        refreshToken: `${tenant}-refresh`,
+        tokenType: "Bearer",
+        metadata: {
+          oauthClientConfig: {
+            clientId: `${tenant}-client`,
+            clientSecret: `${tenant}-secret`,
+            requestedScopes,
+          },
+        },
+      });
+    }
+    await expect(services.connections.getCredential("slack")).resolves.toBeUndefined();
+    await expect(services.connections.getCredential("slackbot")).resolves.toBeUndefined();
+    await expect(services.clientConfigs.getConfig("slack")).resolves.toMatchObject({
+      clientId: "shared-client",
+      clientSecret: "shared-secret",
+    });
+    await expect(
+      services.flow.startAuthorization({
+        service: "slackbot",
+        clientConfig: { clientId: "bot-client", clientSecret: "bot-secret" },
+      }),
+    ).rejects.toMatchObject({ code: "oauth_custom_app_not_allowed" });
   });
 
   it("rejects expired OAuth authorization states", async () => {
@@ -663,11 +1048,13 @@ describe("OAuthFlowService", () => {
     vi.setSystemTime(new Date("2026-01-01T00:00:01.001Z"));
     await services.states.set({
       service: "example",
+      retirementGeneration: "expired-state-generation",
       state: "expired",
       createdAt: "2026-01-01T00:00:00.000Z",
     });
     await services.states.set({
       service: "example",
+      retirementGeneration: "expired-state-generation",
       state: "current",
       createdAt: "2026-01-01T00:00:00.001Z",
     });
@@ -690,6 +1077,7 @@ describe("OAuthFlowService", () => {
     });
     await services.states.set({
       service: "example",
+      retirementGeneration: "expired-state-generation",
       state: "bad-created-at",
       createdAt: "not-a-date",
     });
@@ -719,6 +1107,36 @@ describe("OAuthFlowService", () => {
     await expect(services.flow.completeAuthorization({ state: started.state, code: "code" })).rejects.toThrow(
       "OAuth token response exceeds 1048576 bytes",
     );
+  });
+
+  // The state is the one value that identifies the callback which completed
+  // this consent, and it is the reason the field can be trusted: it is minted
+  // here, not accepted from a provider or a validator. Asserting it equals
+  // `started.state` rather than merely "is a string" is the point — a random
+  // id would satisfy the weaker check and tie the credential to nothing.
+  it("binds a completed credential to the callback that authorized it", async () => {
+    const services = createServices([pkceOAuthProvider]);
+    await services.clientConfigs.upsertConfig({
+      service: "pkce",
+      clientId: "client-id",
+      clientSecret: "client-secret",
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ access_token: "access-token", token_type: "Bearer" })),
+    );
+
+    const started = await services.flow.startAuthorization({ service: "pkce" });
+    await services.flow.completeAuthorization({ state: started.state, code: "code" });
+
+    await expect(services.connections.getCredential("pkce")).resolves.toMatchObject({
+      authType: "oauth2",
+      metadata: { oauthAuthorizationId: started.state },
+    });
+    // And it reaches the public summary, which is where a caller reads it.
+    await expect(services.connections.getConnectionSummary("pkce")).resolves.toMatchObject({
+      oauthAuthorizationId: started.state,
+    });
   });
 
   it("stores secret OAuth client config fields in completed credential metadata", async () => {
@@ -920,17 +1338,72 @@ describe("OAuthFlowService", () => {
     expect(vi.mocked(fetch).mock.calls[0]?.[0]).toBe("https://tenant.example.com/oauth/tenant%2Fa/token");
   });
 
+  it("passes the matching PKCE verifier to a custom token exchange", async () => {
+    let verifier: string | undefined;
+    const services = createServices([pkceOAuthProvider], {
+      oauthRuntime: {
+        async exchangeCode(input) {
+          verifier = input.codeVerifier;
+          return { accessToken: "custom-token", tokenType: "Bearer", metadata: {} };
+        },
+      },
+    });
+    await services.clientConfigs.upsertConfig({ service: "pkce", clientId: "client-id", clientSecret: "secret" });
+    const started = await services.flow.startAuthorization({ service: "pkce" });
+    await services.flow.completeAuthorization({ state: started.state, code: "authorization-code" });
+    expect(verifier).toBeDefined();
+    expect(createHash("sha256").update(verifier!).digest("base64url")).toBe(
+      new URL(started.authorizationUrl).searchParams.get("code_challenge"),
+    );
+  });
+
+  it.each([{ scopes: [] }, { scopes: ["future:scope"] }])(
+    "回调保留最初的请求范围，忽略途中修改的默认配置：$scopes",
+    async ({ scopes }) => {
+      let exchangedScopes: string[] | undefined;
+      const { flow, clientConfigs } = createServices([oauthProvider], {
+        oauthRuntime: {
+          async exchangeCode({ clientConfig }) {
+            exchangedScopes = clientConfig.requestedScopes;
+            return { accessToken: "token", tokenType: "Bearer", metadata: {} };
+          },
+        },
+      });
+      await clientConfigs.upsertConfig({
+        service: "example",
+        clientId: "client",
+        clientSecret: "secret",
+        extra: { tenant: "tenant" },
+      });
+      const started = await flow.startAuthorization({ service: "example", authorizationOptionIds: scopes });
+      await clientConfigs.upsertConfig({
+        service: "example",
+        clientId: "client",
+        requestedScopes: ["changed"],
+        extra: { tenant: "tenant" },
+      });
+      await flow.completeAuthorization({ state: started.state, code: "code" });
+      expect(exchangedScopes).toEqual(scopes);
+    },
+  );
+
   it("stores the token returned by a provider OAuth runtime", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    let callbackParameters: Record<string, string> | undefined;
+    let callbackQuery: string | undefined;
+    let callbackState: string | undefined;
     const services = createServices([oauthProvider], {
       oauthRuntime: {
-        async exchangeCode() {
+        async exchangeCode(input) {
+          callbackParameters = input.callbackParameters;
+          callbackQuery = input.callbackQuery;
+          callbackState = input.state;
           return {
             accessToken: "provider-access-token",
             refreshToken: "provider-access-token",
             tokenType: "Bearer",
-            expiresAt: "2026-10-30T00:00:00.000Z",
+            expiresAt,
+            providerSecret: { inventory: "provider-owned" },
             metadata: { permissions: "read,write" },
           };
         },
@@ -944,15 +1417,24 @@ describe("OAuthFlowService", () => {
     });
 
     const started = await services.flow.startAuthorization({ service: "example" });
-    await services.flow.completeAuthorization({ state: started.state, code: "authorization-code" });
+    await services.flow.completeAuthorization({
+      state: started.state,
+      code: "authorization-code",
+      callbackParameters: { shop_id: "42" },
+      callbackQuery: "?shop_id=41&shop_id=42&hmac=signature",
+    });
 
     await expect(services.connections.getCredential("example")).resolves.toMatchObject({
       authType: "oauth2",
       accessToken: "provider-access-token",
       refreshToken: "provider-access-token",
-      expiresAt: "2026-10-30T00:00:00.000Z",
+      expiresAt,
+      providerSecret: { inventory: "provider-owned" },
       metadata: { permissions: "read,write" },
     });
+    expect(callbackParameters).toEqual({ shop_id: "42" });
+    expect(callbackQuery).toBe("?shop_id=41&shop_id=42&hmac=signature");
+    expect(callbackState).toBe(started.state);
   });
 
   it("rejects OAuth endpoint config values that resolve to local network targets", async () => {
@@ -1057,11 +1539,37 @@ class EmptyProviderLoader implements IProviderLoader {
 class MemoryConnectionStore implements IConnectionStore {
   private readonly store = new Map<string, StoredConnection>();
 
+  async getById(id: string): Promise<StoredConnection | undefined> {
+    return [...this.store.values()].find((connection) => connection.id === id);
+  }
+
   async get(service: string, connectionName: string): Promise<StoredConnection | undefined> {
     return this.store.get(createConnectionKey(service, connectionName));
   }
 
-  async set(service: string, connectionName: string, credential: ResolvedCredential): Promise<StoredConnection> {
+  private readonly retirementGenerations = new Map<string, string>();
+
+  async getRetirementGeneration(service: string, connectionName: string): Promise<string> {
+    const key = JSON.stringify([service, connectionName]);
+    let generation = this.retirementGenerations.get(key);
+    if (!generation) {
+      generation = crypto.randomUUID();
+      this.retirementGenerations.set(key, generation);
+    }
+    return generation;
+  }
+
+  async setIfCurrentGeneration(
+    service: string,
+    connectionName: string,
+    credential: ResolvedCredential,
+    retirementGeneration: string,
+  ) {
+    if ((await this.getRetirementGeneration(service, connectionName)) !== retirementGeneration) return undefined;
+    return this.set(service, connectionName, credential);
+  }
+
+  async set(service: string, connectionName: string, credential: ResolvedCredential) {
     const key = createConnectionKey(service, connectionName);
     const connection = {
       id: this.store.get(key)?.id ?? crypto.randomUUID(),
@@ -1083,6 +1591,7 @@ class MemoryConnectionStore implements IConnectionStore {
   }
 
   async delete(service: string, connectionName: string): Promise<void> {
+    this.retirementGenerations.set(JSON.stringify([service, connectionName]), crypto.randomUUID());
     this.store.delete(createConnectionKey(service, connectionName));
   }
 
@@ -1134,3 +1643,63 @@ class MemoryOAuthStateStore implements IOAuthStateStore {
     return value;
   }
 }
+
+it.each(["cloud_recording:read:recording", "cloud_recording:read:recording:admin"])(
+  "requests Zoom recording access only when explicitly selected: %s",
+  async (recordingScope) => {
+    const services = createServices([{ ...zoomProvider, actions: [] }]);
+    await services.clientConfigs.upsertConfig({ service: "zoom", clientId: "client", clientSecret: "secret" });
+    const meeting = await services.flow.startAuthorization({ service: "zoom" });
+    const defaultScopes = new URL(meeting.authorizationUrl).searchParams.get("scope")!.split(" ");
+    expect(defaultScopes).toContain("meeting:write:meeting");
+    expect(defaultScopes.some((scope) => scope.startsWith("cloud_recording:"))).toBe(false);
+    await services.clientConfigs.upsertConfig({
+      service: "zoom",
+      clientId: "client",
+      clientSecret: "secret",
+      requestedScopes: [...defaultScopes, recordingScope],
+    });
+    const recording = await services.flow.startAuthorization({ service: "zoom" });
+    expect(new URL(recording.authorizationUrl).searchParams.get("scope")!.split(" ")).toEqual([
+      ...defaultScopes,
+      recordingScope,
+    ]);
+  },
+);
+
+it("requests only drive.file when selected and preserves default Drive authorization", async () => {
+  const services = createServices([{ ...googleDriveProvider, actions: [] }]);
+  await services.clientConfigs.upsertConfig({ service: "googledrive", clientId: "client", clientSecret: "secret" });
+  const full = await services.flow.startAuthorization({ service: "googledrive" });
+  expect(new URL(full.authorizationUrl).searchParams.get("scope")!.split(" ")).toEqual([
+    "https://www.googleapis.com/auth/drive.readonly",
+    "https://www.googleapis.com/auth/drive.metadata.readonly",
+    "https://www.googleapis.com/auth/drive",
+  ]);
+  await services.clientConfigs.upsertConfig({
+    service: "googledrive",
+    clientId: "client",
+    clientSecret: "secret",
+    requestedScopes: ["https://www.googleapis.com/auth/drive.file"],
+  });
+  const narrow = await services.flow.startAuthorization({ service: "googledrive" });
+  expect(new URL(narrow.authorizationUrl).searchParams.get("scope")).toBe("https://www.googleapis.com/auth/drive.file");
+});
+
+it.each([
+  { provider: githubProvider, requested: undefined, expected: ["read:user", "user:email", "repo"] },
+  { provider: githubProvider, requested: ["delete_repo"], expected: ["delete_repo", "read:user"] },
+  { provider: posthogProvider, requested: [], expected: ["user:read"] },
+])(
+  "requests the selected scope contract in the $provider.service authorization URL: $requested",
+  async ({ provider, requested, expected }) => {
+    const { flow, clientConfigs } = createServices([{ ...provider, actions: [] }]);
+    await clientConfigs.upsertConfig({ service: provider.service, clientId: "client", clientSecret: "secret" });
+    const started = await flow.startConnectionRequest({
+      service: provider.service,
+      owner: "owner",
+      authorizationOptionIds: requested,
+    });
+    expect(new URL(started.authorizationUrl).searchParams.get("scope")?.split(" ")).toEqual(expected);
+  },
+);

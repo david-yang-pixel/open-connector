@@ -5,12 +5,9 @@ import type {
   ProviderProxyExecutor,
 } from "../../core/types.ts";
 
-import {
-  defineProviderExecutors,
-  defineProviderProxy,
-  mapProviderActionSources,
-  requireApiKeyCredential,
-} from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors, mapProviderActionSources } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   centralStationCrmActionHandlers,
   readCentralStationCrmApiBaseUrl,

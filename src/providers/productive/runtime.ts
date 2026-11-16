@@ -1,15 +1,10 @@
 import type { CredentialValidationResult, ExecutionContext, ProviderExecutors } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { compactObject, looseArray, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineProviderExecutors,
-  isAbortLikeError,
-  providerFetch,
-  ProviderRequestError,
-  providerUserAgent,
-  requireApiKeyCredential,
-} from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { isAbortLikeError, providerFetch, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 export const productiveApiBaseUrl = "https://api.productive.io/api/v2/";
 const productiveRequestTimeoutMs = 15_000;
@@ -65,9 +60,7 @@ export async function validateProductiveCredential(
         optionalString(organization.attributes.name) ??
         optionalString(organization.attributes.company_name) ??
         `Organization ${organization.id}`,
-      grantedScopes: [],
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: productiveApiBaseUrl.replace(/\/$/, ""),
       validationEndpoint: "/organization",

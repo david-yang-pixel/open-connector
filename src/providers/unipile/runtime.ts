@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { createHash } from "node:crypto";
 import { compactObject, optionalBoolean, optionalRecord, optionalString } from "../../core/cast.ts";
@@ -130,7 +130,6 @@ export async function validateUnipileCredential(
       accountId: buildUnipileProviderAccountId(dsn, input.apiKey),
       displayName: buildUnipileAccountLabel(dsn),
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: buildUnipileBaseUrl(dsn),
       dsn,

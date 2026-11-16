@@ -1,12 +1,9 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
-import {
-  defineProviderExecutors,
-  defineProviderProxy,
-  mapProviderActionHandlers,
-  requireApiKeyCredential,
-} from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors, mapProviderActionHandlers } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import { smartsuiteActions } from "./actions.ts";
 import { executeSmartsuiteAction, validateSmartsuiteCredential } from "./runtime.ts";
 
@@ -47,7 +44,7 @@ export const credentialValidators: CredentialValidators = {
       { apiKey: input.apiKey, workspaceId: input.values.workspaceId ?? "" },
       fetcher,
     );
-    return { profile: { displayName: result.accountLabel }, grantedScopes: [], metadata: result.providerMetadata };
+    return { profile: { displayName: result.accountLabel }, metadata: result.providerMetadata };
   },
 };
 

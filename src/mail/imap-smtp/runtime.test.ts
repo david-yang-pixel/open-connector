@@ -146,6 +146,103 @@ describe("IMAP/SMTP mail runtime", () => {
     });
   });
 
+  it.each([
+    { type: "text/plain", body: "Plain body", expected: { text: "Plain body", html: null } },
+    { type: "text/html", body: "<p>HTML body</p>", expected: { text: null, html: "<p>HTML body</p>" } },
+  ])("fetches a single-part $type body without a part number", async ({ type, body, expected }) => {
+    const content = Buffer.from(body).toString("base64");
+    const fetchOne = vi
+      .fn()
+      .mockResolvedValueOnce({
+        uid: 1,
+        // ImapFlow leaves the single-part root unnumbered.
+        bodyStructure: { type, parameters: { charset: "utf-8" }, encoding: "base64", size: content.length },
+      })
+      .mockResolvedValueOnce({ bodyParts: new Map([["1", Buffer.from(content)]]) });
+    const mailboxOpen = vi.fn(async () => undefined);
+    const protocol = createMailProtocol(
+      { displayName: "Mail Test", attachmentFallbackPrefix: "mail-test" },
+      {
+        createImapClient: () => ({
+          connect: vi.fn(async () => undefined),
+          logout: vi.fn(async () => undefined),
+          list: vi.fn(async () => []),
+          mailboxOpen,
+          fetchOne,
+        }),
+      },
+    );
+
+    await expect(
+      protocol.fetchMessage(
+        qqMailRuntimeConfig.readCredential({ email: "user@qq.com", authorizationCode }),
+        "INBOX",
+        1,
+        { maxBytes: 1024 },
+      ),
+    ).resolves.toMatchObject({ ...expected, attachments: [], truncated: false });
+
+    expect(mailboxOpen).toHaveBeenCalledWith("INBOX", { readOnly: true });
+    expect(fetchOne).toHaveBeenCalledTimes(2);
+    expect(fetchOne).toHaveBeenNthCalledWith(
+      2,
+      1,
+      { bodyParts: [{ key: "1", maxLength: content.length }] },
+      { uid: true },
+    );
+  });
+
+  it("preserves multipart body numbers and excludes text attachments", async () => {
+    const fetchOne = vi
+      .fn()
+      .mockResolvedValueOnce({
+        uid: 1,
+        bodyStructure: {
+          type: "multipart/mixed",
+          childNodes: [
+            {
+              part: "1",
+              type: "text/plain",
+              disposition: "attachment",
+              dispositionParameters: { filename: "note.txt" },
+              size: 10,
+            },
+            { part: "2", type: "text/plain", encoding: "7bit", size: 4 },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({ bodyParts: new Map([["2", Buffer.from("Body")]]) });
+    const protocol = createMailProtocol(
+      { displayName: "Mail Test", attachmentFallbackPrefix: "mail-test" },
+      {
+        createImapClient: () => ({
+          connect: vi.fn(async () => undefined),
+          logout: vi.fn(async () => undefined),
+          list: vi.fn(async () => []),
+          mailboxOpen: vi.fn(async () => undefined),
+          fetchOne,
+        }),
+      },
+    );
+
+    await expect(
+      protocol.fetchMessage(
+        qqMailRuntimeConfig.readCredential({ email: "user@qq.com", authorizationCode }),
+        "INBOX",
+        1,
+        { maxBytes: 4 },
+      ),
+    ).resolves.toMatchObject({
+      text: "Body",
+      html: null,
+      attachments: [{ attachmentId: "1", filename: "note.txt" }],
+      truncated: false,
+    });
+
+    expect(fetchOne).toHaveBeenCalledTimes(2);
+    expect(fetchOne).toHaveBeenNthCalledWith(2, 1, { bodyParts: [{ key: "2", maxLength: 4 }] }, { uid: true });
+  });
+
   it("prefers Reply-To over From when replying", async () => {
     const sendMail = vi.fn(async () => ({ messageId: null, accepted: [], rejected: [], response: "ok" }));
     const protocol = {

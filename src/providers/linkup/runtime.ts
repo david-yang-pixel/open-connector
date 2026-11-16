@@ -1,6 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
 import {
@@ -8,14 +7,14 @@ import {
   isAbortLikeError,
   providerUserAgent,
   ProviderRequestError,
+  providerInputError,
+  defaultProviderRequestTimeoutMs,
 } from "../provider-runtime.ts";
 
 export const linkupApiBaseUrl = "https://api.linkup.so";
 const linkupValidationPath = "/v1/credits/balance";
-const linkupDefaultRequestTimeoutMs = 30_000;
 
-type LinkupActionContext = ApiKeyProviderContext;
-type LinkupActionHandler = (input: Record<string, unknown>, context: LinkupActionContext) => Promise<unknown>;
+type LinkupActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 
 interface LinkupRequestInput {
   method: "GET" | "POST";
@@ -119,9 +118,7 @@ export async function validateLinkupCredential(
     profile: {
       accountId: "linkup",
       displayName: "Linkup API Key",
-      grantedScopes: [],
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: linkupApiBaseUrl,
       validationEndpoint: linkupValidationPath,
@@ -130,11 +127,8 @@ export async function validateLinkupCredential(
   };
 }
 
-async function linkupRequest(
-  context: Pick<LinkupActionContext, "apiKey" | "fetcher" | "signal">,
-  input: LinkupRequestInput,
-): Promise<unknown> {
-  const timeout = createProviderTimeout(context.signal, linkupDefaultRequestTimeoutMs);
+async function linkupRequest(context: ApiKeyProviderContext, input: LinkupRequestInput): Promise<unknown> {
+  const timeout = createProviderTimeout(context.signal);
   try {
     const response = await context.fetcher(new URL(input.path, linkupApiBaseUrl), {
       method: input.method,
@@ -159,7 +153,7 @@ async function linkupRequest(
     if (timeout.didTimeout() || isAbortLikeError(error)) {
       throw new ProviderRequestError(
         504,
-        `Linkup ${input.path} request timed out after ${Math.max(1, Math.ceil(linkupDefaultRequestTimeoutMs / 1000))} seconds`,
+        `Linkup ${input.path} request timed out after ${Math.max(1, Math.ceil(defaultProviderRequestTimeoutMs / 1000))} seconds`,
       );
     }
     throw new ProviderRequestError(
@@ -192,13 +186,13 @@ function buildLinkupError(response: Response, payload: unknown, mode: "validate"
     return new ProviderRequestError(429, message);
   }
   if (mode === "validate" && [400, 401, 403].includes(response.status)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (mode === "execute" && [401, 403].includes(response.status)) {
     return new ProviderRequestError(401, message);
   }
   if (mode === "execute" && response.status === 400) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   return new ProviderRequestError(response.status || 502, message);
 }

@@ -1,6 +1,5 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -11,15 +10,10 @@ import {
   optionalString,
   requiredString,
 } from "../../core/cast.ts";
-import {
-  defineProviderExecutors,
-  defineProviderProxy,
-  providerInputError,
-  ProviderRequestError,
-  providerUserAgent,
-  requireApiKeyCredential,
-  setSearchParams,
-} from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerInputError, ProviderRequestError, providerUserAgent, setSearchParams } from "../provider-runtime.ts";
 
 const service = "assemblyai";
 const assemblyaiApiBaseUrl = "https://api.assemblyai.com/v2";
@@ -151,7 +145,6 @@ export const credentialValidators: CredentialValidators = {
       profile: {
         displayName: "AssemblyAI API Key",
       },
-      grantedScopes: [],
       metadata: {
         validationEndpoint: "/transcript",
       },
@@ -162,7 +155,7 @@ export const credentialValidators: CredentialValidators = {
 async function requestAssemblyaiJson(input: {
   path: string;
   method: "DELETE" | "GET" | "POST";
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   params?: Record<string, string | undefined>;
   body?: Record<string, unknown>;
   phase: AssemblyaiPhase;

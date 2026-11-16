@@ -5,6 +5,19 @@ management through the same HTTP paths and envelopes as OOMOL Hosted Connector. 
 OAuth authorization, polling one authorization attempt, connection details, and synchronous
 API-key or custom-credential creation and replacement.
 
+## SaaS OAuth sources
+
+For a service configured with a SaaS source, the connection endpoints below authorize remotely
+without a local OAuth client. Reconnecting an existing connection retains its source.
+Read the four setup fields inside oauthClient: SaaS sets customClientAvailable to false,
+uses its callback URL and requires no local client fields. Send no OAuth overrides in SaaS mode.
+
+An explicit valid administrator Bearer GET synchronizes a known SaaS request; cookie-only GET
+does not. Poll at least two seconds apart and honor Retry-After. Browser clients use the protected
+same-origin POST described in [SaaS OAuth](saas-oauth.md#programmatic-authorization).
+Never replay link creation after an unknown result. Completed connections use the same execution
+selectors and policies, with provider credentials and execution remaining on SaaS.
+
 ## Authentication
 
 Use the local administrator bearer token (`OOMOL_CONNECT_ADMIN_TOKEN`) to manage connections.
@@ -24,15 +37,52 @@ hidden from execution discovery. It excludes virtual no-auth and Marketplace ent
 ## Discover setup requirements
 
 `GET /v1/providers/:service/setup` describes what a provider needs before it can be connected:
-the credential fields of each supported credential type, the OAuth client inputs, the scopes the
-connector requests, the provider's registration steps, the callback URL to register, and which
-OAuth client inputs are still missing. It never returns saved values, so a host can build its own
-connection form from it and submit through the endpoints below.
+the credential fields of each supported credential type, the OAuth client inputs, the default
+scopes (`scopes`), connection prerequisites (`requiredScopes`), curated extra permissions
+(`authorizationOptions`),
+the provider's registration steps, the callback URL to register, and which OAuth client inputs
+are still missing. It never returns saved values, so a host can build its own connection form
+from it and submit through the endpoints below.
 
 ## Start and track OAuth
 
-Configure your provider's OAuth client through the console or `/api/oauth/configs/:service`
-first. The registered callback URL remains `/oauth/callback` on this runtime.
+For local OAuth, configure your provider's OAuth client through the console or
+`/api/oauth/configs/:service` first. Register `/oauth/callback` on this runtime as the callback URL.
+
+Defaults cover the provider's ordinary capabilities. Most connection forms can proceed directly to
+OAuth. Only explicitly defined `authorizationOptions` become extra permission controls, with localized
+labels and descriptions; do not turn default or required scope lists into checkboxes. Selecting an
+extra permission adds it to the effective defaults. Advanced scope editing replaces the request list.
+
+Omit `requestedScopes` to use the configured defaults. An explicit array replaces the defaults;
+`[]` requests only the `requiredScopes` that the runtime adds for connection validation or renewal.
+Unknown scopes are allowed. Provider-reported grants are display metadata, never a local permission check.
+
+For example, a Google Calendar OAuth client config for editing events, listing calendars, and
+querying availability can use:
+
+```json
+{
+  "clientId": "your-google-client-id",
+  "clientSecret": "your-google-client-secret",
+  "requestedScopes": [
+    "openid",
+    "email",
+    "profile",
+    "https://www.googleapis.com/auth/calendar.events",
+    "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
+    "https://www.googleapis.com/auth/calendar.events.freebusy"
+  ]
+}
+```
+
+This config omits `calendar.readonly` and all other unlisted default scopes. Choose scopes
+that grant the minimum access needed for your application's features.
+
+For SaaS OAuth, configure the cloud project and select the provider configuration instead.
+The provider's OAuth callback is hosted by SaaS; after authorization, SaaS returns to a
+Connect-generated `/oauth/saas/complete` URL. The final `returnUri` stays in Connect and is
+used after synchronization, rather than being passed to SaaS.
 
 ```sh
 curl -sS -X POST http://localhost:3000/v1/connections/github/connect \
@@ -91,12 +141,12 @@ OAuth inputs can include:
 
 - `returnUri`: optional `http:`, `https:`, or `oomol:` URL. The callback adds `status` and `service`,
   and safe `code` and `message` fields on failure.
-- `authorizationOptionIds`: provider-declared option IDs. GitHub and Slack expose selectable
+- `authorizationOptionIds` (local OAuth only): provider-declared option IDs. GitHub and Slack expose selectable
   provider-native scopes in their OAuth definitions. Required options are always included.
   Omission preserves the configured scopes; unknown options or options on unsupported providers
   return `invalid_input`. `requires` describes selection dependencies for clients; the server
   preserves the explicitly selected options and required options.
-- `extra` and `secretExtra`: provider-declared OAuth configuration fields, merged for this
+- `extra` and `secretExtra` (local OAuth only): provider-declared OAuth configuration fields, merged for this
   authorization attempt without changing the saved client configuration.
 
 ## Inspect and reconnect
@@ -109,7 +159,11 @@ POST /v1/connections/by-id/:appId/connect
 ```
 
 A successful OAuth request records the outcome of that attempt. Query connection details for
-its current state. An expired OAuth credential with no refresh token reports `reauth_required`.
+its current state. An expired OAuth credential with no refresh token, or a refresh rejected with
+OAuth `invalid_grant`, reports `reauth_required`. This state is also available in the local
+`/api/connections` summary. A new authorization clears it; network failures, rate limits, server
+errors and invalid client configuration do not mark a user's grant as expired. Listing connections
+only reads the saved state and does not contact the provider or refresh tokens.
 
 Reconnection takes the same OAuth body and returns a new request ID. Success keeps the original
 `appId`. If the original connection is deleted or its credentials change during authorization,
@@ -117,6 +171,30 @@ the stale callback fails instead of recreating it or overwriting the replacement
 
 New connections receive distinct local aliases. Use the returned `alias` as the connection
 selector when executing actions. Existing local default-connection selection remains available.
+
+### Notion duplicated templates
+
+For self-hosted Notion OAuth connections, `GET /v1/connections/by-id/:appId` and
+`GET /v1/connections` include `notion.duplicatedTemplateId` when Notion returned a
+non-empty `duplicated_template_id` during authorization:
+
+```json
+{
+  "notion": {
+    "duplicatedTemplateId": "6c3b0c2e-8e10-4e47-b684-898720a84742"
+  }
+}
+```
+
+After polling `GET /v1/connection-requests/:connectionRequestId` until its status is
+`connected`, use its `appId` to read the connection and obtain this page ID. The ID
+is preserved during token refresh and can be used to access or update the copied
+page without another authorization flow. Existing stored OAuth connections also
+expose the ID if it is already present in their saved credentials.
+
+The `notion` field is omitted when no valid template ID was returned, for Notion
+internal integration tokens, and for other providers. Only this template ID is
+exposed; tokens, client secrets, and arbitrary OAuth response metadata remain private.
 
 ## API keys and custom credentials
 

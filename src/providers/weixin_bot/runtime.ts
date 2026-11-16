@@ -1,5 +1,5 @@
 import type { TransitFileWriter } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
@@ -185,7 +185,7 @@ function readTypingStatus(value: unknown): "typing" | "cancel" {
   throw new ProviderRequestError(400, "status must be typing or cancel");
 }
 
-export function parseWeixinJson(text: string): unknown {
+function parseWeixinJson(text: string): unknown {
   const losslessIds = new Set(["message_id", "msg_id", "svr_id"]);
   let output = "";
   let position = 0;

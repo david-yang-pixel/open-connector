@@ -2,6 +2,7 @@ import type { ActionDefinition } from "../../core/types.ts";
 
 import { s } from "../../core/json-schema.ts";
 import { defineProviderAction } from "../../core/provider-definition.ts";
+import { minimaxTextModels } from "./text-models.ts";
 
 const service = "minimax";
 
@@ -74,9 +75,12 @@ const responseInputSchema = s.anyOf("MiniMax Responses API text or conversation 
 ]);
 
 const responseReasoningSchema = s.object(
-  "MiniMax reasoning control. MiniMax-M3 defaults to none when omitted.",
+  "MiniMax reasoning control. Flash defaults to max; MiniMax-M3 defaults to none when omitted.",
   {
-    effort: s.stringEnum("Reasoning effort value.", ["minimal", "low", "medium", "high", "none"]),
+    effort: s.stringEnum(
+      "Flash supports low, medium, high, xhigh, and max. minimal and none are retained for older models and rejected for Flash.",
+      ["minimal", "low", "medium", "high", "none", "xhigh", "max"],
+    ),
   },
   { optional: ["effort"] },
 );
@@ -109,7 +113,14 @@ const responseToolSchema = s.object(
 const createResponseInputSchema = s.object(
   "Request body for creating a non-streaming MiniMax response.",
   {
-    model: trimmedNonEmptyString("MiniMax model name to invoke, for example MiniMax-M3."),
+    model: s.string(
+      "MiniMax text model: MiniMax-M3.1-Flash (default) or MiniMax-M3. Explicit model IDs are preserved.",
+      {
+        minLength: 1,
+        pattern: "\\S",
+        default: minimaxTextModels[0],
+      },
+    ),
     input: responseInputSchema,
     instructions: optionalTrimmedString("System instructions for the response."),
     max_output_tokens: s.integer("Maximum output token count.", { minimum: 1 }),
@@ -121,7 +132,10 @@ const createResponseInputSchema = s.object(
       minimum: 0,
       maximum: 1,
     }),
-    service_tier: s.stringEnum("MiniMax service tier for request admission.", ["standard", "priority"]),
+    service_tier: s.stringEnum("MiniMax service tier for request admission. Not supported by Flash.", [
+      "standard",
+      "priority",
+    ]),
     tools: s.array("Function tools available to MiniMax.", responseToolSchema, { minItems: 1 }),
     tool_choice: s.stringEnum("Tool selection strategy.", ["none", "auto"]),
     metadata: s.record("String metadata to attach to the MiniMax request.", s.string("Metadata value.")),
@@ -132,6 +146,7 @@ const createResponseInputSchema = s.object(
   },
   {
     optional: [
+      "model",
       "instructions",
       "max_output_tokens",
       "temperature",
@@ -151,7 +166,14 @@ const createResponseInputSchema = s.object(
 const estimateInputTokensInputSchema = s.object(
   "Request body for estimating MiniMax response input tokens.",
   {
-    model: trimmedNonEmptyString("MiniMax model name to estimate against, for example MiniMax-M3."),
+    model: s.string(
+      "MiniMax text model to estimate against. Defaults to MiniMax-M3.1-Flash; explicit IDs are preserved.",
+      {
+        minLength: 1,
+        pattern: "\\S",
+        default: minimaxTextModels[0],
+      },
+    ),
     input: responseInputSchema,
     instructions: optionalTrimmedString("System instructions included in the estimate."),
     tools: s.array("Function tools included in the estimate.", responseToolSchema, { minItems: 1 }),
@@ -159,7 +181,7 @@ const estimateInputTokensInputSchema = s.object(
     text: responseTextSchema,
     reasoning: responseReasoningSchema,
   },
-  { optional: ["instructions", "tools", "tool_choice", "text", "reasoning"] },
+  { optional: ["model", "instructions", "tools", "tool_choice", "text", "reasoning"] },
 );
 
 const usageSchema = s.unknownObject("MiniMax usage object with token counts and details.");
@@ -700,8 +722,18 @@ export const minimaxActions: ActionDefinition[] = [
   defineProviderAction(service, {
     name: "list_models",
     operationType: "read",
-    description: "List OpenAI-compatible MiniMax models available to the API key.",
-    inputSchema: s.object("No input is required to list MiniMax models.", {}),
+    description:
+      "List MiniMax models available to the API key, preferring MiniMax-M3.1-Flash then MiniMax-M3 and hiding legacy text models by default.",
+    inputSchema: s.object(
+      "Options for listing MiniMax models. Non-text models are preserved.",
+      {
+        include_legacy: s.boolean({
+          description: "Return the complete upstream model list, including legacy text models.",
+          default: false,
+        }),
+      },
+      { optional: ["include_legacy"] },
+    ),
     outputSchema: s.looseRequiredObject("MiniMax model list response.", {
       object: s.string("Object type returned by MiniMax, usually list."),
       data: s.array("MiniMax models returned by the API.", modelSchema),

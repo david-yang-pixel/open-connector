@@ -1,6 +1,5 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 import type { Client } from "@modelcontextprotocol/client";
 
 import { UnauthorizedError } from "@modelcontextprotocol/client";
@@ -8,20 +7,16 @@ import { SdkHttpError } from "@modelcontextprotocol/client";
 import { ProtocolError } from "@modelcontextprotocol/client";
 import { createHash } from "node:crypto";
 import { withMcpClient } from "../mcp-client.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 
 const service = "luckin_coffee";
 const luckinMcpOrigin = "https://gwmcp.lkcoffee.com";
 const luckinMcpEndpoint = "https://gwmcp.lkcoffee.com/order/user/mcp";
 const luckinRequestTimeoutMs = 60_000;
 
-type LuckinActionContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
-type LuckinActionHandler = (input: Record<string, unknown>, context: LuckinActionContext) => Promise<unknown>;
+type LuckinActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 type LuckinMcpToolResult = Awaited<ReturnType<Client["callTool"]>>;
 
 export const luckinActionHandlers: ProviderActionHandlers<"luckin_coffee", LuckinActionHandler> = {
@@ -72,7 +67,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: `luckin-coffee:mcp:${tokenHash}`,
         displayName: `Luckin Coffee MCP - ${tokenHash.slice(-6)}`,
       },
-      grantedScopes: [],
       metadata: {
         mcpEndpoint: luckinMcpEndpoint,
         mcpTools: tools.sort(),
@@ -93,7 +87,7 @@ async function listLuckinMcpTools(input: {
 }
 
 async function callLuckinMcpTool(
-  context: LuckinActionContext,
+  context: ApiKeyProviderContext,
   toolName: string,
   argumentsInput: Record<string, unknown>,
 ): Promise<unknown> {

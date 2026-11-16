@@ -4,18 +4,14 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { createHash } from "node:crypto";
 import { optionalInteger, optionalRecord, optionalString, rawStringOrNull } from "../../core/cast.ts";
 import { queryParams } from "../../core/request.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 
 const service = "livesession";
 const livesessionApiBaseUrl = "https://api.livesession.io/v1";
@@ -58,7 +54,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: `livesession:api_token:${hashApiKey(input.apiKey)}`,
         displayName: "LiveSession API Token",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: livesessionApiBaseUrl,
         validationEndpoint: `${livesessionValidationPath}?size=1`,
@@ -102,7 +97,7 @@ async function listSessions(input: Record<string, unknown>, context: ApiKeyProvi
 async function requestLivesessionJson(input: {
   path: string;
   query: Record<string, string>;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   mode: "validate" | "execute";
 }): Promise<unknown> {
   const url = new URL(`${livesessionApiBaseUrl}${input.path}`);

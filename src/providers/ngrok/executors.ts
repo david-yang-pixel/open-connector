@@ -1,13 +1,12 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { createHash } from "node:crypto";
 import { compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   isAbortLikeError,
   providerUserAgent,
   ProviderRequestError,
@@ -108,7 +107,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: buildNgrokAccountId(input.apiKey),
         displayName: "ngrok API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: ngrokApiBaseUrl,
         validationEndpoint: ngrokValidationPath,
@@ -124,7 +122,7 @@ export const credentialValidators: CredentialValidators = {
 };
 
 async function requestNgrokJson(input: {
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   phase: NgrokRequestPhase;
   path: string;
   query?: Record<string, string | undefined>;

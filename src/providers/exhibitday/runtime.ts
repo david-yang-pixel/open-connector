@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ApiKeyProviderContext, ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ApiKeyProviderContext, ProviderActionHandlers } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
 import {
@@ -44,7 +44,6 @@ export async function validateCredential(
   await requestJson("/references/event_participation_types", "GET", {}, { apiKey, fetcher, signal }, "validate");
   return {
     profile: { displayName: "ExhibitDay Workspace" },
-    grantedScopes: [],
     metadata: { apiBaseUrl: exhibitdayApiBaseUrl },
   };
 }

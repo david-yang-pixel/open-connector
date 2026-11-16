@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
 import { providerUserAgent, ProviderRequestError, readProviderJsonBody } from "../provider-runtime.ts";
@@ -41,7 +41,6 @@ export async function validatePodAiCredential(apiKey: string): Promise<Credentia
     profile: {
       displayName: "Pod AI API Key",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: podAiApiBaseUrl,
       validationMode: "format_only",

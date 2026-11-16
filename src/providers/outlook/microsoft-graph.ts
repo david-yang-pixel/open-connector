@@ -7,6 +7,7 @@ import {
   readProviderJsonBody,
   runProviderRequest,
   setSearchParams,
+  withRetryAfterSeconds,
 } from "../provider-runtime.ts";
 
 const graphBaseUrl = "https://graph.microsoft.com/v1.0/";
@@ -74,10 +75,13 @@ function buildMicrosoftGraphUrl(
   query: Record<string, string | undefined> | undefined,
   allowNextLink: ((pathname: string) => boolean) | undefined,
 ): URL {
-  const normalizedPathOrUrl = pathOrUrl.toLowerCase();
-  const absolute = normalizedPathOrUrl.startsWith("https://") || normalizedPathOrUrl.startsWith("http://");
-  const requiresNextLinkValidation = absolute || pathOrUrl.startsWith("/");
-  const url = absolute ? new URL(pathOrUrl) : new URL(pathOrUrl, graphBaseUrl);
+  // Code passes plain relative paths such as `me/messages`; anything else is a
+  // caller-supplied link that must pass the allowlist. A value with any scheme
+  // is parsed on its own: resolved against the base, `https:me/drive` would
+  // turn into a same-origin path that never reaches the allowlist.
+  const absolute = /^[a-z][a-z\d+.-]*:/i.test(pathOrUrl);
+  const requiresNextLinkValidation = absolute || !/^[a-z\d]/i.test(pathOrUrl);
+  const url = parseMicrosoftGraphUrl(pathOrUrl, absolute ? undefined : graphBaseUrl);
   if (url.origin !== graphOrigin || url.protocol !== "https:") {
     throw new ProviderRequestError(400, "Microsoft Graph URL must target https://graph.microsoft.com");
   }
@@ -86,6 +90,14 @@ function buildMicrosoftGraphUrl(
   }
   setSearchParams(url, query ?? {});
   return url;
+}
+
+function parseMicrosoftGraphUrl(pathOrUrl: string, base: string | undefined): URL {
+  try {
+    return new URL(pathOrUrl, base);
+  } catch {
+    throw new ProviderRequestError(400, "Microsoft Graph URL must target https://graph.microsoft.com");
+  }
 }
 
 async function microsoftGraphResponseError(
@@ -105,5 +117,9 @@ async function microsoftGraphResponseError(
       // Keep the upstream text when it is not JSON.
     }
   }
-  return new ProviderRequestError(response.status, options.refineErrorMessage?.(code, message) ?? message);
+  return new ProviderRequestError(
+    response.status,
+    options.refineErrorMessage?.(code, message) ?? message,
+    withRetryAfterSeconds(response),
+  );
 }

@@ -1,15 +1,11 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-  runProviderRequest,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError, runProviderRequest } from "../provider-runtime.ts";
 
 const service = "wappalyzer";
 const wappalyzerApiBaseUrl = "https://api.wappalyzer.com/v2/";
@@ -70,7 +66,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "wappalyzer:api-key",
         displayName: "Wappalyzer API Key",
       },
-      grantedScopes: [],
       metadata: {
         validationEndpoint: "/credits/balance",
         credits,

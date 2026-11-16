@@ -1,10 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type {
-  ApiKeyProviderContext,
-  ProviderActionHandlers,
-  ProviderRuntimeHandler,
-  ProviderTransitFile,
-} from "../provider-runtime.ts";
+import type { ApiKeyProviderContext, ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderTransitFile } from "../provider-files.ts";
 
 import { Buffer } from "node:buffer";
 import {
@@ -78,7 +74,6 @@ export async function validateCredential(
       accountId: "api_key",
       displayName: "Torii Image Translator API Key",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl,
       validationEndpoint: creditsPath,

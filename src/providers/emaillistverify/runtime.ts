@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
@@ -119,7 +119,6 @@ export async function validateEmailListVerifyCredential(
       accountId: buildEmailListVerifyProviderAccountId(apiKey),
       displayName: "EmailListVerify API Key",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: emailListVerifyApiBaseUrl,
       validationEndpoint: "/api/credits",

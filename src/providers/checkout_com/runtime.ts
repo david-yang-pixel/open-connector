@@ -1,13 +1,13 @@
 import type { ExecutionContext } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
 import {
   providerInputError,
   providerResponseError,
   providerUserAgent,
   ProviderRequestError,
-  requireApiKeyCredential,
 } from "../provider-runtime.ts";
 type Environment = "sandbox" | "production";
 interface CheckoutContext {
@@ -70,7 +70,6 @@ export async function validateCheckout(
   signal?: AbortSignal,
 ): Promise<{
   profile: { accountId: string; displayName: string };
-  grantedScopes: string[];
   metadata: Record<string, unknown>;
 }> {
   const env = environment(input.values.environment);
@@ -89,7 +88,6 @@ export async function validateCheckout(
       accountId: `${env}:${normalizedPrefix}`,
       displayName: env === "production" ? "Checkout.com Production API Key" : "Checkout.com Sandbox API Key",
     },
-    grantedScopes: [],
     metadata: {
       environment: env,
       prefix: normalizedPrefix,

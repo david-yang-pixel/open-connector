@@ -5,7 +5,7 @@ import type {
   ProviderProxyExecutor,
   ProxyExecutionResult,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 import type { FlomoMcpToolName } from "./actions.ts";
 import type { Client } from "@modelcontextprotocol/client";
 
@@ -15,16 +15,19 @@ import { ProtocolError } from "@modelcontextprotocol/client";
 import { createHash } from "node:crypto";
 import { optionalString, requiredString } from "../../core/cast.ts";
 import { withMcpClient } from "../mcp-client.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
 import {
   createProviderProxyUrl,
-  defineProviderExecutors,
   normalizeProviderProxyHeaders,
+  readProviderProxyResponse,
+  toProviderProxyError,
+} from "../provider-proxy.ts";
+import {
   providerFetch,
   providerInputError,
   ProviderRequestError,
   providerUserAgent,
-  readProviderProxyResponse,
-  toProviderProxyError,
+  defaultProviderRequestTimeoutMs,
 } from "../provider-runtime.ts";
 
 const service = "flomo";
@@ -32,7 +35,6 @@ const flomoWebhookHost = "flomoapp.com";
 const flomoWebhookPathPrefix = "/iwh/";
 const flomoMcpEndpoint = "https://flomoapp.com/mcp";
 const flomoMcpTokenField = "token";
-const flomoRequestTimeoutMs = 30_000;
 
 type FlomoActionHandler = (input: Record<string, unknown>, context: FlomoActionContext) => Promise<unknown>;
 type FlomoMcpToolResult = Awaited<ReturnType<Client["callTool"]>>;
@@ -182,7 +184,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: `flomo:${hashFlomoWebhookUrl(webhookUrl)}`,
         displayName: `flomo · ${suffix}`,
       },
-      grantedScopes: [],
       metadata: {
         webhookHost: webhookUrl.host,
         webhookPathSuffix: suffix,
@@ -203,7 +204,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: `flomo:mcp:${tokenHash}`,
         displayName: `flomo MCP · ${tokenHash.slice(-6)}`,
       },
-      grantedScopes: [],
       metadata: {
         mcpEndpoint: flomoMcpEndpoint,
         mcpTools: tools.map((tool) => tool.name).sort(),
@@ -234,7 +234,7 @@ async function createFlomoMemo(input: {
   fetcher: typeof fetch;
   signal?: AbortSignal;
 }): Promise<unknown> {
-  const timeoutSignal = AbortSignal.timeout(flomoRequestTimeoutMs);
+  const timeoutSignal = AbortSignal.timeout(defaultProviderRequestTimeoutMs);
   const signal = input.signal ? AbortSignal.any([input.signal, timeoutSignal]) : timeoutSignal;
 
   try {
@@ -303,7 +303,7 @@ async function requestFlomoProxy(
     }
   }
 
-  const timeoutSignal = AbortSignal.timeout(flomoRequestTimeoutMs);
+  const timeoutSignal = AbortSignal.timeout(defaultProviderRequestTimeoutMs);
   init.signal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
 
   try {
@@ -395,7 +395,7 @@ async function listFlomoMcpTools(input: {
     const result = await client.listTools(
       {},
       {
-        timeout: flomoRequestTimeoutMs,
+        timeout: defaultProviderRequestTimeoutMs,
       },
     );
     return result.tools.map((tool) => ({
@@ -417,7 +417,7 @@ async function callFlomoMcpTool(input: {
         arguments: input.arguments,
       },
       {
-        timeout: flomoRequestTimeoutMs,
+        timeout: defaultProviderRequestTimeoutMs,
       },
     );
     return normalizeMcpToolResult(input.toolName, result);

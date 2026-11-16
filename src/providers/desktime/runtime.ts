@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
 import {
@@ -124,7 +124,6 @@ export async function validateDeskTimeCredential(
       accountId: companyName ?? "api_key",
       displayName: companyName ?? "DeskTime API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: desktimeApiBaseUrl,
       validationEndpoint: "/company",

@@ -2,47 +2,78 @@
 
 Managed provider actions can be configured through the [Connector Marketplace](marketplace.md). Marketplace API keys use the same optional `OOMOL_CONNECT_ENCRYPTION_KEY` protection as other stored credentials.
 
+[Custom MCP services](custom-mcp.md) are managed in the Console and stored in the runtime database.
+
 OpenConnector is configured with environment variables.
 
-| Variable                                    | Default                   | Purpose                                                                                                                                                                     |
-| ------------------------------------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PORT`                                      | `3000`                    | Local HTTP server port.                                                                                                                                                     |
-| `HOST`                                      | `127.0.0.1`               | Bind address. Docker image sets `0.0.0.0`.                                                                                                                                  |
-| `OOMOL_CONNECT_ORIGIN`                      | `http://localhost:<PORT>` | Public origin used for OAuth redirect URLs and Action guide request examples. A path in it is a mount prefix that every request must carry.                                 |
-| `OOMOL_CONNECT_DATA_DIR`                    | `./data`                  | SQLite database, local transit files, and Node upload staging. Docker uses `/app/data`.                                                                                     |
-| `OOMOL_CONNECT_DATABASE_URL`                | unset                     | PostgreSQL connection URL. When unset, the Node runtime uses SQLite under the data directory.                                                                               |
-| `OOMOL_CONNECT_DATABASE_POOL_MAX`           | `10`                      | Maximum PostgreSQL connections per Node runtime instance.                                                                                                                   |
-| `OOMOL_CONNECT_DATABASE_CONNECT_TIMEOUT_MS` | `10000`                   | PostgreSQL connection timeout in milliseconds.                                                                                                                              |
-| `OOMOL_CONNECT_ENCRYPTION_KEY`              | unset                     | Encrypts credentials, Marketplace API keys, OAuth config, pending OAuth state, and completed idempotent Action responses. When unset, these values are stored in plaintext. |
-| `OOMOL_CONNECT_NEW_ENCRYPTION_KEY`          | unset                     | New key used by `runtime:data rotate-key`.                                                                                                                                  |
-| `OOMOL_CONNECT_ADMIN_TOKEN`                 | unset                     | Requires bearer-token auth for local admin API, docs, and web console.                                                                                                      |
-| `OOMOL_CONNECT_RUNTIME_TOKEN`               | unset                     | Optional bootstrap runtime bearer token for `/v1` and MCP callers.                                                                                                          |
-| `OOMOL_CONNECT_ALLOWED_CUSTOM_OAUTH`        | unset                     | Enables connection-scoped OAuth apps for `*` or a comma-separated service list.                                                                                             |
-| `OOMOL_CONNECT_JWKS_URI`                    | unset                     | Node-only JWKS endpoint for validating runtime JWT access tokens.                                                                                                           |
-| `OOMOL_CONNECT_JWT_ISSUER`                  | unset                     | Expected `iss` claim for runtime JWT access tokens.                                                                                                                         |
-| `OOMOL_CONNECT_JWT_AUDIENCE`                | unset                     | Expected API `aud` claim for runtime JWT access tokens.                                                                                                                     |
-| `OOMOL_CONNECT_MCP_OAUTH`                   | `false`                   | Lets ChatGPT custom connectors and Gemini custom apps obtain `/mcp` runtime tokens through OAuth. Requires `OOMOL_CONNECT_ADMIN_TOKEN` and an HTTPS origin. See below.      |
-| `OOMOL_CONNECT_MCP_OAUTH_REDIRECT_URIS`     | unset                     | Comma-separated OAuth callbacks of other MCP clients that may register besides ChatGPT and the Gemini app. Matched exactly. See below.                                      |
-| `OOMOL_CONNECT_ALLOWED_ACTIONS`             | unset                     | Comma-separated executable action allowlist. Supports exact ids, `service.*`, `*`, and `@operation:<type>`.                                                                 |
-| `OOMOL_CONNECT_BLOCKED_ACTIONS`             | unset                     | Comma-separated executable action denylist. Supports exact ids, `service.*`, `*`, and `@operation:<type>`.                                                                  |
-| `OOMOL_CONNECT_ALLOWED_PROXIES`             | unset                     | Comma-separated provider proxy allowlist. Supports service names and `*`.                                                                                                   |
-| `OOMOL_CONNECT_BLOCKED_PROXIES`             | unset                     | Comma-separated provider proxy denylist. Supports service names and `*`.                                                                                                    |
-| `OOMOL_CONNECT_ALLOW_PRIVATE_NETWORK`       | `false`                   | Allow self-hosted provider connections to target private networks. See below.                                                                                               |
-| `OOMOL_CONNECT_EGRESS_TRUSTED_HOSTS`        | unset                     | Trusted hosts routed through a corporate VPN. See below.                                                                                                                    |
-| `OOMOL_CONNECT_LOG_LEVEL`                   | `info`                    | Pino log level for the local Node server.                                                                                                                                   |
-| `OOMOL_CONNECT_TRANSIT_FILE_BACKEND`        | `local`                   | Node transit-file backend: `local` or `s3`.                                                                                                                                 |
-| `OOMOL_CONNECT_TRANSIT_FILE_TTL_SECONDS`    | `86400`                   | Transit file lifetime before cleanup.                                                                                                                                       |
-| `OOMOL_CONNECT_TRANSIT_FILE_MAX_BYTES`      | `104857600`               | Maximum transit file upload size.                                                                                                                                           |
-| `OOMOL_CONNECT_S3_BUCKET`                   | unset                     | Bucket used when the Node transit-file backend is `s3`.                                                                                                                     |
-| `OOMOL_CONNECT_S3_REGION`                   | `us-east-1`               | S3 signing region. Use the value required by the storage service.                                                                                                           |
-| `OOMOL_CONNECT_S3_ENDPOINT`                 | AWS S3                    | S3-compatible endpoint for MinIO, Cloudflare R2, Alibaba Cloud OSS, or another object store.                                                                                |
-| `OOMOL_CONNECT_S3_FORCE_PATH_STYLE`         | `false`                   | Use path-style S3 URLs. This is commonly required by local MinIO deployments.                                                                                               |
-| `OOMOL_CONNECT_S3_ACCESS_KEY_ID`            | SDK credential chain      | Explicit S3 access key ID. Configure it with the secret key, or omit both.                                                                                                  |
-| `OOMOL_CONNECT_S3_SECRET_ACCESS_KEY`        | SDK credential chain      | Explicit S3 secret access key. Configure it with the access key ID, or omit both.                                                                                           |
-| `OOMOL_CONNECT_S3_SESSION_TOKEN`            | unset                     | Optional session token used with explicit S3 credentials.                                                                                                                   |
-| `OOMOL_CONNECT_RUN_LIMIT`                   | `5000`                    | Maximum number of recent action run audit records to retain.                                                                                                                |
-| `OOMOL_CONNECT_CATALOG_LAZY_SCHEMAS`        | `false`                   | Read action JSON schemas from the catalog files on demand instead of keeping them in memory. See below.                                                                     |
-| `OOMOL_CONNECT_CATALOG_SCHEMA_CACHE_FILES`  | `64`                      | Provider files whose action schemas stay cached when lazy schemas are on.                                                                                                   |
+Embedding hosts can also configure opt-in [provider HTTP dispatch hooks](provider-http-dispatch.md)
+through runtime options to admit, delay or deny each upstream HTTP attempt.
+
+| Variable                                    | Default                   | Purpose                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------------------------------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PORT`                                      | `3000`                    | Local HTTP server port.                                                                                                                                                                                                                                                                                                                                                                                          |
+| `HOST`                                      | `127.0.0.1`               | Bind address. Docker image sets `0.0.0.0`.                                                                                                                                                                                                                                                                                                                                                                       |
+| `OOMOL_CONNECT_ORIGIN`                      | `http://localhost:<PORT>` | Public origin used for OAuth redirect URLs and Action guide request examples. A path in it is a mount prefix that every request must carry.                                                                                                                                                                                                                                                                      |
+| `OOMOL_CONNECT_DATA_DIR`                    | `./data`                  | SQLite database, local transit files, and Node upload staging. Docker uses `/app/data`.                                                                                                                                                                                                                                                                                                                          |
+| `OOMOL_CONNECT_DATABASE_URL`                | unset                     | PostgreSQL connection URL. When unset, the Node runtime uses SQLite under the data directory.                                                                                                                                                                                                                                                                                                                    |
+| `OOMOL_CONNECT_DATABASE_POOL_MAX`           | `10`                      | Maximum PostgreSQL connections per Node runtime instance.                                                                                                                                                                                                                                                                                                                                                        |
+| `OOMOL_CONNECT_DATABASE_CONNECT_TIMEOUT_MS` | `10000`                   | PostgreSQL connection timeout in milliseconds.                                                                                                                                                                                                                                                                                                                                                                   |
+| `OOMOL_CONNECT_ENCRYPTION_KEY`              | unset                     | Encrypts credentials, Marketplace API keys, OAuth config, pending OAuth state, and completed idempotent Action responses. When unset, these values are stored in plaintext.                                                                                                                                                                                                                                      |
+| `OOMOL_CONNECT_NEW_ENCRYPTION_KEY`          | unset                     | New key used by `runtime:data rotate-key`.                                                                                                                                                                                                                                                                                                                                                                       |
+| `OOMOL_CONNECT_ADMIN_TOKEN`                 | unset                     | Requires bearer-token auth for local admin API, docs, and web console.                                                                                                                                                                                                                                                                                                                                           |
+| `OOMOL_CONNECT_RUNTIME_TOKEN`               | unset                     | Optional bootstrap runtime bearer token for `/v1` and MCP callers.                                                                                                                                                                                                                                                                                                                                               |
+| `OOMOL_CONNECT_EVENT_VERIFY_TOKEN`          | unset                     | Dedicated bearer token for the `slackbot`, `microsoft_teams_bot` and `feishu_app_bot` `/events/verify` routes; they return 404 when unset. Not an admin/runtime token.                                                                                                                                                                                                                                           |
+| `OOMOL_CONNECT_MCP_OUTPUT_MODE`             | `compatible`              | MCP result format on Node and Cloudflare: `compatible` returns complete JSON text and structured data; `compact` keeps structured data with short text. Enable `compact` only when all clients consume `structuredContent`. Invalid values are rejected. Embedding hosts use `mcpOutputMode`; see [MCP result delivery](runtime-api.md#mcp).                                                                     |
+| `OOMOL_CONNECT_ALLOWED_CUSTOM_OAUTH`        | unset                     | Enables connection-scoped OAuth apps for `*` or a comma-separated service list.                                                                                                                                                                                                                                                                                                                                  |
+| `OOMOL_CONNECT_JWKS_URI`                    | unset                     | Node-only JWKS endpoint for validating runtime JWT access tokens.                                                                                                                                                                                                                                                                                                                                                |
+| `OOMOL_CONNECT_JWT_ISSUER`                  | unset                     | Expected `iss` claim for runtime JWT access tokens.                                                                                                                                                                                                                                                                                                                                                              |
+| `OOMOL_CONNECT_JWT_AUDIENCE`                | unset                     | Expected API `aud` claim for runtime JWT access tokens.                                                                                                                                                                                                                                                                                                                                                          |
+| `OOMOL_CONNECT_MCP_OAUTH`                   | `false`                   | Lets ChatGPT custom connectors and Gemini custom apps obtain `/mcp` runtime tokens through OAuth. Requires `OOMOL_CONNECT_ADMIN_TOKEN` and an HTTPS origin. Do not enable together with `OOMOL_CONNECT_OAUTH_ENABLED`; both serve `/.well-known/oauth-*`. See below.                                                                                                                                             |
+| `OOMOL_CONNECT_MCP_OAUTH_REDIRECT_URIS`     | unset                     | Comma-separated OAuth callbacks of other MCP clients that may register besides ChatGPT and the Gemini app. Matched exactly. See below.                                                                                                                                                                                                                                                                           |
+| `OOMOL_CONNECT_ALLOWED_ACTIONS`             | unset                     | Comma-separated executable action allowlist. Supports exact ids, `service.*`, `*`, and `@operation:<type>`.                                                                                                                                                                                                                                                                                                      |
+| `OOMOL_CONNECT_BLOCKED_ACTIONS`             | unset                     | Comma-separated executable action denylist. Supports exact ids, `service.*`, `*`, and `@operation:<type>`.                                                                                                                                                                                                                                                                                                       |
+| `OOMOL_CONNECT_ALLOWED_PROXIES`             | unset                     | Comma-separated provider proxy allowlist. Supports service names and `*`.                                                                                                                                                                                                                                                                                                                                        |
+| `OOMOL_CONNECT_BLOCKED_PROXIES`             | unset                     | Comma-separated provider proxy denylist. Supports service names and `*`.                                                                                                                                                                                                                                                                                                                                         |
+| `OOMOL_CONNECT_ALLOWED_TRIGGERS`            | unset                     | Comma-separated Trigger allowlist; exact IDs, `<service>.*`, or `*`.                                                                                                                                                                                                                                                                                                                                             |
+| `OOMOL_CONNECT_BLOCKED_TRIGGERS`            | unset                     | Comma-separated Trigger block rules; block rules override grants.                                                                                                                                                                                                                                                                                                                                                |
+| `OOMOL_CONNECT_ALLOW_PRIVATE_NETWORK`       | `false`                   | Allow self-hosted provider connections to target private networks. See below.                                                                                                                                                                                                                                                                                                                                    |
+| `OOMOL_CONNECT_EGRESS_TRUSTED_HOSTS`        | unset                     | Trusted hosts routed through a corporate VPN. See below.                                                                                                                                                                                                                                                                                                                                                         |
+| `OOMOL_CONNECT_LOG_LEVEL`                   | `info`                    | Pino log level for the local Node server.                                                                                                                                                                                                                                                                                                                                                                        |
+| `OOMOL_CONNECT_TRANSIT_FILE_BACKEND`        | `local`                   | Node transit-file backend: `local` or `s3`.                                                                                                                                                                                                                                                                                                                                                                      |
+| `OOMOL_CONNECT_TRANSIT_FILE_TTL_SECONDS`    | `86400`                   | Transit file lifetime before cleanup.                                                                                                                                                                                                                                                                                                                                                                            |
+| `OOMOL_CONNECT_TRANSIT_FILE_MAX_BYTES`      | `104857600`               | Maximum transit file upload size.                                                                                                                                                                                                                                                                                                                                                                                |
+| `OOMOL_CONNECT_S3_BUCKET`                   | unset                     | Bucket used when the Node transit-file backend is `s3`.                                                                                                                                                                                                                                                                                                                                                          |
+| `OOMOL_CONNECT_S3_REGION`                   | `us-east-1`               | S3 signing region. Use the value required by the storage service.                                                                                                                                                                                                                                                                                                                                                |
+| `OOMOL_CONNECT_S3_ENDPOINT`                 | AWS S3                    | S3-compatible endpoint for MinIO, Cloudflare R2, Alibaba Cloud OSS, or another object store.                                                                                                                                                                                                                                                                                                                     |
+| `OOMOL_CONNECT_S3_FORCE_PATH_STYLE`         | `false`                   | Use path-style S3 URLs. This is commonly required by local MinIO deployments.                                                                                                                                                                                                                                                                                                                                    |
+| `OOMOL_CONNECT_S3_ACCESS_KEY_ID`            | SDK credential chain      | Explicit S3 access key ID. Configure it with the secret key, or omit both.                                                                                                                                                                                                                                                                                                                                       |
+| `OOMOL_CONNECT_S3_SECRET_ACCESS_KEY`        | SDK credential chain      | Explicit S3 secret access key. Configure it with the access key ID, or omit both.                                                                                                                                                                                                                                                                                                                                |
+| `OOMOL_CONNECT_S3_SESSION_TOKEN`            | unset                     | Optional session token used with explicit S3 credentials.                                                                                                                                                                                                                                                                                                                                                        |
+| `OOMOL_CONNECT_RUN_LIMIT`                   | `5000`                    | Maximum number of recent action run audit records to retain.                                                                                                                                                                                                                                                                                                                                                     |
+| `OOMOL_CONNECT_CATALOG_LAZY_SCHEMAS`        | `true`                    | Read action JSON schemas from the catalog files on demand instead of keeping them in memory. See below.                                                                                                                                                                                                                                                                                                          |
+| `OOMOL_CONNECT_CATALOG_SCHEMA_CACHE_FILES`  | `64`                      | Provider files whose action schemas stay cached when lazy schemas are on.                                                                                                                                                                                                                                                                                                                                        |
+| `OOMOL_CONNECT_OAUTH_CLOSE_DELAY_SECONDS`   | `5`                       | Seconds the OAuth completion page waits before closing its window. `0` closes it as soon as it loads.                                                                                                                                                                                                                                                                                                            |
+| `OOMOL_CONNECT_OAUTH_RESULT_ORIGINS`        | unset                     | Comma-separated exact origins a provider-refusal callback page may `postMessage` its result to (its opener). `*` is refused.                                                                                                                                                                                                                                                                                     |
+| `OOMOL_CONNECT_CUSTOM_MCP_CLIENT_NAME`      | `OOMOL Connect`           | Client name Connect registers with a custom MCP server's authorization server. Consent screens show it.                                                                                                                                                                                                                                                                                                          |
+| `OOMOL_CONNECT_CUSTOM_MCP_CLIENT_LOGO_URI`  | unset                     | HTTPS logo URL sent with that registration. Each authorization server decides whether to show it.                                                                                                                                                                                                                                                                                                                |
+| `OOMOL_CONNECT_CUSTOM_MCP_CLIENT_URI`       | unset                     | HTTPS home page URL sent with that registration.                                                                                                                                                                                                                                                                                                                                                                 |
+| `OOMOL_CONNECT_OAUTH_ENABLED`               | `false`                   | Mounts the Node MCP OAuth 2.1 authorization server endpoints (`/.well-known/oauth-*`, `/oauth/*`). Accepting OAuth access tokens on `/v1` and `/mcp` additionally requires `OOMOL_CONNECT_OAUTH_AUTH_MODE=oauth` or `mixed` (the default `runtime_token` rejects them).                                                                                                                                          |
+| `OOMOL_CONNECT_OAUTH_AUTH_MODE`             | `runtime_token`           | Which credentials the runtime scope accepts: `none`, `runtime_token`, `oauth`, or `mixed`. `mixed` accepts both persistent runtime tokens and OAuth 2.1 access tokens.                                                                                                                                                                                                                                           |
+| `OOMOL_CONNECT_OAUTH_ISSUER`                | public origin             | AS issuer URL (RFC 8414 `issuer`) published in the authorization-server metadata. Defaults to the public origin.                                                                                                                                                                                                                                                                                                 |
+| `OOMOL_CONNECT_OAUTH_ACCESS_TOKEN_TTL`      | `3600`                    | OAuth access token lifetime in seconds.                                                                                                                                                                                                                                                                                                                                                                          |
+| `OOMOL_CONNECT_OAUTH_REFRESH_TOKEN_TTL`     | `2592000`                 | OAuth refresh token lifetime in seconds.                                                                                                                                                                                                                                                                                                                                                                         |
+| `OOMOL_CONNECT_OAUTH_CODE_TTL`              | `60`                      | OAuth authorization code lifetime in seconds.                                                                                                                                                                                                                                                                                                                                                                    |
+| `OOMOL_CONNECT_OAUTH_ALLOW_DCR`             | `true`                    | Exposes `POST /oauth/mcp/register` for OAuth 2.1 Dynamic Client Registration (RFC 7591).                                                                                                                                                                                                                                                                                                                         |
+| `OOMOL_CONNECT_OAUTH_ALLOW_CIMD`            | `true`                    | Accepts CIMD (Client Id Metadata Document) `client_id` values for OAuth client registration.                                                                                                                                                                                                                                                                                                                     |
+| `OOMOL_CONNECT_OAUTH_TRUST_PROXY_HEADERS`   | `false`                   | Trusts `x-forwarded-for` (rightmost entry), `x-real-ip` and `cf-connecting-ip` when keying the OAuth endpoints' rate-limit buckets. Enable only behind a reverse proxy that overwrites these headers: with the default `false`, a TLS-terminating proxy collapses all callers into one shared bucket, and without such a proxy an enabled flag lets callers spoof their bucket by setting the header themselves. |
+
+Clients that registered through DCR or CIMD before the scope-default change keep their stored
+scopes; when such a client requests a scope outside its registered set (typically `offline_access`
+on top of `mcp:access`), the authorization endpoint rejects it with `invalid_scope`. Widen the
+affected client explicitly with `PUT /api/oauth-clients/:clientId` (or delete it and let the client
+register again). Existing records are never widened automatically: explicitly restricted clients
+store their scopes the same way, so an automatic widening would silently grant them more than they
+asked for.
 
 Example:
 
@@ -54,6 +85,14 @@ OOMOL_CONNECT_ALLOWED_ACTIONS="hackernews.*,github.get_current_user" \
 OOMOL_CONNECT_ALLOWED_PROXIES="github" \
 npm run dev
 ```
+
+When runtime authentication is enabled, management endpoints require a separately configured
+`OOMOL_CONNECT_ADMIN_TOKEN`. If it is missing, admin-scoped requests return `403`, including
+requests to create runtime tokens or modify connections and OAuth configuration. Runtime tokens
+and JWTs do not grant admin access. This also applies to OAuth runtime authentication and stored
+runtime tokens. Configure the admin token before creating the first persistent runtime token;
+once that token exists, anonymous management access is disabled. Unauthenticated local operation
+remains available when no runtime authentication is configured or runtime auth mode is `none`.
 
 Create persistent runtime tokens from the web console Access tab or `POST /api/runtime-tokens`.
 Only token hashes are stored: the Node server stores persistent-token records in its selected SQLite
@@ -198,7 +237,7 @@ runtime.
 
 The Node runtime stores transit files under `data/files` by default. Set
 `OOMOL_CONNECT_TRANSIT_FILE_BACKEND=s3` to share transit files across multiple Node or Docker
-instances through AWS S3 or an S3-compatible service such as MinIO, Cloudflare R2, or Alibaba Cloud
+instances through AWS S3 or an S3-compatible service such as MinIO, Cloudflare R2, Neon, or Alibaba Cloud
 OSS:
 
 ```bash
@@ -220,6 +259,13 @@ For Cloudflare R2, use the account S3 endpoint and set the region to `auto`. For
 use its S3-compatible endpoint (`https://s3.oss-<region>.aliyuncs.com`), set the matching region, and
 leave path-style access disabled. MinIO commonly uses its server URL as the endpoint with
 `OOMOL_CONNECT_S3_FORCE_PATH_STYLE=true`.
+
+For Neon Object Storage, use the branch S3 endpoint
+(`https://<branch-id>.storage.<cell>.<region>.aws.neon.tech`), set the region the branch reports,
+and set `OOMOL_CONNECT_S3_FORCE_PATH_STYLE=true` because Neon only accepts path-style requests. The
+`neon_object_storage.get_branch_storage` action returns the endpoint and region for a branch. Create the bucket with
+`neon_object_storage.create_bucket` or the Neon Console, and use a branch credential's access key ID and secret
+access key for the two credential variables.
 
 Uploads and downloads continue to use `/api/files`; the bucket does not need to be public. All
 instances must use the same bucket and S3 settings. The runtime rejects expired files when they are
@@ -249,8 +295,8 @@ private targets are rejected during connection setup.
 Some self-hosted services are only reachable over a LAN or an overlay network
 such as Tailscale or NetBird. To allow those connections, set
 `OOMOL_CONNECT_ALLOW_PRIVATE_NETWORK=true`. When enabled, connections for the
-self-hosted providers that opt in (**Dokploy**, **n8n**, **GitLab**,
-**Gitea**, **Home Assistant**, **IMAP Mailbox**, and others) may target:
+self-hosted providers that opt in (**Apache Doris**, **Dokploy**, **n8n**, **GitLab**,
+**Gitea**, **Home Assistant**, **IMAP Mailbox**, **Kubernetes**, **SFTP**, and others) may target:
 
 - RFC 1918 ranges: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`
 - Carrier-grade NAT / shared address space `100.64.0.0/10` (Tailscale, NetBird)
@@ -260,14 +306,97 @@ self-hosted providers that opt in (**Dokploy**, **n8n**, **GitLab**,
 The following targets stay blocked even when the flag is enabled:
 
 - Loopback and localhost (`127.0.0.0/8`, `localhost`, `.localhost`)
-- Link-local and cloud metadata (`169.254.0.0/16`, `100.100.100.200/32`, and
-  metadata hostnames such as `metadata.google.internal`)
-- Reserved, multicast, and broadcast ranges, and all IPv6 targets
+- Link-local and cloud metadata (`169.254.0.0/16`, `100.100.100.200/32`, the Azure
+  platform endpoint `168.63.129.16/32`, the IPv6 metadata endpoints `fd00:ec2::254`,
+  `fd20:ce::254`, and `fd00:c1::a9fe:a9fe`, and metadata hostnames such as
+  `metadata.google.internal`)
+- Reserved, multicast, and broadcast ranges
+- IPv6 address literals in URLs; a hostname that resolves to IPv6 addresses goes through
+  the same checks as one that resolves to IPv4
 
 > **Enable this only on a single-tenant, self-hosted runtime that you operate.**
 > On a shared or multi-tenant deployment, turning it on lets any connection
 > owner reach the operator's internal network from the runtime's egress
 > position, so leave it at the `false` default there.
+
+### Apache Doris
+
+The `doris` provider uses the FE HTTP statement API, with Apache Doris **2.1** as
+the minimum supported version. It provides `execute_query`, `list_databases`,
+`list_tables`, and `get_table_schema`. Configure a `custom_credential` connection
+with `baseUrl` (the FE HTTP endpoint, usually port 8030), `username`, `password`,
+and optionally `defaultDatabase`. Use HTTPS for publicly exposed endpoints.
+
+Use a dedicated account with only `SELECT_PRIV` on the databases it needs:
+
+```sql
+GRANT SELECT_PRIV ON your_db.* TO 'oc_reader'@'%';
+```
+
+The user must already exist. Do not grant administrator or write privileges to
+this account. On Doris versions where `enable_all_http_auth=true` adds an ADMIN
+check to the statement endpoint, a SELECT-only account cannot use this provider.
+That deployment configuration is incompatible with this integration's minimum
+privilege setup; do not elevate the connector account to work around it.
+
+Credential validation runs `SELECT 1`. Query execution uses the action's
+`database`, then `defaultDatabase`, then the built-in `information_schema`.
+Database listing and credential validation use `defaultDatabase` or
+`information_schema`. Table listing and table schema actions require either an
+action `database` or a configured `defaultDatabase`. Table names are unqualified
+identifiers and are quoted by the provider.
+
+`execute_query` accepts one `SELECT`, `WITH ... SELECT`, `SHOW`, `DESC`,
+`DESCRIBE`, or `EXPLAIN` statement, with an optional trailing semicolon. It rejects
+multiple statements and write keywords, including `INTO OUTFILE` even when used
+inside a SELECT. Quoted values and ordinary comments are recognized; SQL hints,
+executable comments and backslash escapes are not supported. Use doubled quotes
+for literal quote characters and backticks for identifiers that use reserved
+words. These checks supplement database permissions; they do not establish a
+sandbox for functions or external resources configured by the Doris operator.
+The provider does not expose an arbitrary HTTP proxy.
+
+All four actions return `columns`, positional `rows`, `rowCount`,
+`executionTimeMs`, and `truncated`. Duplicate column names are preserved. For
+database/table listings each row holds a name; schema lookup returns DESCRIBE
+rows, with `columns` identifying their attributes. A nonzero Doris `code` is an
+error, and an unexpected `exec_status` response is rejected instead of being
+reported as an empty result set.
+
+`maxRows` defaults to 1,000 and accepts 1–10,000. Requests disable Doris streaming
+with `X-Doris-Stream: false` and ask for one extra row through the HTTP body's
+`limit` field so `truncated` is accurate. Response bodies are capped at **8 MiB**
+while being read; exceeding the cap returns an error rather than a partial
+result. The shared request timeout is 30 seconds. These limits do not bound the
+database's scan or guarantee cancellation of a server-side query: use SQL
+`LIMIT`, selective filters and Doris workload controls for expensive queries.
+
+For private FE addresses, enable `OOMOL_CONNECT_ALLOW_PRIVATE_NETWORK=true` on
+the runtime. This applies to both credential validation and action execution,
+including DNS and redirect checks. Loopback and metadata addresses remain
+blocked. Cloudflare Workers cannot route to private addresses; use a Node,
+Docker or Fly deployment with network access to the FE instead.
+
+See the [Doris statement API](https://doris.apache.org/docs/3.x/admin-manual/open-api/fe-http/statement-execution-action/),
+the [HTTP request implementation](https://github.com/apache/doris/blob/branch-3.0/fe/fe-core/src/main/java/org/apache/doris/httpv2/rest/StmtExecutionAction.java),
+and the runnable [local HTTP example](../examples/local-http/doris.ts).
+
+### Kubernetes
+
+The `kubernetes` provider connects with a ServiceAccount bearer token, the API
+server URL, and, for a cluster-private certificate authority, the
+`certificate-authority-data` value from kubeconfig or the equivalent PEM. It
+trusts only that CA for the connection; there is no option to skip TLS
+verification. Client certificates, exec and OIDC credential plugins, and kubeconfig
+upload are not supported.
+
+Custom CA trust needs a Node, Docker, Fly or single-binary deployment. Cloudflare
+Workers cannot supply a custom trust store, so a connection with a CA fails there
+with a clear error instead of falling back to the default one; a cluster whose API
+server has a publicly trusted certificate works on Workers without it.
+
+For a private API server address, also enable
+`OOMOL_CONNECT_ALLOW_PRIVATE_NETWORK=true`.
 
 ### Corporate VPN host exceptions
 
@@ -290,16 +419,17 @@ multicast, and other unsafe special-use targets remain blocked.
 
 ## Lazy catalog schemas
 
-The generated catalog ships one JSON file per provider, and the `inputSchema` and `outputSchema` of
-their actions are most of those bytes. The server keeps the whole catalog in memory, which is the
-largest allocation it makes and the one that matters on a 256 MB class machine such as the Helm
-chart's default `256Mi` request or a small Fly machine.
+The generated catalog ships one JSON file per provider. Action input and output schemas
+make up most of that data. Both the standalone server and embedded runtime now load
+schemas on demand by default, reducing startup work and resident memory.
 
-Set `OOMOL_CONNECT_CATALOG_LAZY_SCHEMAS=true` to keep those schemas on disk instead:
+To restore eager loading, which keeps the complete catalog in memory:
 
 ```bash
-OOMOL_CONNECT_CATALOG_LAZY_SCHEMAS=true npm run dev
+OOMOL_CONNECT_CATALOG_LAZY_SCHEMAS=false npm run dev
 ```
+
+Embedded hosts use `lazySchemas: false` for the same behavior.
 
 Action metadata stays in memory: ids, names, descriptions, required scopes, provider permissions,
 follow-up and async lifecycle links, and execution flags. Only the two schema fields are read back
@@ -308,7 +438,7 @@ provider files stay cached. `OOMOL_CONNECT_CATALOG_SCHEMA_CACHE_FILES` tunes tha
 cached file holds every schema of one provider, typically tens to a few hundred KB parsed, so 64
 files is on the order of a few MB to a few tens of MB. Values that are not positive integers fall
 back to the default. Set it higher when one server serves many providers repeatedly, and lower on
-the tightest machines. Responses are byte-identical to the default mode, so this is a
+the tightest machines. Responses are byte-identical to eager loading, so this is a
 memory-for-reads trade and not an API change.
 
 `npm run generate:catalog` also writes `catalog/apps-index.json`, the catalog without its schemas.
@@ -356,3 +486,199 @@ Set secrets with Wrangler instead of committing them to config:
 npx wrangler secret put OOMOL_CONNECT_ADMIN_TOKEN --config wrangler.local.jsonc
 npx wrangler secret put OOMOL_CONNECT_ENCRYPTION_KEY --config wrangler.local.jsonc
 ```
+
+Persistent runtime tokens need explicit `allowedTriggers` grants for Provider Triggers; old and new tokens default to no Trigger access. Trigger grants do not require `allowedProxies`. Stateful subscriptions require a persistent runtime token; environment tokens and verified JWTs support only permitted `options` and `read`. See [Provider Triggers](runtime-api.md#provider-triggers) for lifecycle, cleanup, account recovery and token rotation. Workers must have scheduled maintenance enabled and catalog assets available when Trigger cleanup is pending.
+
+## Channel event verification
+
+`slackbot`, `microsoft_teams_bot` and `feishu_app_bot` expose `POST /v1/providers/{service}/events/verify`. The ingress service that receives a channel's events forwards each original request there, and the route proves that the request came from the configured application. All three routes share these rules:
+
+- Authentication uses only `OOMOL_CONNECT_EVENT_VERIFY_TOKEN`. The routes return 404 when the token is unset, and admin or runtime tokens are rejected.
+- Forward the original request body and the provider headers. Slack and Feishu sign the body, so forward the exact bytes: re-serialized JSON fails their signature checks. Teams does not sign the body. It needs a valid activity whose `serviceUrl` matches the forwarded Bot Framework token.
+- The body limit is 64 KiB.
+- Verification never stores, deduplicates, retries or schedules an event. Your ingress owns those steps and sends any challenge reply to the platform.
+- Errors use one table of codes, listed in each section below.
+
+The sections below describe each channel. For the architecture and the steps to add a channel, see [Channel Event Verification](channel-event-verification.md).
+
+## Slack event verification
+
+Configure the default Slack Bot OAuth application in the console with its Client ID and Client Secret. Its optional **Slack App ID** and **Slack Signing Secret** fields enable event verification; they are not required for OAuth authorization or ordinary actions. The Signing Secret belongs to the Slack application, not to each workspace installation.
+
+Set `OOMOL_CONNECT_EVENT_VERIFY_TOKEN` to a dedicated secret and restart the runtime. An ingress service can then forward the exact Slack request body and signature headers:
+
+```http
+POST /v1/providers/slackbot/events/verify
+Authorization: Bearer <event-verify-token>
+X-Slack-Request-Timestamp: <original-timestamp>
+X-Slack-Signature: <original-signature>
+Content-Type: application/json
+
+<original Slack request body, without re-serialization>
+```
+
+This endpoint uses only the deployment-default `slackbot` OAuth application configuration. Connection-specific OAuth app settings are not used, even if they contain a Signing Secret. No Connection or Open Flow deployment is required. Admin and runtime tokens do not grant access to this endpoint; the dedicated verification token grants no access to other APIs.
+
+Successful responses use the runtime envelope:
+
+```json
+{
+  "success": true,
+  "message": "OK",
+  "data": { "valid": true, "appId": "A0123456789", "challenge": null },
+  "meta": {}
+}
+```
+
+For `url_verification`, `challenge` contains the validated string. Your ingress must reply to Slack with the challenge; the verifier does not send that reply. An explicit `api_app_id` must match the configured app, including on challenges. Ordinary requests must have type `event_callback` and a matching `api_app_id`. The verifier checks the minimal envelope, not workspace authorization or business event fields.
+
+The body limit is 64 KiB. Slack timestamps may differ from server time by at most 300 seconds in either direction. Repeated valid requests inside that window remain valid: your ingress owns deduplication, retries and scheduling. No event is stored or executed by verification.
+
+| HTTP | errorCode                           | Meaning                                                  |
+| ---- | ----------------------------------- | -------------------------------------------------------- |
+| 400  | `invalid_event_payload`             | Invalid JSON, unsupported envelope, or invalid challenge |
+| 401  | `unauthorized`                      | Missing or incorrect dedicated token                     |
+| 401  | `invalid_webhook_signature`         | Invalid Slack signature                                  |
+| 401  | `invalid_webhook_timestamp`         | Invalid timestamp or outside the allowed window          |
+| 403  | `webhook_app_mismatch`              | App ID does not match the configured application         |
+| 404  | `event_verification_disabled`       | No verification token configured                         |
+| 409  | `event_verification_not_configured` | Default Slack App ID or Signing Secret missing           |
+| 413  | `webhook_request_too_large`         | Body exceeds 64 KiB                                      |
+
+Errors use the runtime failure envelope with `success: false`, `errorCode`, `message`, `data` and `meta`. Infrastructure failures remain server errors rather than invalid signatures.
+
+When updating the default OAuth app through `PUT /api/oauth/configs/slackbot`, keep the same `clientId` and omit `clientSecret` or individual `secretExtra` keys to retain their stored values. Submit a new `secretExtra.signingSecret` to rotate it, or an empty string to clear it. Other configuration fields retain their existing replacement semantics. The console keeps blank secret inputs unchanged and provides an explicit clear-on-save checkbox for optional secrets. Changing `clientId` starts a new application configuration and does not inherit old secrets. Already-created Connections retain their own metadata; verification always reads the current default application configuration.
+
+## Standalone and embedded configuration
+
+The standalone server reads the environment variables on this page, owns its HTTP
+listener, and closes the runtime on process shutdown. The [embedded runtime](headless.md)
+accepts explicit options, leaves HTTP serving and shutdown to the host, and does not
+read these environment variables. Both default to lazy action schemas; use
+`OOMOL_CONNECT_CATALOG_LAZY_SCHEMAS=false` or `lazySchemas: false` for eager loading.
+The embedded package includes its catalog and migrations; custom `assets` paths
+must point to those generated assets. The host must await `runtime.close()`.
+
+## Microsoft Teams bot event verification
+
+To have Connector also normalize, filter and identify activities for deduplication, use the `microsoft_teams_bot.on_activity` Trigger with a shared event Source instead of forwarding to this route. See [Provider Triggers](runtime-api.md#provider-triggers).
+
+Connect a Microsoft Teams Bot account with its Application (client) ID, then set `OOMOL_CONNECT_EVENT_VERIFY_TOKEN` as described for Slack. Teams delivers activities to the messaging endpoint of your own ingress, which can forward them for verification. `Authorization` carries the dedicated token, so forward the activity request's own `Authorization` header value in `X-Botframework-Authorization`:
+
+```http
+POST /v1/providers/microsoft_teams_bot/events/verify
+Authorization: Bearer <event-verify-token>
+X-Botframework-Authorization: <Authorization header of the Teams request>
+X-OO-Connector-App-Id: <connection id>
+Content-Type: application/json
+
+<original Teams activity body, without re-serialization>
+```
+
+The bot is selected like it is for Actions: `X-OO-Connector-App-Id`, or an alias through `X-OO-Connector-Alias`. An unknown selector never falls back to another bot. The token audience must be that connection's Application (client) ID. Admin and runtime tokens do not grant access to this endpoint, and the dedicated token grants no access to other APIs.
+
+The verifier follows the Bot Connector authentication rules: an RS256 signature from the keys Bot Framework publishes, issuer `https://api.botframework.com` or `https://api.botframework.us`, audience, expiry (with five minutes of clock tolerance), a `serviceurl` claim equal to the activity's `serviceUrl`, a `serviceUrl` on a documented Microsoft Teams Bot Connector host, and the signing key's channel endorsement. The token does not sign the request body: the `serviceUrl` claim is what binds the two, so treat the activity's other fields as unauthenticated content that only your own ingress has checked.
+
+Successful responses use the runtime envelope:
+
+```json
+{
+  "success": true,
+  "message": "OK",
+  "data": {
+    "valid": true,
+    "appId": "00000000-0000-0000-0000-000000000001",
+    "tenantId": "00000000-0000-0000-0000-000000000002",
+    "serviceUrl": "https://smba.trafficmanager.net/teams/",
+    "activityId": "activity-id",
+    "conversationId": "conversation-id",
+    "aadObjectId": "00000000-0000-0000-0000-000000000003",
+    "channelId": "msteams"
+  },
+  "meta": {}
+}
+```
+
+Use the returned `serviceUrl` for replies. `tenantId`, `activityId`, `conversationId` and `aadObjectId` are extracted from the activity after the Bot Framework token and service URL are verified. The body limit is 64 KiB. No event is stored or executed by verification; your ingress owns deduplication, retries and scheduling.
+
+| HTTP | errorCode                           | Meaning                                                     |
+| ---- | ----------------------------------- | ----------------------------------------------------------- |
+| 400  | `invalid_event_payload`             | Invalid JSON or missing `serviceUrl`                        |
+| 401  | `unauthorized`                      | Missing or incorrect dedicated token                        |
+| 401  | `invalid_webhook_signature`         | Invalid token, `serviceUrl` mismatch, or unendorsed channel |
+| 401  | `invalid_webhook_timestamp`         | Token expired or not yet valid                              |
+| 403  | `webhook_app_mismatch`              | Token audience is a different bot                           |
+| 404  | `event_verification_disabled`       | No verification token configured                            |
+| 404  | `connection_not_found`              | The selected connection does not exist                      |
+| 409  | `event_verification_not_configured` | No Microsoft Teams Bot connection with an Application ID    |
+| 413  | `webhook_request_too_large`         | Body exceeds 64 KiB                                         |
+| 502  | `event_verification_unavailable`    | Bot Framework signing keys could not be fetched             |
+
+Signing keys are cached for an hour and refetched when a token names an unknown key; a failed refresh keeps serving the keys already held. Government-cloud tokens (issuer `https://api.botframework.us`) are verified against that cloud's published keys.
+
+## Feishu App Bot event verification
+
+Connect a Feishu App Bot with its **App ID**, **Event Verification Token** and **Event Encrypt Key**. The last two come from the app's Event Subscription settings and are needed only for event verification. Then set `OOMOL_CONNECT_EVENT_VERIFY_TOKEN` as described for Slack. Forward the original body together with Feishu's signing headers:
+
+```http
+POST /v1/providers/feishu_app_bot/events/verify
+Authorization: Bearer <event-verify-token>
+X-Lark-Request-Timestamp: <original-timestamp>
+X-Lark-Request-Nonce: <original-nonce>
+X-Lark-Signature: <original-signature>
+X-OO-Connector-App-Id: <connection id>
+Content-Type: application/json
+
+<original Feishu request body, without re-serialization>
+```
+
+The bot is selected like it is for Actions: by `X-OO-Connector-App-Id`, or by an alias in `X-OO-Connector-Alias`. An unknown selector never falls back to another bot.
+
+The verifier checks these things:
+
+- The Feishu verification token.
+- The signature, `SHA-256(timestamp + nonce + encryptKey + body)`. The timestamp may differ from server time by at most 300 seconds.
+- That the event's `app_id` is the connection's App ID.
+- The envelope. Encrypted envelopes are decrypted with the Encrypt Key.
+
+Every event must be signed. Only a URL verification challenge may omit the signing headers, and that challenge returns `signatureVerified: false`.
+
+A verified event returns the decrypted envelope. The verification token is removed from the response:
+
+```json
+{
+  "success": true,
+  "message": "OK",
+  "data": {
+    "valid": true,
+    "appId": "cli_a0123456789",
+    "tenantKey": "tenant-key",
+    "signatureVerified": true,
+    "payload": {
+      "schema": "2.0",
+      "header": {
+        "event_id": "event-id",
+        "event_type": "im.message.receive_v1",
+        "tenant_key": "tenant-key",
+        "app_id": "cli_a0123456789"
+      },
+      "event": {}
+    }
+  },
+  "meta": {}
+}
+```
+
+For `url_verification`, `challenge` contains the validated string, and your ingress must send that reply to Feishu. Feishu retries a delivery that did not receive HTTP 200 within three seconds. Deduplicate events by `header.event_id`.
+
+| HTTP | errorCode                           | Meaning                                                        |
+| ---- | ----------------------------------- | -------------------------------------------------------------- |
+| 400  | `invalid_event_payload`             | Invalid JSON, decryption failure, or unsupported envelope      |
+| 401  | `unauthorized`                      | Missing or incorrect dedicated token                           |
+| 401  | `invalid_webhook_signature`         | Wrong verification token, or missing or invalid signature      |
+| 401  | `invalid_webhook_timestamp`         | Timestamp is invalid or outside the 300 second window          |
+| 403  | `webhook_app_mismatch`              | The event's `app_id` is a different app                        |
+| 404  | `event_verification_disabled`       | No verification token configured                               |
+| 404  | `connection_not_found`              | The selected connection does not exist                         |
+| 409  | `event_verification_not_configured` | The connection lacks App ID, verification token or Encrypt Key |
+| 413  | `webhook_request_too_large`         | Body exceeds 64 KiB                                            |

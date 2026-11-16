@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { optionalRecord, optionalString } from "../../core/cast.ts";
 import { createProviderTimeout, providerUserAgent } from "../provider-runtime.ts";
@@ -33,7 +33,6 @@ export async function validateScrapeCreatorsCredential(
       accountId: "scrape-creators",
       displayName: "Scrape Creators API Key",
     },
-    grantedScopes: [],
     metadata: {
       validationEndpoint: "/v1/account/credit-balance",
       creditBalance: readBalance(result.payload),
@@ -150,7 +149,7 @@ async function requestJson(
       method,
       headers,
       body: serializedBody,
-      redirect: "error",
+      redirect: "manual",
       signal: timeout.signal,
     });
     const text = await readBoundedResponseText(response, responseMaxBytes, "Scrape Creators response");

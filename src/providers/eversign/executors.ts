@@ -1,6 +1,7 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
 
-import { defineApiKeyProviderExecutors, defineProviderProxy } from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   eversignActionHandlers,
   eversignApiBaseUrl,
@@ -29,7 +30,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: primary ? String(primary.businessId) : "eversign",
         displayName: primary?.businessName || "Xodo Sign API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: eversignApiBaseUrl,
         validationEndpoint: eversignValidationPath,

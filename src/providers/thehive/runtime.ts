@@ -93,7 +93,6 @@ export async function validateTheHiveCredential(
       accountId: `${config.service}:${host}:${userId}`,
       displayName: `${accountName} (${host})`,
     },
-    grantedScopes: [],
     metadata: {
       baseUrl,
       apiBaseUrl: `${baseUrl}/api${config.version == 5 ? "/v1" : ""}`,
@@ -220,7 +219,7 @@ function mapError(
     optionalString(object.error) ??
     `${displayName} request failed with status ${status}`;
   if (status == 401 || status == 403) return new ProviderRequestError(phase == "validate" ? 400 : status, message);
-  if (status == 404 && notFound) return new ProviderRequestError(400, message);
+  if (status == 404 && notFound) return providerInputError(message);
   if (status == 429) return new ProviderRequestError(429, message);
   return new ProviderRequestError(status >= 500 ? 502 : status, message, payload);
 }

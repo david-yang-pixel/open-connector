@@ -1,13 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ApiKeyProviderContext, ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ApiKeyProviderContext, ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const baseUrl = "https://api.vbout.com/1";
 const paths: Record<string, { method: string; path: string }> = {
@@ -110,7 +107,6 @@ export const credentialValidators: CredentialValidators = {
       "VBOUT API Key";
     return {
       profile: { accountId: optionalString(business?.vboutName) ?? "api_key", displayName: accountName },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: baseUrl,
         validationEndpoint: "/App/Me",

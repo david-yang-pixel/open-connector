@@ -1,3 +1,4 @@
+import { SdkErrorCode, SdkHttpError } from "@modelcontextprotocol/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { withMcpClient } from "./mcp-client.ts";
 
@@ -16,6 +17,17 @@ vi.mock("@modelcontextprotocol/client", () => ({
     terminateSession = lifecycle.terminateSession;
   },
   SSEClientTransport: class {},
+  SdkErrorCode: {
+    ClientHttpFailedToOpenStream: "CLIENT_HTTP_FAILED_TO_OPEN_STREAM",
+  },
+  SdkHttpError: class extends Error {
+    status: number;
+
+    constructor(_code: string, message: string, data: { status: number }) {
+      super(message);
+      this.status = data.status;
+    }
+  },
 }));
 
 beforeEach(() => {
@@ -82,4 +94,27 @@ it("preserves the action error when session cleanup fails", async () => {
   );
   await expect(result).rejects.toBe(failure);
   expect(lifecycle.close).toHaveBeenCalledOnce();
+});
+
+it("rebuilds a connected Streamable HTTP session once after a 404 when explicitly enabled", async () => {
+  const run = vi
+    .fn()
+    .mockRejectedValueOnce(
+      new SdkHttpError(SdkErrorCode.ClientHttpFailedToOpenStream, "session missing", { status: 404 }),
+    )
+    .mockResolvedValueOnce("recovered");
+
+  await expect(
+    withMcpClient(
+      {
+        endpoint: new URL("https://example.com/mcp"),
+        transport: "streamable_http",
+        retryOnSessionNotFound: true,
+      },
+      run,
+    ),
+  ).resolves.toBe("recovered");
+  expect(run).toHaveBeenCalledTimes(2);
+  expect(lifecycle.connect).toHaveBeenCalledTimes(2);
+  expect(lifecycle.close).toHaveBeenCalledTimes(2);
 });

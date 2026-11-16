@@ -1,6 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
 import {
@@ -9,11 +8,11 @@ import {
   providerInputError,
   ProviderRequestError,
   providerUserAgent,
+  defaultProviderRequestTimeoutMs,
 } from "../provider-runtime.ts";
 
 export const webvizioApiBaseUrl = "https://app.webvizio.com/api/v1";
 const webvizioWebhookPath = "/webhook";
-const webvizioDefaultRequestTimeoutMs = 30_000;
 
 type WebvizioPhase = "validate" | "execute";
 type WebvizioActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
@@ -65,18 +64,14 @@ export async function validateWebvizioCredential(
       accountId: "webvizio-personal-access-token",
       displayName: "Webvizio Personal Access Token",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: webvizioApiBaseUrl,
     },
   };
 }
 
-async function requestWebvizioJson(
-  input: WebvizioRequestInput,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
-): Promise<unknown> {
-  const timeout = createProviderTimeout(context.signal, webvizioDefaultRequestTimeoutMs);
+async function requestWebvizioJson(input: WebvizioRequestInput, context: ApiKeyProviderContext): Promise<unknown> {
+  const timeout = createProviderTimeout(context.signal);
   try {
     const response = await context.fetcher(buildWebvizioUrl(input.path), {
       method: input.method,
@@ -92,7 +87,7 @@ async function requestWebvizioJson(
     throw new ProviderRequestError(
       timeout.didTimeout() || isAbortLikeError(error) ? 504 : 502,
       timeout.didTimeout() || isAbortLikeError(error)
-        ? `Webvizio request timed out after ${Math.max(1, Math.ceil(webvizioDefaultRequestTimeoutMs / 1000))} seconds`
+        ? `Webvizio request timed out after ${Math.max(1, Math.ceil(defaultProviderRequestTimeoutMs / 1000))} seconds`
         : error instanceof Error
           ? `Webvizio request failed: ${error.message}`
           : "Webvizio request failed",

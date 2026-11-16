@@ -6,17 +6,13 @@ import type {
   ProviderProxyExecutor,
   ResolvedCredential,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { compactObject, optionalInteger, optionalRecord, optionalString, requiredRecord } from "../../core/cast.ts";
-import {
-  defineProviderExecutors,
-  defineProviderProxy,
-  providerInputError,
-  providerUserAgent,
-  ProviderRequestError,
-  requireApiKeyCredential,
-} from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerInputError, providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 
 const service = "knack";
 const knackApiBaseUrl = "https://api.knack.com/v1";
@@ -104,7 +100,6 @@ async function validateKnackCredential(
       accountId: appId,
       displayName: `Knack ${appId}`,
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: knackApiBaseUrl,
       appId,
@@ -283,7 +278,7 @@ async function readKnackPayload(response: Response): Promise<unknown> {
 function normalizeKnackError(status: number, payload: unknown, phase: KnackRequestPhase): ProviderRequestError {
   const message = readKnackErrorMessage(payload) ?? `Knack request failed with status ${status}`;
   if (phase === "validate" || status === 400 || status === 401 || status === 403 || status === 404) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (status === 429) {
     return new ProviderRequestError(429, message);

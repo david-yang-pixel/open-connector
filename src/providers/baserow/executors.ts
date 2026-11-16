@@ -1,6 +1,5 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -10,13 +9,10 @@ import {
   optionalString,
   recordOrEmpty,
 } from "../../core/cast.ts";
-import {
-  defineProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-  requireApiKeyCredential,
-} from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "baserow";
 const baserowApiBaseUrl = "https://api.baserow.io";
@@ -196,7 +192,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: firstTableId !== undefined ? `baserow:table:${firstTableId}` : undefined,
         displayName: optionalString(firstTable?.name) ?? "Baserow Database Token",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: baserowApiBaseUrl,
         validationEndpoint: baserowValidationPath,
@@ -210,7 +205,7 @@ export const credentialValidators: CredentialValidators = {
 };
 
 async function requestBaserowJson(input: {
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   path: string;
   phase: BaserowPhase;
   method?: "GET" | "POST" | "PATCH" | "DELETE";

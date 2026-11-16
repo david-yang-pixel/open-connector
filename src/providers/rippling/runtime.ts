@@ -1,6 +1,7 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
 import { providerUserAgent, ProviderRequestError, requiredInputString } from "../provider-runtime.ts";
@@ -83,7 +84,6 @@ export async function validateRipplingCredential(
       accountId: companyId ?? "api_key",
       displayName: companyName ?? companyId ?? "Rippling API Token",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: ripplingApiBaseUrl,
       validationEndpoint: "/companies/",

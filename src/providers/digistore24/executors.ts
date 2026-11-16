@@ -4,7 +4,7 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -14,14 +14,15 @@ import {
   optionalRecord,
   optionalString,
 } from "../../core/cast.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineProviderExecutors,
-  defineProviderProxy,
   providerUserAgent,
   ProviderRequestError,
   readProviderTextBody,
-  requireApiKeyCredential,
+  providerInputError,
 } from "../provider-runtime.ts";
 
 type QueryValue = string | number | boolean | undefined;
@@ -110,7 +111,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: userInfo.userId == null ? undefined : String(userInfo.userId),
         displayName: userInfo.userName ?? "Digistore24 API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: digistore24ApiBaseUrl,
         validationFunction: "getUserInfo",
@@ -350,11 +350,11 @@ function createDigistore24Error(status: number, statusText: string, payload: unk
   if (status === 429) {
     return new ProviderRequestError(429, message);
   } else if (phase === "validate" && (status === 400 || status === 401 || status === 403)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   } else if (phase === "execute" && (status === 401 || status === 403)) {
     return new ProviderRequestError(401, message);
   } else if (phase === "execute" && (status === 400 || status === 404 || status === 422)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   } else {
     return new ProviderRequestError(status >= 500 ? 502 : status || 502, message);
   }

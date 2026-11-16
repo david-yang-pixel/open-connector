@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
 import {
@@ -128,7 +128,6 @@ export async function validateAdyntelCredential(
       accountId: `adyntel:${email}`,
       displayName: `Adyntel ${email}`,
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: adyntelApiBaseUrl,
       email,

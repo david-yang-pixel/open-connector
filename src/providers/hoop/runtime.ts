@@ -1,5 +1,5 @@
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
 import {
@@ -101,7 +101,6 @@ export async function validateHoopCredential(
   options: { fetcher: typeof fetch; signal?: AbortSignal },
 ): Promise<{
   profile: { accountId: string; displayName: string };
-  grantedScopes: string[];
   metadata: Record<string, unknown>;
 }> {
   const payload = await requestHoopJson({
@@ -118,7 +117,6 @@ export async function validateHoopCredential(
       accountId: user.subject,
       displayName: user.name ?? user.email ?? "Hoop API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: hoopApiBaseUrl,
       validationEndpoint: hoopValidationPath,

@@ -6,7 +6,9 @@ import type {
 } from "../../core/types.ts";
 import type { HeygenActionContext } from "./runtime.ts";
 
-import { defineProviderExecutors, defineProviderProxy, ProviderRequestError } from "../provider-runtime.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError } from "../provider-runtime.ts";
 import {
   createHeygenApiKeyAuth,
   createHeygenOAuthAuth,
@@ -33,9 +35,7 @@ export const credentialValidators: CredentialValidators = {
     return validateHeygenCredential(createHeygenApiKeyAuth(input.apiKey), options);
   },
   oauth2(input, options) {
-    return validateHeygenCredential(createHeygenOAuthAuth(input.accessToken, input.tokenType), options, {
-      grantedScopes: input.profile.grantedScopes,
-    });
+    return validateHeygenCredential(createHeygenOAuthAuth(input.accessToken, input.tokenType), options);
   },
 };
 

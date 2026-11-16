@@ -6,7 +6,9 @@ import type {
 } from "../../core/types.ts";
 import type { JuniperMistActionContext } from "./runtime.ts";
 
-import { defineProviderExecutors, defineProviderProxy, requireApiKeyCredential } from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import { juniperMistActionHandlers, resolveJuniperMistApiBaseUrl, validateJuniperMistCredential } from "./runtime.ts";
 
 const service = "juniper_mist";

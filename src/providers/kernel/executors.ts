@@ -1,15 +1,11 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderRequestContext } from "../provider-runtime.ts";
 
 import { optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-  runProviderRequest,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError, runProviderRequest } from "../provider-runtime.ts";
 
 const service = "kernel";
 const kernelApiBaseUrl = "https://api.onkernel.com";
@@ -23,7 +19,7 @@ interface KernelRequestInput {
   apiKey: string;
   query?: Record<string, unknown>;
   body?: Record<string, unknown>;
-  context: Pick<ApiKeyProviderContext, "fetcher" | "signal">;
+  context: ProviderRequestContext;
   phase: KernelRequestPhase;
 }
 
@@ -125,7 +121,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "api_key",
         displayName: "Kernel API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: kernelApiBaseUrl,
         validationEndpoint: "/browsers",

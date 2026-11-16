@@ -1,17 +1,24 @@
-import type { IConnectionStore } from "../../connection-service.ts";
+import type { IConnectionStore } from "../../connection-store.ts";
 import type { IMarketplaceStore } from "../../marketplace/marketplace-service.ts";
 import type { IOAuthClientConfigStore } from "../../oauth/oauth-client-config-service.ts";
 import type { IOAuthStateStore } from "../../oauth/oauth-flow-service.ts";
+import type { TriggerStore } from "../../triggers/store.ts";
 import type { ConnectionRequestStore } from "./connection-request-store.ts";
+import type { CustomMcpStore } from "./custom-mcp-store.ts";
 import type { IIdempotencyStore } from "./idempotency-store.ts";
 import type { McpOAuthStore } from "./mcp-oauth-store.ts";
+import type { IOAuthClientStore, IOAuthCodeStore, IOAuthSigningKeyStore, IOAuthTokenStore } from "./oauth-as-stores.ts";
 import type { IRuntimePolicyStore } from "./runtime-policy-store.ts";
 import type { IRunLogStore } from "./runtime-store.ts";
 import type { IRuntimeTokenStore } from "./runtime-token-service.ts";
+import type { SaasProjectStore } from "./saas-project-store.ts";
 
 export interface RuntimeDatabase {
+  customMcpStore: CustomMcpStore;
+  saasProjectStore: SaasProjectStore;
   connectionRequestStore: ConnectionRequestStore;
   connectionStore: IConnectionStore;
+  triggerStore: TriggerStore;
   oauthClientConfigStore: IOAuthClientConfigStore;
   oauthStateStore: IOAuthStateStore;
   runtimeTokenStore: IRuntimeTokenStore;
@@ -20,4 +27,8 @@ export interface RuntimeDatabase {
   idempotencyStore: IIdempotencyStore;
   marketplaceStore: IMarketplaceStore;
   mcpOAuthStore: McpOAuthStore;
+  oauthClientStore: IOAuthClientStore;
+  oauthCodeStore: IOAuthCodeStore;
+  oauthTokenStore: IOAuthTokenStore;
+  oauthSigningKeyStore: IOAuthSigningKeyStore;
 }

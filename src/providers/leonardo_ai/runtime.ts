@@ -1,6 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -65,9 +64,7 @@ export async function validateLeonardoAiCredential(
   return {
     profile: {
       displayName: "Leonardo.Ai API Key",
-      grantedScopes: [],
     },
-    grantedScopes: [],
     metadata: {
       validationEndpoint: `${leonardoAiV2ApiBaseUrl}${leonardoAiValidationPath}`,
     },
@@ -146,10 +143,7 @@ async function getGeneration(input: Record<string, unknown>, context: ApiKeyProv
   };
 }
 
-async function leonardoAiRequest(
-  options: LeonardoAiRequestOptions,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
-): Promise<unknown> {
+async function leonardoAiRequest(options: LeonardoAiRequestOptions, context: ApiKeyProviderContext): Promise<unknown> {
   const url = new URL(`${options.baseUrl ?? leonardoAiV2ApiBaseUrl}${options.path}`);
   const headers = new Headers({
     accept: "application/json",

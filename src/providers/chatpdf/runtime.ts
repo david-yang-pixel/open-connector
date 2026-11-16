@@ -1,9 +1,14 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { optionalRecord, optionalString } from "../../core/cast.ts";
-import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
+import {
+  providerUserAgent,
+  ProviderRequestError,
+  providerInputError,
+  providerResponseError,
+} from "../provider-runtime.ts";
 
 export const chatpdfApiBaseUrl = "https://api.chatpdf.com/v1";
 
@@ -63,7 +68,6 @@ export function validateChatpdfCredential(_apiKey: string): CredentialValidation
       accountId: "api_key",
       displayName: "ChatPDF API Key",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: chatpdfApiBaseUrl,
       validationMode: "format_only",
@@ -120,7 +124,7 @@ function createChatpdfError(response: Response, payload: unknown): ProviderReque
     return new ProviderRequestError(429, message);
   }
   if (response.status === 400 || response.status === 404 || response.status === 422) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   return new ProviderRequestError(response.status >= 500 ? 502 : response.status, message);
 }
@@ -140,14 +144,14 @@ function extractErrorMessage(payload: unknown): string | undefined {
 function requireObject(value: unknown, message: string): Record<string, unknown> {
   const record = optionalRecord(value);
   if (!record) {
-    throw new ProviderRequestError(502, message);
+    throw providerResponseError(message);
   }
   return record;
 }
 
 function requireString(value: unknown, message: string): string {
   if (typeof value !== "string" || value.length === 0) {
-    throw new ProviderRequestError(502, message);
+    throw providerResponseError(message);
   }
   return value;
 }

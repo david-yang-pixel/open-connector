@@ -1,12 +1,8 @@
 import type { CredentialValidators, ExecutionContext, ProviderExecutors } from "../../core/types.ts";
 
-import {
-  createProviderTimeout,
-  defineProviderExecutors,
-  ProviderRequestError,
-  providerUserAgent,
-  requireApiKeyCredential,
-} from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { createProviderTimeout, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "formaloo";
 const formalooApiBaseUrl = "https://api.formaloo.me/v3.0";
@@ -72,7 +68,6 @@ export const credentialValidators: CredentialValidators = {
       readString(profile.email) ?? readString(profile.username) ?? readString(profile.first_name) ?? "Formaloo API Key";
     return {
       profile: { accountId: displayName, displayName },
-      grantedScopes: [],
       metadata: { apiBaseUrl: formalooApiBaseUrl },
     };
   },

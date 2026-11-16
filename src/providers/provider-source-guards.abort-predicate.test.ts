@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { sourceScanTimeout } from "./provider-source-guards.support.ts";
 
 // `AbortSignal.timeout()` aborts with a `TimeoutError`, never an `AbortError`,
 // so a timeout branch that recognizes only `AbortError` is dead and the provider
@@ -222,11 +223,13 @@ function groupByProvider(files: string[]): string[][] {
   return [...groups.values()];
 }
 
-describe("provider abort predicates", () => {
+const sourceFiles = listSourceFiles(providersDir);
+
+describe("provider abort predicates", { timeout: sourceScanTimeout(sourceFiles.length) }, () => {
   it("never guards a timeout branch on AbortError alone", () => {
     const dead: string[] = [];
     let scanned = 0;
-    for (const group of groupByProvider(listSourceFiles(providersDir))) {
+    for (const group of groupByProvider(sourceFiles)) {
       const sources = group.map((path) => ({ path, source: readFileSync(path, "utf8") }));
       if (!sources.some((entry) => entry.source.includes("AbortSignal.timeout"))) {
         continue;

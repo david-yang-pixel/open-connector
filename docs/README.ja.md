@@ -4,7 +4,7 @@
 
 [English](../README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Русский](README.ru.md) | [Français](README.fr.md) | [Español](README.es.md)
 
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](../LICENSE.txt)
+[![License: Modified Apache-2.0](https://img.shields.io/badge/License-Modified%20Apache--2.0-blue.svg)](../LICENSE.txt)
 [![npm](https://img.shields.io/npm/v/@oomol-lab/open-connector.svg)](https://www.npmjs.com/package/@oomol-lab/open-connector)
 ![Node.js 22+](https://img.shields.io/badge/Node.js-22%2B-339933)
 ![Cloudflare compatible](https://img.shields.io/badge/Cloudflare-compatible-F38020)
@@ -29,7 +29,7 @@ catalog を Agent とアプリケーションに公開できます。
   <tr>
     <td width="33.33%" valign="top">マネージド OAuth と hosted runtime をすぐに利用できます。デプロイや OAuth app の設定は不要です。</td>
     <td width="33.33%" valign="top">Docker または Node.js を使い、ローカル環境や自分の infrastructure で実行します。storage と OAuth app は自身で管理します。</td>
-    <td width="33.33%" valign="top"><strong>Cloudflare</strong>、<strong>Fly.io</strong>、<strong>RepoCloud</strong>、<strong>nibrun</strong> など。</td>
+    <td width="33.33%" valign="top"><strong>Cloudflare</strong>、<strong>Fly.io</strong>、<strong>RepoCloud</strong>、<strong>nibrun</strong>、<strong>NEXUS AI</strong>、<strong>Pethost</strong>、<strong>ZopDay</strong> など。</td>
   </tr>
   <tr>
     <td width="33.33%" align="center">🚀 <a href="https://oomol.com/docs/connector-saas/"><strong>OOMOL Hosted</strong></a></td>
@@ -192,19 +192,11 @@ client configuration、runtime token 作成、Action schema inspection、Action 
 
 イメージの tag、pull、実行については [docker-ghcr.md（英語）](docker-ghcr.md) を参照してください。
 
-## Wanta で desktop Agent を構築する
+## すぐに使える AI Bot：Leina
 
-OpenConnector と [Wanta](https://github.com/oomol-lab/wanta) は、OOMOL の open-source ecosystem で
-AI Agent を支える二つのプロジェクトです。OpenConnector は Gmail、Slack、Notion などの外部サービスを
-Agent に接続します。Wanta は OpenCode で動作する完全な desktop Agent application で、OpenConnector
-を通じて接続済み SaaS サービスを利用します。
+すぐに使える AI Bot をお探しなら、[Leina](https://leina.ai/) をお試しください。Leina は 1,500 以上の SaaS アプリに接続でき、アプリ連携、スキル、ナレッジベースを自由に組み合わせて、チームの業務フローに合った独自の AI Agent を作れます。
 
-- **ローカル実行：** Wanta account を作成せず、自分の OpenAI-compatible model を使用できます。
-- **独自開発：** Wanta を fork し、prompts、tools、interface、models、branding をカスタマイズできます。
-- **Hosted services：** 任意の [hosted experience](https://wanta.ai/) では、managed models、OAuth
-  connections、team workspaces を利用できます。
-
-Issue と pull request による貢献を歓迎します。
+Slack、Microsoft Teams、Discord、Telegram のチャットから、利用を許可したアプリを通じて、情報検索、週次レポートの作成、顧客フィードバックの整理、営業フォローの準備などを依頼できます。
 
 ## ドキュメント
 
@@ -249,9 +241,13 @@ Provider code は `src/providers/<service>` 配下にあります。Provider con
 ## ライセンス範囲
 
 特に明記されていない限り、この repository の source code、script、生成された project scaffolding、test、
-documentation は Apache License, Version 2.0 の下でライセンスされています。[LICENSE.txt](../LICENSE.txt) を参照してください。
+documentation は Apache License 2.0 を修正した OpenConnector License の下でライセンスされています。[LICENSE.txt](../LICENSE.txt) を参照してください。
 
-この repository の Apache-2.0 license は、各権利者が所有する third-party product、provider、app、API、
+OpenConnector は商用利用や自社 product への組み込みを含め、任意の目的で使用、変更、self-host できます。追加条件は 1 つだけで、
+OpenConnector を hosted connector service として第三者に提供する場合は OOMOL の commercial license が必要です。
+v1.9.4 以前の release は引き続き修正なしの Apache License 2.0 です。[NOTICE.md](../NOTICE.md) を参照してください。
+
+この repository の license は、各権利者が所有する third-party product、provider、app、API、
 trademark、service mark、trade name、logo、icon、brand asset、documentation、screenshot、その他の copyrighted
 material に対する権利を付与するものではありません。
 

@@ -43,7 +43,6 @@ describe("copyCatalogAssets", () => {
       "apps-0001.json",
       "core-providers.json",
       "index.json",
-      "provider-summaries.json",
       "providers",
     ]);
   });
@@ -80,7 +79,6 @@ describe("copyCatalogAssets", () => {
       "apps-0000.json",
       "core-providers.json",
       "index.json",
-      "provider-summaries.json",
       "providers",
     ]);
   });
@@ -112,12 +110,7 @@ describe("copyCatalogAssets", () => {
     const index = await copyCatalogAssets({ sourceDir, targetDir });
 
     expect(index).toEqual({ version: 1, providerCount: 0, chunks: [] });
-    expect((await readdir(targetDir)).sort()).toEqual([
-      "core-providers.json",
-      "index.json",
-      "provider-summaries.json",
-      "providers",
-    ]);
+    expect((await readdir(targetDir)).sort()).toEqual(["core-providers.json", "index.json", "providers"]);
   });
 
   // The index shape and the `apps-NNNN.json` naming are declared once here and once in the worker
@@ -133,9 +126,6 @@ describe("copyCatalogAssets", () => {
 
     expect(index.chunks.length).toBeGreaterThan(1);
     expect(catalog.providers.map((entry) => entry.service)).toEqual(["alpha", "zulu"]);
-    expect(JSON.parse(await readFile(join(targetDir, "provider-summaries.json"), "utf8"))).toEqual(
-      catalog.providers.map((provider) => ({ ...provider, actions: [], setup: [{ type: "no_auth" }] })),
-    );
 
     const selectedCatalog = await loadCatalogFromAssets(directoryAssets(targetDir), {
       executableServices: ["zulu"],

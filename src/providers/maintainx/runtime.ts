@@ -1,6 +1,7 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { compactObject, optionalBoolean, optionalInteger, optionalString } from "../../core/cast.ts";
 import {
@@ -244,7 +245,6 @@ export async function validateMaintainxCredential(
       accountId: "api_key",
       displayName: "MaintainX API key",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: maintainxApiBaseUrl,
       validationEndpoint: "/locations",

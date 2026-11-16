@@ -4,17 +4,13 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { optionalNumber, optionalRecord, optionalString, objectArray } from "../../core/cast.ts";
-import {
-  defineProviderExecutors,
-  defineProviderProxy,
-  providerResponseError,
-  providerUserAgent,
-  ProviderRequestError,
-  requireApiKeyCredential,
-} from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerResponseError, providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 
 const service = "api_ninjas";
 const apiNinjasApiBaseUrl = "https://api.api-ninjas.com";
@@ -199,7 +195,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "api_key",
         displayName: "API Ninjas API Key",
       },
-      grantedScopes: [],
       metadata: {
         validationEndpoint: "/v1/timezone",
         apiBaseUrl: apiNinjasApiBaseUrl,

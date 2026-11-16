@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 import type { BaseLinkerActionName } from "./actions.ts";
 
 import { compactObject, optionalString } from "../../core/cast.ts";
@@ -75,7 +75,6 @@ export async function validateBaseLinkerCredential(
       accountId: "baselinker",
       displayName: "BaseLinker API Token",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: baseLinkerApiBaseUrl,
       validationMethod: "getOrderStatusList",

@@ -2,6 +2,7 @@ import type { ProviderActionDefinition } from "../../core/provider-definition.ts
 
 import { s } from "../../core/json-schema.ts";
 import { defineProviderAction } from "../../core/provider-definition.ts";
+import { expandedPolygonIoActions } from "./expanded-actions.ts";
 
 const service = "polygon_io";
 
@@ -155,6 +156,7 @@ const tickerTypeSchema = s.object("A normalized ticker type returned by Polygon.
 });
 
 export const polygonIoActions: ProviderActionDefinition[] = [
+  ...expandedPolygonIoActions,
   defineProviderAction(service, {
     name: "list_tickers",
     operationType: "read",

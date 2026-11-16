@@ -1,14 +1,10 @@
 import type { CredentialValidationResult, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 
 const service = "shorten_rest";
 const shortenRestApiBaseUrl = "https://api.shorten.rest";
@@ -20,7 +16,7 @@ type ShortenRestActionHandler = (input: Record<string, unknown>, context: ApiKey
 interface ShortenRestRequestInput {
   method: "GET" | "POST" | "PUT" | "DELETE";
   path: string;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   phase: ShortenRestRequestPhase;
   query?: Record<string, string | number | undefined>;
   body?: Record<string, unknown>;
@@ -140,9 +136,7 @@ async function validateShortenRestCredential(
     profile: {
       accountId: "shorten_rest",
       displayName: "Shorten.REST API Key",
-      grantedScopes: [],
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: shortenRestApiBaseUrl,
       validationEndpoint: `${shortenRestValidationPath}?limit=1`,

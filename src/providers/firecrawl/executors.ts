@@ -1,17 +1,34 @@
-import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type {
+  CredentialValidators,
+  ExecutionContext,
+  ProviderExecutors,
+  ProviderProxyExecutor,
+} from "../../core/types.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
-import { compactObject, optionalNumber, optionalRecord, optionalString, pickOptionalBoolean } from "../../core/cast.ts";
 import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
+  compactObject,
+  optionalNumber,
+  optionalRawString,
+  optionalRecord,
+  optionalString,
+  pickOptionalBoolean,
+} from "../../core/cast.ts";
+import { assertPublicHttpUrl, isPrivateNetworkAccessAllowed } from "../../core/request.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import {
+  createProviderFetch,
+  providerInputError,
+  providerResponseError,
+  requiredResponseRecord,
   providerUserAgent,
   ProviderRequestError,
 } from "../provider-runtime.ts";
 
 const service = "firecrawl";
-const firecrawlApiBaseUrl = "https://api.firecrawl.dev";
+const defaultFirecrawlApiBaseUrl = "https://api.firecrawl.dev";
 const firecrawlScrapeOptionAliasKeys = [
   "scrapeOptions_actions",
   "scrapeOptions_formats",
@@ -44,7 +61,14 @@ interface FirecrawlRequestInput {
 }
 
 type FirecrawlRequestPhase = "validate" | "execute";
-type FirecrawlActionContext = ApiKeyProviderContext;
+
+interface FirecrawlActionContext {
+  apiKey: string;
+  apiBaseUrl: string;
+  fetcher: typeof fetch;
+  signal?: AbortSignal;
+}
+
 type FirecrawlActionHandler = (input: Record<string, unknown>, context: FirecrawlActionContext) => Promise<unknown>;
 
 export const firecrawlActionHandlers: ProviderActionHandlers<"firecrawl", FirecrawlActionHandler> = {
@@ -69,10 +93,24 @@ export const firecrawlActionHandlers: ProviderActionHandlers<"firecrawl", Firecr
   start_agent: firecrawlPostAction("/v2/agent", buildDirectBody),
   get_agent_status: firecrawlGetAction((input) => `/v2/agent/${String(input.id)}`),
   agent_cancel: firecrawlDeleteAction((input) => `/v2/agent/${String(input.id)}`),
-  deep_research: firecrawlPostAction("/v1/deep-research", buildDirectBody),
-  get_deep_research_status: firecrawlGetAction((input) => `/v1/deep-research/${String(input.id)}`),
-  llms_txt_generate: firecrawlPostAction("/v1/llmstxt", buildDirectBody),
-  llms_txt_get: firecrawlGetAction((input) => `/v1/llmstxt/${String(input.id)}`),
+  // Firecrawl shuts down /v1/deep-research on 2026-12-10; deep research now runs on the agent endpoint.
+  // https://docs.firecrawl.dev/migrating-from-deep-research
+  deep_research: firecrawlPostAction("/v2/agent", buildDeepResearchBody),
+  get_deep_research_status: async (input, context) => {
+    const payload = await firecrawlRequest({
+      apiKey: context.apiKey,
+      apiBaseUrl: context.apiBaseUrl,
+      fetcher: context.fetcher,
+      signal: context.signal,
+      path: `/v2/agent/${String(input.id)}`,
+      phase: "execute",
+    });
+    return toDeepResearchStatus(payload);
+  },
+  // Firecrawl shuts down /v1/llmstxt on 2026-12-10; LLMs.txt is now built from map and batch scrape results.
+  // https://docs.firecrawl.dev/migrating-from-llmstxt
+  llms_txt_generate: startLlmsTxt,
+  llms_txt_get: getLlmsTxt,
   queue_get: firecrawlGetAction(() => "/v2/team/queue-status"),
   credit_usage_get: firecrawlGetAction(() => "/v2/team/credit-usage"),
   credit_usage_get_historical: firecrawlGetAction(() => "/v2/team/credit-usage/historical", buildHistoricalUsageQuery),
@@ -80,21 +118,42 @@ export const firecrawlActionHandlers: ProviderActionHandlers<"firecrawl", Firecr
   token_usage_get_historical: firecrawlGetAction(() => "/v2/team/token-usage/historical", buildHistoricalUsageQuery),
 };
 
-export const executors: ProviderExecutors = defineApiKeyProviderExecutors(service, firecrawlActionHandlers);
+export const executors: ProviderExecutors = defineProviderExecutors<FirecrawlActionContext>({
+  service,
+  handlers: firecrawlActionHandlers,
+  async createContext(context: ExecutionContext, fetcher: typeof fetch): Promise<FirecrawlActionContext> {
+    const credential = await requireApiKeyCredential(context, service);
+    return {
+      apiKey: credential.apiKey,
+      apiBaseUrl: normalizeFirecrawlApiBaseUrl(credential.values.baseUrl),
+      fetcher,
+      signal: context.signal,
+    };
+  },
+  allowPrivateNetwork: isPrivateNetworkAccessAllowed,
+});
 
 export const proxy: ProviderProxyExecutor = defineProviderProxy({
   service,
-  baseUrl: firecrawlApiBaseUrl,
+  baseUrl: async (context) => {
+    const credential = await requireApiKeyCredential(context, service);
+    return normalizeFirecrawlApiBaseUrl(credential.values.baseUrl);
+  },
   auth: { type: "api_key_authorization", prefix: "Bearer " },
-  skipDnsValidation: true,
+  allowPrivateNetwork: isPrivateNetworkAccessAllowed,
 });
 
 export const credentialValidators: CredentialValidators = {
   async apiKey(input, { fetcher, signal }) {
+    const apiBaseUrl = normalizeFirecrawlApiBaseUrl(input.values.baseUrl);
     const payload = optionalRecord(
       await firecrawlRequest({
         apiKey: input.apiKey,
-        fetcher,
+        apiBaseUrl,
+        // Re-guard the shared validator fetcher with the private-network
+        // opt-in so a self-hosted instance on a private network validates
+        // when the deployment allows it.
+        fetcher: createProviderFetch({ fetch: fetcher, allowPrivateNetwork: isPrivateNetworkAccessAllowed }),
         signal,
         path: "/v2/team/credit-usage",
         phase: "validate",
@@ -106,9 +165,8 @@ export const credentialValidators: CredentialValidators = {
         accountId: "api_key",
         displayName: "Firecrawl API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
-        apiBaseUrl: firecrawlApiBaseUrl,
+        apiBaseUrl,
         validationEndpoint: "/v2/team/credit-usage",
         teamCreditUsage: optionalRecord(payload?.data),
         success: typeof payload?.success === "boolean" ? payload.success : undefined,
@@ -124,6 +182,7 @@ function firecrawlPostAction(
   return (input, context) =>
     firecrawlRequest({
       apiKey: context.apiKey,
+      apiBaseUrl: context.apiBaseUrl,
       fetcher: context.fetcher,
       signal: context.signal,
       method: "POST",
@@ -142,6 +201,7 @@ function firecrawlGetAction(
   return (input, context) =>
     firecrawlRequest({
       apiKey: context.apiKey,
+      apiBaseUrl: context.apiBaseUrl,
       fetcher: context.fetcher,
       signal: context.signal,
       path: buildPath(input),
@@ -154,6 +214,7 @@ function firecrawlDeleteAction(buildPath: (input: Record<string, unknown>) => st
   return (input, context) =>
     firecrawlRequest({
       apiKey: context.apiKey,
+      apiBaseUrl: context.apiBaseUrl,
       fetcher: context.fetcher,
       signal: context.signal,
       method: "DELETE",
@@ -181,6 +242,210 @@ function buildCrawlBody(input: Record<string, unknown>): Record<string, unknown>
     ...baseInput,
     scrapeOptions: mergeRecords(optionalRecord(baseInput.scrapeOptions), buildScrapeOptionsFromInput(input)),
   });
+}
+
+/**
+ * Maps a deep research request onto an agent run: the prompts merge into one prompt, and the schema asks
+ * for the report and sources that deep research returned, plus the caller's JSON schema when given.
+ */
+function buildDeepResearchBody(input: Record<string, unknown>): Record<string, unknown> {
+  const jsonOptions = optionalRecord(input.jsonOptions);
+  const jsonSchema = optionalRecord(jsonOptions?.schema);
+  const prompt = [input.query, input.systemPrompt, input.analysisPrompt, jsonOptions?.prompt]
+    .map((part) => optionalString(part))
+    .filter((part) => part !== undefined)
+    .join("\n\n");
+  return compactObject({
+    prompt,
+    schema: {
+      type: "object",
+      properties: {
+        report: { type: "string", description: "A markdown report that answers the question." },
+        sources: {
+          type: "array",
+          description: "The sources the report is based on.",
+          items: {
+            type: "object",
+            properties: { url: { type: "string" }, title: { type: "string" } },
+            required: ["url", "title"],
+          },
+        },
+        json: jsonSchema,
+      },
+      required: jsonSchema ? ["report", "sources", "json"] : ["report", "sources"],
+    },
+    maxCredits: optionalNumber(input.maxCredits),
+  });
+}
+
+/** Returns a finished agent run in the deep research status shape: `data.finalAnalysis`, `data.sources`, `sources`. */
+function toDeepResearchStatus(payload: unknown): unknown {
+  const body = optionalRecord(payload);
+  const data = optionalRecord(body?.data);
+  if (!body || !data) {
+    return payload;
+  }
+  const sources = optionalArray(data.sources);
+  return { ...body, data: { ...data, finalAnalysis: data.report, sources, json: data.json }, sources };
+}
+
+const llmsTxtSummaryFormat = {
+  type: "json",
+  prompt: "Write a 3-4 word title and a 9-10 word description of this page.",
+  schema: {
+    type: "object",
+    properties: { title: { type: "string" }, description: { type: "string" } },
+    required: ["title", "description"],
+  },
+};
+
+/**
+ * Starts an LLMs.txt job the way the migration guide builds one: map the site, then batch scrape the pages
+ * with a JSON format for each page's title and description, plus markdown for llms-full.txt. A batch scrape
+ * keeps neither the root URL nor the map order, so both come back with the job ID for `llms_txt_get`.
+ */
+async function startLlmsTxt(input: Record<string, unknown>, context: FirecrawlActionContext): Promise<unknown> {
+  const url = String(input.url);
+  const map = optionalRecord(
+    await firecrawlRequest({
+      ...context,
+      method: "POST",
+      path: "/v2/map",
+      body: { url, limit: optionalNumber(input.maxUrls) ?? 10, includeSubdomains: false },
+      phase: "execute",
+    }),
+  );
+  const urls = (optionalArray(map?.links) ?? [])
+    .map((link) => optionalString(optionalRecord(link)?.url ?? link))
+    .filter((link) => link !== undefined);
+  if (urls.length === 0) {
+    throw new ProviderRequestError(422, `Firecrawl map found no pages to scrape for ${url}`, map);
+  }
+
+  const batch = optionalRecord(
+    await firecrawlRequest({
+      ...context,
+      method: "POST",
+      path: "/v2/batch/scrape",
+      body: compactObject({
+        urls,
+        formats: input.showFullText === true ? ["markdown", llmsTxtSummaryFormat] : [llmsTxtSummaryFormat],
+        maxAge: input.cache === false ? 0 : undefined,
+      }),
+      phase: "execute",
+    }),
+  );
+  return { success: batch?.success === true, id: batch?.id, url, urls };
+}
+
+/**
+ * Reads an LLMs.txt job's batch scrape and, once it has completed, returns every page of results written into
+ * the `/v1/llmstxt` status shape. Running batches report `processing`, failed and cancelled ones `failed`.
+ */
+async function getLlmsTxt(input: Record<string, unknown>, context: FirecrawlActionContext): Promise<unknown> {
+  const path = `/v2/batch/scrape/${String(input.id)}`;
+  const job = optionalRecord(await firecrawlRequest({ ...context, path, phase: "execute" })) ?? {};
+  const status = optionalString(job.status);
+  if (status === undefined) throw providerResponseError("Firecrawl batch response is missing status");
+  const expiresAt = optionalString(job.expiresAt);
+  if (status === "scraping") {
+    return compactObject({ success: true, status: "processing", expiresAt });
+  }
+  if (status !== "completed") {
+    const error = optionalString(job.error) ?? `Firecrawl batch scrape ${status ?? "failed"}`;
+    return compactObject({ success: false, status: "failed", error, expiresAt });
+  }
+
+  // A completed batch pages its results through `next`, which ends after the last page.
+  const results = readBatchResults(job);
+  const visited = new Set<string>();
+  for (let next = optionalString(job.next); next !== undefined;) {
+    const nextUrl = new URL(next, context.apiBaseUrl);
+    if (visited.has(nextUrl.href))
+      throw new ProviderRequestError(502, "Firecrawl returned a repeated batch result page");
+    visited.add(nextUrl.href);
+    const basePathname = new URL(context.apiBaseUrl).pathname;
+    const basePath = basePathname.endsWith("/") ? basePathname.slice(0, -1) : basePathname;
+    const pathname =
+      basePath && nextUrl.pathname.startsWith(`${basePath}/`)
+        ? nextUrl.pathname.slice(basePath.length)
+        : nextUrl.pathname;
+    const pagePath = `${pathname}${nextUrl.search}`;
+    const page = requiredResponseRecord(
+      await firecrawlRequest({ ...context, path: pagePath, phase: "execute" }),
+      "Firecrawl batch result page",
+    );
+    results.push(...readBatchResults(page));
+    const following = optionalString(page?.next);
+    next = following;
+  }
+
+  return compactObject({
+    success: true,
+    status: "completed",
+    data: buildLlmsTxt(results, optionalString(input.url), optionalStringArray(input.urls)),
+    expiresAt,
+  });
+}
+
+/**
+ * Writes llms.txt and llms-full.txt in the format `/v1/llmstxt` returned, leaving out pages that came back with a
+ * status of 400 or more. Given the root URL and map order from `llms_txt_generate`, the header names the root URL
+ * and the pages follow map order (batch results come back in the order they finish). Without them, the header
+ * names the site's origin and the pages keep the order Firecrawl returned them in.
+ */
+function readBatchResults(page: Record<string, unknown>): Record<string, unknown>[] {
+  if (!Array.isArray(page.data)) throw providerResponseError("Firecrawl batch result data must be an array of objects");
+  return page.data.map((value) => requiredResponseRecord(value, "Firecrawl batch result item"));
+}
+
+function buildLlmsTxt(results: unknown[], rootUrl?: string, urls?: string[]): Record<string, string> {
+  const pages = results.map((result) => optionalRecord(result) ?? {});
+  const metadataOf = (page: Record<string, unknown>) => optionalRecord(page.metadata) ?? {};
+  const pageUrlOf = (page: Record<string, unknown>) =>
+    firstText(metadataOf(page).url, metadataOf(page).sourceURL) ?? "";
+
+  const kept = pages.filter((page) => (optionalNumber(metadataOf(page).statusCode) ?? 200) < 400);
+  if (urls) {
+    const mapOrder = new Map(urls.map((pageUrl, index) => [pageUrl, index]));
+    const position = (page: Record<string, unknown>) =>
+      mapOrder.get(firstText(metadataOf(page).sourceURL, metadataOf(page).url) ?? "") ?? urls.length;
+    kept.sort((a, b) => position(a) - position(b));
+  }
+
+  const root = rootUrl ?? (kept[0] ? siteOrigin(pageUrlOf(kept[0])) : "");
+  let llmstxt = `# ${root} llms.txt\n\n`;
+  let llmsfulltxt = `# ${root} llms-full.txt\n\n`;
+  for (const page of kept) {
+    const summary = optionalRecord(page.json) ?? {};
+    const pageUrl = pageUrlOf(page);
+    const title = firstText(summary.title, metadataOf(page).title) ?? pageUrl;
+    const description = firstText(summary.description, metadataOf(page).description) ?? "";
+    llmstxt += `- [${title}](${pageUrl}): ${description}\n`;
+    llmsfulltxt += `## ${title}\n${optionalRawString(page.markdown) ?? ""}\n\n`;
+  }
+
+  // The pages carry markdown only when `llms_txt_generate` was asked for llms-full.txt.
+  return pages.some((page) => typeof page.markdown === "string") ? { llmstxt, llmsfulltxt } : { llmstxt };
+}
+
+/** Returns the first non-empty string; page metadata can hold a string or a list of strings. */
+function firstText(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    const text = optionalString(Array.isArray(value) ? value[0] : value);
+    if (text !== undefined) {
+      return text;
+    }
+  }
+  return undefined;
+}
+
+function siteOrigin(url: string): string {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return "";
+  }
 }
 
 function buildHistoricalUsageQuery(input: Record<string, unknown>): Record<string, boolean | undefined> {
@@ -216,14 +481,42 @@ function buildScrapeOptionsFromInput(input: Record<string, unknown>): Record<str
   return Object.keys(flattened).length > 0 ? flattened : undefined;
 }
 
+/**
+ * Resolves the Firecrawl API base URL for a connection. Empty input targets
+ * the Firecrawl cloud API; otherwise the self-hosted instance URL is
+ * validated, embedded credentials are rejected, and query, hash, and trailing
+ * slashes are removed while any reverse-proxy path prefix is kept.
+ * Private/overlay targets are only accepted when the deployment opts in
+ * through `OOMOL_CONNECT_ALLOW_PRIVATE_NETWORK`.
+ */
+function normalizeFirecrawlApiBaseUrl(value: unknown): string {
+  const instanceUrl = optionalString(value);
+  if (!instanceUrl) {
+    return defaultFirecrawlApiBaseUrl;
+  }
+  const url = assertPublicHttpUrl(instanceUrl, {
+    fieldName: "baseUrl",
+    createError: providerInputError,
+    allowPrivateNetwork: isPrivateNetworkAccessAllowed(),
+  });
+  if (url.username || url.password) {
+    throw providerInputError("baseUrl must not include credentials");
+  }
+  url.hash = "";
+  url.search = "";
+  url.pathname = url.pathname.replace(/\/+$/u, "");
+  return url.toString().replace(/\/$/u, "");
+}
+
 async function firecrawlRequest(
   input: FirecrawlRequestInput & {
     apiKey: string;
+    apiBaseUrl: string;
     fetcher: typeof fetch;
     signal?: AbortSignal;
   },
 ): Promise<unknown> {
-  const url = new URL(input.path, firecrawlApiBaseUrl);
+  const url = new URL(`${input.apiBaseUrl}${input.path}`);
   for (const [key, value] of Object.entries(input.query ?? {})) {
     if (value == null) {
       continue;
@@ -293,7 +586,12 @@ function createFirecrawlError(status: number, payload: unknown, phase: Firecrawl
     return new ProviderRequestError(status, message, payload);
   }
   if (status === 401 || status === 403) {
-    return new ProviderRequestError(phase === "validate" ? 400 : 401, message, payload);
+    return new ProviderRequestError(
+      phase === "validate" ? 400 : status,
+      message,
+      payload,
+      phase === "validate" ? "invalid_input" : "provider_error",
+    );
   }
   if (status === 429) {
     return new ProviderRequestError(429, message, payload);

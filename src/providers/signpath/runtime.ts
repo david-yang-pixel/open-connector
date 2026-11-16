@@ -1,14 +1,15 @@
 import type { CredentialValidationResult, ExecutionContext, ProviderExecutors } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { compactObject, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
 import {
   createProviderTimeout,
-  defineProviderExecutors,
   ProviderRequestError,
   providerUserAgent,
-  requireApiKeyCredential,
+  providerInputError,
 } from "../provider-runtime.ts";
 
 type SignpathActionContext = {
@@ -101,9 +102,7 @@ export async function validateSignpathCredential(
     profile: {
       accountId: organizationId,
       displayName: "SignPath API Token",
-      grantedScopes: [],
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: signpathApiBaseUrl,
       organizationId,
@@ -239,7 +238,7 @@ function createSignpathError(status: number, payload: unknown, phase: SignpathPh
   }
 
   if (status >= 400 && status < 500) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
 
   return new ProviderRequestError(status || 502, message);

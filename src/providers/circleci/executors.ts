@@ -4,16 +4,13 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderRequestContext } from "../provider-runtime.ts";
 
 import { compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "circleci";
 const circleciApiBaseUrl = "https://circleci.com/api/v2";
@@ -175,7 +172,6 @@ async function validateCircleciCredential(input: {
       accountId,
       displayName: name ?? login ?? "CircleCI User",
     },
-    grantedScopes: [],
     metadata: compactObject({
       validationEndpoint: "/me",
       login,
@@ -189,7 +185,7 @@ async function requestCircleciJson<T>(input: {
   apiKey: string;
   path: string;
   phase: CircleciRequestPhase;
-  context?: Pick<ApiKeyProviderContext, "fetcher" | "signal">;
+  context?: ProviderRequestContext;
   fetcher?: typeof fetch;
   signal?: AbortSignal;
   method?: string;

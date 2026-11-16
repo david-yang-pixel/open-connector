@@ -1,8 +1,14 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
-import { providerFetch, ProviderRequestError, providerUserAgent, requiredResponseRecord } from "../provider-runtime.ts";
+import {
+  providerFetch,
+  ProviderRequestError,
+  providerUserAgent,
+  requiredResponseRecord,
+  providerInputError,
+} from "../provider-runtime.ts";
 
 export const shortcutApiBaseUrl = "https://api.app.shortcut.com/api/v3/";
 const shortcutValidatePath = "member";
@@ -78,9 +84,7 @@ export async function validateShortcutCredential(
         readOptionalString(profile.mention_name) ??
         readOptionalString(profile.email_address) ??
         member.id,
-      grantedScopes: [],
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: "https://api.app.shortcut.com/api/v3",
       validationEndpoint: "/member",
@@ -414,7 +418,7 @@ function createShortcutError(status: number, payload: unknown, phase: ShortcutRe
   }
 
   if (phase === "validate" && [400, 401, 403, 404].includes(status)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
 
   if (phase === "execute" && (status === 401 || status === 403)) {
@@ -422,7 +426,7 @@ function createShortcutError(status: number, payload: unknown, phase: ShortcutRe
   }
 
   if (phase === "execute" && [400, 404, 422].includes(status)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
 
   return new ProviderRequestError(status >= 500 ? status : 502, message);

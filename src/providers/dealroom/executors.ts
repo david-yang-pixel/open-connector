@@ -1,13 +1,9 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ApiKeyProviderContext, ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ApiKeyProviderContext, ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-executors.ts";
 
-import {
-  basicAuthorizationHeader,
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { basicAuthorizationHeader, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "dealroom";
 const baseUrl = "https://api.dealroom.co/api/v1/";
@@ -45,7 +41,6 @@ export const credentialValidators: CredentialValidators = {
     await request("companies", { limit: 1 }, { apiKey: input.apiKey, fetcher, signal });
     return {
       profile: { accountId: "dealroom", displayName: "Dealroom API Key" },
-      grantedScopes: [],
       metadata: { apiBaseUrl: baseUrl, validationEndpoint: "/companies" },
     };
   },

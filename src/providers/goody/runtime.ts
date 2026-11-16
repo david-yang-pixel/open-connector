@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
 import { ProviderRequestError, providerUserAgent, requiredResponseRecord } from "../provider-runtime.ts";
@@ -69,7 +69,6 @@ export async function validateGoodyCredential(
       accountId: email ?? "goody",
       displayName: email ?? "Goody API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: goodyApiBaseUrl,
       validationEndpoint: "/v1/me",

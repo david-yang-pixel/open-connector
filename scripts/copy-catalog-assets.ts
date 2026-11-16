@@ -2,9 +2,7 @@ import type { ProviderDefinition } from "../src/core/types.ts";
 
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { createCatalogStore, resolveExecutableActionIds } from "../src/catalog-store.ts";
 import { assertProviderId } from "../src/core/provider-id.ts";
-import { executorModules } from "../src/providers/registry.cloudflare.generated.ts";
 
 export const defaultCatalogChunkBytes = 4 * 1024 * 1024;
 
@@ -109,18 +107,9 @@ export async function copyCatalogAssets(options: CopyCatalogAssetsOptions): Prom
   const coreProviders = catalogProviders.filter(
     (provider) => coreServices.has(provider.service) || provider.auth.some((auth) => auth.type === "no_auth"),
   );
-  const cloudflareServices = new Set(Object.keys(executorModules));
-  const executableServices = coreProviders
-    .map((provider) => provider.service)
-    .filter((service) => cloudflareServices.has(service));
-  const catalog = createCatalogStore(catalogProviders, {
-    executableActionIds: resolveExecutableActionIds(catalogProviders, { executableServices }),
-  });
-  const providerSummariesJson = new TextDecoder().decode(catalog.providerSummariesJson);
 
   await Promise.all([
     writeFile(join(options.targetDir, "index.json"), `${JSON.stringify(index)}\n`),
-    writeFile(join(options.targetDir, "provider-summaries.json"), providerSummariesJson),
     writeFile(join(options.targetDir, "core-providers.json"), JSON.stringify(coreProviders)),
     ...rawProviders.map((entry) =>
       writeFile(join(providerDir, `${(entry.provider as ProviderDefinition).service}.json`), entry.json),

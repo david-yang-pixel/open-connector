@@ -1,7 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
+import type { IntegrationDefinition } from "../../triggers/common/integration.ts";
 
-import { defineApiKeyProviderExecutors, defineProviderProxy } from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import { firefliesActionHandlers, firefliesGraphqlBaseUrl, validateFirefliesCredential } from "./runtime.ts";
+import { firefliesMeetingReady } from "./trigger-on-meeting-ready.ts";
 
 const service = "fireflies";
 
@@ -19,3 +22,5 @@ export const credentialValidators: CredentialValidators = {
     return validateFirefliesCredential(input.apiKey, fetcher, signal);
   },
 };
+
+export const triggers: readonly IntegrationDefinition[] = [firefliesMeetingReady];

@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { booleanString, compactObject } from "../../core/cast.ts";
 import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
@@ -126,7 +126,6 @@ export async function validateDrataCredential(
       accountId: readNonEmptyString(company.accountId) ?? readNonEmptyString(company.domain) ?? `drata_${region}`,
       displayName: readNonEmptyString(company.name) ?? readNonEmptyString(company.domain) ?? "Drata API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       region,
       baseUrl,

@@ -1,15 +1,11 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { createHash } from "node:crypto";
 import { compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "the_swarm";
 const theSwarmApiBaseUrl = "https://bee.theswarm.com";
@@ -101,7 +97,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: `the_swarm:api_key:${hashApiKey(input.apiKey)}`,
         displayName: "The Swarm API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: theSwarmApiBaseUrl,
         validationEndpoint: theSwarmValidationPath,
@@ -112,7 +107,7 @@ export const credentialValidators: CredentialValidators = {
 };
 
 async function getCreditUsage(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   mode: TheSwarmRequestMode,
 ): Promise<{ usage: number; raw: Record<string, unknown> }> {
   const payload = await requestTheSwarmJson({
@@ -143,7 +138,7 @@ function buildSearchBody(input: Record<string, unknown>, includeInNetworkOnly: b
 async function requestTheSwarmJson(input: {
   path: string;
   method: TheSwarmRequestMethod;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   mode: TheSwarmRequestMode;
   body?: Record<string, unknown>;
 }): Promise<unknown> {

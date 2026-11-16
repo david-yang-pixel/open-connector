@@ -1,12 +1,11 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   isAbortLikeError,
   providerUserAgent,
   ProviderRequestError,
@@ -126,7 +125,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "shodan-api-key",
         displayName: "Shodan API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: shodanApiBaseUrl,
         validationEndpoint,
@@ -141,7 +139,7 @@ export const credentialValidators: CredentialValidators = {
 
 async function requestShodanJson(
   input: ShodanRequestInput,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: ShodanPhase,
 ): Promise<Record<string, unknown>> {
   const timeout = createProviderTimeout(context.signal);

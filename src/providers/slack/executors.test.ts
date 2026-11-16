@@ -1,7 +1,11 @@
 import type { ExecutionContext, ResolvedCredential } from "../../core/types.ts";
 
-import { describe, expect, it } from "vitest";
+import { Validator } from "@cfworker/json-schema";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { validateActionInput } from "../../core/validation.ts";
+import { slackbotActions } from "../slackbot/actions.ts";
 import { executors as slackbotExecutors } from "../slackbot/executors.ts";
+import { slackActions } from "./actions.ts";
 import { credentialValidators, executors as slackExecutors } from "./executors.ts";
 
 type OAuthCredential = Extract<ResolvedCredential, { authType: "oauth2" }>;
@@ -24,6 +28,18 @@ describe("Slack authorization paths", () => {
       actionId: "slackbot.list_channels",
       rawTokenType: "Bearer",
       accessToken: "xoxp-user-token",
+      execute: slackbotExecutors["slackbot.list_channels"]!,
+    },
+    {
+      actionId: "slack.list_channels",
+      rawTokenType: "Bearer",
+      accessToken: "xoxe.xoxb-rotated-bot-token",
+      execute: slackExecutors["slack.list_channels"]!,
+    },
+    {
+      actionId: "slackbot.list_channels",
+      rawTokenType: "Bearer",
+      accessToken: "xoxe.xoxp-rotated-user-token",
       execute: slackbotExecutors["slackbot.list_channels"]!,
     },
   ])("rejects the other authorization path for $actionId", async ({ rawTokenType, accessToken, execute }) => {
@@ -55,6 +71,18 @@ describe("Slack authorization paths", () => {
       rawTokenType: "Bearer",
       accessToken: "xoxp-user-token",
       execute: slackExecutors["slack.open_conversation"]!,
+    },
+    {
+      actionId: "slack.open_conversation",
+      rawTokenType: "Bearer",
+      accessToken: "xoxe.xoxp-rotated-user-token",
+      execute: slackExecutors["slack.open_conversation"]!,
+    },
+    {
+      actionId: "slackbot.open_conversation",
+      rawTokenType: "Bearer",
+      accessToken: "xoxe.xoxb-rotated-bot-token",
+      execute: slackbotExecutors["slackbot.open_conversation"]!,
     },
   ])("allows the matching authorization path for $actionId", async ({ rawTokenType, accessToken, execute }) => {
     const context: ExecutionContext = {
@@ -91,6 +119,18 @@ describe("Slack authorization paths", () => {
       scopes: ["channels:read", "chat:write", "search:read"],
     },
     {
+      tokenType: "Bearer",
+      accessToken: "xoxe.xoxp-rotated-user-token",
+      metadata: { scope: "channels:read,channels:history" },
+      scopes: ["channels:read", "channels:history"],
+    },
+    {
+      tokenType: "Bearer",
+      accessToken: "xoxe.xoxb-rotated-bot-token",
+      metadata: { scope: "channels:read", authed_user: { scope: "search:read" } },
+      scopes: ["channels:read"],
+    },
+    {
       tokenType: "bot",
       accessToken: "access-token",
       metadata: {
@@ -105,7 +145,7 @@ describe("Slack authorization paths", () => {
       fetcher: async (url, init) => {
         expect(url.toString()).toBe("https://slack.com/api/auth.test");
         expect(new Headers(init?.headers).get("authorization")).toBe(`Bearer ${accessToken}`);
-        return Response.json({ ok: true, team: "Example workspace", user_id: "U123" });
+        return Response.json({ ok: true, team: "Example workspace", team_id: "T123", user_id: "U123" });
       },
     });
 
@@ -136,3 +176,1513 @@ function oauthCredential(
     metadata: { ...metadata, rawTokenType },
   };
 }
+
+describe("Slack ACL enumeration and api_key authorization", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it.each([
+    { actionId: "slack.list_channels", apiKey: "xoxb-bot-token", execute: slackExecutors["slack.list_channels"]! },
+    { actionId: "slack.list_channels", apiKey: "xoxp-user-token", execute: slackExecutors["slack.list_channels"]! },
+    {
+      actionId: "slackbot.list_channels",
+      apiKey: "xoxb-bot-token",
+      execute: slackbotExecutors["slackbot.list_channels"]!,
+    },
+  ])("accepts an api_key credential of either token kind for $actionId ($apiKey)", async ({ apiKey, execute }) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        expect(new Headers(init?.headers).get("authorization")).toBe(`Bearer ${apiKey}`);
+        return Response.json({ ok: true, channels: [{ id: "C1", name: "general" }] });
+      }),
+    );
+    const context: ExecutionContext = {
+      getCredential: async () => apiKeyCredential(apiKey),
+    };
+
+    await expect(execute({}, context)).resolves.toMatchObject({
+      ok: true,
+      output: { channels: [{ channelId: "C1", name: "general" }] },
+    });
+  });
+
+  it("passes channel, cursor and limit to conversations.members and remaps the envelope", async () => {
+    const execute = slackExecutors["slack.conversations_members"]!;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const target = new URL(input.toString());
+        expect(`${target.origin}${target.pathname}`).toBe("https://slack.com/api/conversations.members");
+        expect(target.searchParams.get("channel")).toBe("C024BE91L");
+        expect(target.searchParams.get("cursor")).toBe("dXNlcjpVMDYxTkZUVDI=");
+        expect(target.searchParams.get("limit")).toBe("200");
+        expect(new Headers(init?.headers).get("authorization")).toBe("Bearer xoxb-bot-token");
+        return Response.json({
+          ok: true,
+          members: ["U023BECGF", "U061F7AUR", "W012A3CDE"],
+          response_metadata: { next_cursor: "e3VzZXJfaWQ6IFcxMjM0NTY3fQ==" },
+        });
+      }),
+    );
+    const context: ExecutionContext = {
+      getCredential: async () => apiKeyCredential("xoxb-bot-token"),
+    };
+
+    await expect(
+      execute({ channelId: "C024BE91L", cursor: "dXNlcjpVMDYxTkZUVDI=", limit: 200 }, context),
+    ).resolves.toMatchObject({
+      ok: true,
+      output: {
+        memberIds: ["U023BECGF", "U061F7AUR", "W012A3CDE"],
+        nextCursor: "e3VzZXJfaWQ6IFcxMjM0NTY3fQ==",
+      },
+    });
+  });
+
+  it("returns an empty nextCursor when Slack sends none, so callers can terminate", async () => {
+    const execute = slackExecutors["slack.conversations_members"]!;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ ok: true, members: ["U023BECGF"] })),
+    );
+    const context: ExecutionContext = {
+      getCredential: async () => apiKeyCredential("xoxb-bot-token"),
+    };
+
+    await expect(execute({ channelId: "C024BE91L" }, context)).resolves.toMatchObject({
+      ok: true,
+      output: { memberIds: ["U023BECGF"], nextCursor: "" },
+    });
+  });
+
+  it("slackbot inherits conversations_members", () => {
+    expect(slackbotExecutors["slackbot.conversations_members"]).toBeDefined();
+  });
+
+  it("validates an api_key credential against auth.test and keeps the team in metadata", async () => {
+    const result = await credentialValidators.apiKey!(apiKeyCredential("xoxb-bot-token"), {
+      fetcher: async (url, init) => {
+        expect(url.toString()).toBe("https://slack.com/api/auth.test");
+        expect(new Headers(init?.headers).get("authorization")).toBe("Bearer xoxb-bot-token");
+        return Response.json({
+          ok: true,
+          team: "Example workspace",
+          team_id: "T024BE7LD",
+          user_id: "U0G9QF9C6",
+        });
+      },
+    });
+
+    expect(result).toMatchObject({
+      profile: {
+        accountId: "U0G9QF9C6",
+        displayName: "Example workspace",
+      },
+      metadata: {
+        currentAccount: { team_id: "T024BE7LD" },
+      },
+    });
+  });
+});
+
+function apiKeyCredential(apiKey: string): Extract<ResolvedCredential, { authType: "api_key" }> {
+  return {
+    authType: "api_key",
+    apiKey,
+    values: { apiKey },
+    profile: {
+      accountId: "U0G9QF9C6",
+      displayName: "Example workspace",
+      grantedScopes: [],
+    },
+    metadata: {},
+  };
+}
+
+describe("get_channel_messages pagination", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("passes the cursor through and surfaces nextCursor", async () => {
+    const execute = slackExecutors["slack.get_channel_messages"]!;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const target = new URL(input.toString());
+        expect(target.searchParams.get("cursor")).toBe("bmV4dF90czox");
+        return Response.json({
+          ok: true,
+          messages: [{ ts: "1711.0001", user: "U023BECGF", text: "hi" }],
+          has_more: true,
+          response_metadata: { next_cursor: "bmV4dF90czoy" },
+        });
+      }),
+    );
+    const context: ExecutionContext = {
+      getCredential: async () => apiKeyCredential("xoxb-bot-token"),
+    };
+
+    await expect(execute({ channelId: "C024BE91L", cursor: "bmV4dF90czox" }, context)).resolves.toMatchObject({
+      ok: true,
+      output: {
+        messages: [{ ts: "1711.0001", userId: "U023BECGF", text: "hi" }],
+        hasMore: true,
+        nextCursor: "bmV4dF90czoy",
+      },
+    });
+  });
+
+  it("answers an empty nextCursor on the last page", async () => {
+    const execute = slackExecutors["slack.get_channel_messages"]!;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ ok: true, messages: [], has_more: false })),
+    );
+    const context: ExecutionContext = {
+      getCredential: async () => apiKeyCredential("xoxb-bot-token"),
+    };
+
+    await expect(execute({ channelId: "C024BE91L" }, context)).resolves.toMatchObject({
+      ok: true,
+      output: { messages: [], hasMore: false, nextCursor: "" },
+    });
+  });
+});
+
+describe("conversation history time window", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it.each([
+    { actionId: "slack.get_channel_messages", input: { channelId: "C024BE91L" } },
+    { actionId: "slack.get_thread", input: { channelId: "C024BE91L", threadTs: "1700000000.000100" } },
+  ] as const)("passes oldest, latest and inclusive through to $actionId verbatim", async ({ actionId, input }) => {
+    const execute = slackExecutors[actionId]!;
+    const seen: URL[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (target: RequestInfo | URL) => {
+        seen.push(new URL(target.toString()));
+        return Response.json({ ok: true, messages: [], has_more: false });
+      }),
+    );
+    const context: ExecutionContext = {
+      getCredential: async () => apiKeyCredential("xoxb-bot-token"),
+    };
+
+    await expect(
+      execute({ ...input, oldest: "1700000000.123456", latest: "1700003600.000000", inclusive: true }, context),
+    ).resolves.toMatchObject({ ok: true });
+
+    // Verbatim: a bound Slack compares against its own `ts` must not be
+    // rounded, re-scaled, or re-serialized on the way through.
+    expect(seen[0]!.searchParams.get("oldest")).toBe("1700000000.123456");
+    expect(seen[0]!.searchParams.get("latest")).toBe("1700003600.000000");
+    expect(seen[0]!.searchParams.get("inclusive")).toBe("true");
+  });
+
+  it.each([
+    { actionId: "slack.get_channel_messages", input: { channelId: "C024BE91L" } },
+    { actionId: "slack.get_thread", input: { channelId: "C024BE91L", threadTs: "1700000000.000100" } },
+  ] as const)("omits window parameters $actionId was not given", async ({ actionId, input }) => {
+    const execute = slackExecutors[actionId]!;
+    const seen: URL[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (target: RequestInfo | URL) => {
+        seen.push(new URL(target.toString()));
+        return Response.json({ ok: true, messages: [], has_more: false });
+      }),
+    );
+    const context: ExecutionContext = {
+      getCredential: async () => apiKeyCredential("xoxb-bot-token"),
+    };
+
+    await expect(execute(input, context)).resolves.toMatchObject({ ok: true });
+
+    for (const key of ["oldest", "latest", "inclusive"]) {
+      expect(seen[0]!.searchParams.has(key)).toBe(false);
+    }
+  });
+
+  it.each(["slack.get_channel_messages", "slack.get_thread"])(
+    "accepts a limit up to conversations.history's 999 ceiling on %s",
+    (actionId) => {
+      const action = slackActions.find((candidate) => candidate.id === actionId)!;
+      const base =
+        actionId === "slack.get_thread"
+          ? { channelId: "C024BE91L", threadTs: "1700000000.000100" }
+          : { channelId: "C024BE91L" };
+      expect(validateActionInput(action, { ...base, limit: 999 }).valid).toBe(true);
+      expect(validateActionInput(action, { ...base, limit: 1000 }).valid).toBe(false);
+    },
+  );
+
+  it("paginates a thread by cursor", async () => {
+    const execute = slackExecutors["slack.get_thread"]!;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (target: RequestInfo | URL) => {
+        expect(new URL(target.toString()).searchParams.get("cursor")).toBe("bmV4dF90czox");
+        return Response.json({
+          ok: true,
+          messages: [{ ts: "1700000000.000200", user: "U023BECGF", text: "reply" }],
+          has_more: true,
+          response_metadata: { next_cursor: "bmV4dF90czoy" },
+        });
+      }),
+    );
+    const context: ExecutionContext = {
+      getCredential: async () => apiKeyCredential("xoxb-bot-token"),
+    };
+
+    await expect(
+      execute({ channelId: "C024BE91L", threadTs: "1700000000.000100", cursor: "bmV4dF90czox" }, context),
+    ).resolves.toMatchObject({
+      ok: true,
+      output: { hasMore: true, nextCursor: "bmV4dF90czoy" },
+    });
+  });
+});
+
+describe("message normalization", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("keeps the fields beyond ts/userId/text that Slack returned", async () => {
+    const execute = slackExecutors["slack.get_channel_messages"]!;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          ok: true,
+          has_more: false,
+          messages: [
+            {
+              type: "message",
+              subtype: "bot_message",
+              ts: "1700000000.123456",
+              bot_id: "B0G9QF9C6",
+              app_id: "A0G9QF9C6",
+              username: "deploybot",
+              team: "T024BE7LD",
+              client_msg_id: "3d1b0a3e-0000-4000-8000-000000000000",
+              text: "shipped",
+              edited: { user: "U023BECGF", ts: "1700000001.000000" },
+              thread_ts: "1700000000.123456",
+              parent_user_id: "U023BECGF",
+              reply_count: 2,
+              reply_users_count: 1,
+              latest_reply: "1700000100.000000",
+              is_locked: true,
+              reply_users: ["U1"],
+              reactions: [{ name: "tada", count: 2, users: ["U1", "U2"] }],
+              blocks: [{ type: "section" }],
+              attachments: [{ fallback: "release notes", color: "#36a64f" }],
+              files: [{ id: "F0G9QF9C6", name: "notes.txt", mimetype: "text/plain" }],
+              metadata: { event_type: "deploy", event_payload: { sha: "abc123" } },
+              is_starred: true,
+            },
+          ],
+        }),
+      ),
+    );
+    const context: ExecutionContext = {
+      getCredential: async () => apiKeyCredential("xoxb-bot-token"),
+    };
+
+    const result = (await execute({ channelId: "C024BE91L" }, context)) as {
+      ok: true;
+      output: { messages: Array<Record<string, unknown>> };
+    };
+
+    expect(result.output.messages[0]).toEqual({
+      ts: "1700000000.123456",
+      type: "message",
+      subtype: "bot_message",
+      userId: "",
+      botId: "B0G9QF9C6",
+      appId: "A0G9QF9C6",
+      username: "deploybot",
+      teamId: "T024BE7LD",
+      clientMsgId: "3d1b0a3e-0000-4000-8000-000000000000",
+      text: "shipped",
+      editedTs: "1700000001.000000",
+      editedUserId: "U023BECGF",
+      threadTs: "1700000000.123456",
+      parentUserId: "U023BECGF",
+      replyCount: 2,
+      replyUsersCount: 1,
+      replyUserIds: ["U1"],
+      latestReply: "1700000100.000000",
+      isLocked: true,
+      reactions: [{ name: "tada", count: 2, userIds: ["U1", "U2"] }],
+    });
+    // The nested payloads and undeclared Slack fields stay out of the default
+    // row; the untouched record only rides along with includeRaw.
+    for (const absent of ["files", "attachments", "blocks", "metadata", "raw", "isStarred", "is_starred"]) {
+      expect(result.output.messages[0]).not.toHaveProperty(absent);
+    }
+  });
+
+  // A thread_broadcast reply as Slack returns it under include_all_metadata:
+  // `root` is Slack's copy of the thread parent, whose ts is already threadTs.
+  const rawMessage = {
+    type: "message",
+    subtype: "thread_broadcast",
+    ts: "1700000100.000200",
+    thread_ts: "1700000000.123456",
+    user: "U023BECGF",
+    text: "see attached",
+    edited: { user: "U0G9QF9C6", ts: "1700000101.000000" },
+    root: {
+      type: "message",
+      ts: "1700000000.123456",
+      thread_ts: "1700000000.123456",
+      user: "U0G9QF9C6",
+      text: "release checklist",
+      reply_count: 1,
+    },
+    files: [{ id: "F0G9QF9C6", name: "notes.txt" }],
+    blocks: [{ type: "section", text: { type: "mrkdwn", text: "see attached" } }],
+    metadata: { event_type: "task_added", event_payload: { id: "11223" } },
+    is_starred: true,
+  };
+  const messageRow = {
+    ts: "1700000100.000200",
+    type: "message",
+    subtype: "thread_broadcast",
+    userId: "U023BECGF",
+    text: "see attached",
+    editedTs: "1700000101.000000",
+    editedUserId: "U0G9QF9C6",
+    threadTs: "1700000000.123456",
+  };
+  const rawMatch = {
+    iid: "9e4d2d5c-0000-4000-8000-000000000000",
+    channel: { id: "C024BE91L", name: "general", is_private: false },
+    ts: "1700000000.123456",
+    user: "U023BECGF",
+    username: "alice",
+    text: "see attached",
+    permalink: "https://example.slack.com/archives/C024BE91L/p1700000000123456",
+    team: "T024BE7LD",
+    type: "message",
+    score: 0.98,
+    files: [{ id: "F0G9QF9C6", name: "notes.txt" }],
+    attachments: [{ fallback: "release notes" }],
+    blocks: [{ type: "section", text: { type: "mrkdwn", text: "see attached" } }],
+  };
+  const matchRow = {
+    matchId: "9e4d2d5c-0000-4000-8000-000000000000",
+    channelId: "C024BE91L",
+    channelName: "general",
+    ts: "1700000000.123456",
+    userId: "U023BECGF",
+    username: "alice",
+    text: "see attached",
+    permalink: "https://example.slack.com/archives/C024BE91L/p1700000000123456",
+    teamId: "T024BE7LD",
+    type: "message",
+  };
+
+  it.each([
+    {
+      actionId: "slack.get_channel_messages",
+      input: { channelId: "C024BE91L" },
+      payload: { ok: true, has_more: false, messages: [rawMessage] },
+      list: "messages",
+      record: rawMessage,
+      row: messageRow,
+      requestsMetadata: true,
+    },
+    {
+      actionId: "slack.get_thread",
+      input: { channelId: "C024BE91L", threadTs: "1700000000.123456" },
+      payload: { ok: true, has_more: false, messages: [rawMessage] },
+      list: "messages",
+      record: rawMessage,
+      row: messageRow,
+      requestsMetadata: true,
+    },
+    {
+      actionId: "slack.search_messages",
+      input: { query: "attached" },
+      payload: { ok: true, query: "attached", messages: { matches: [rawMatch], total: 1 } },
+      list: "matches",
+      record: rawMatch,
+      row: matchRow,
+      requestsMetadata: false,
+    },
+  ] as const)(
+    "$actionId returns the untouched record under raw only when includeRaw is true",
+    async ({ actionId, input, payload, list, record, row, requestsMetadata }) => {
+      const action = slackActions.find((candidate) => candidate.id === actionId)!;
+      expect(validateActionInput(action, { ...input, includeRaw: true }).valid).toBe(true);
+      expect(validateActionInput(action, { ...input, includeRaw: "yes" }).valid).toBe(false);
+
+      const execute = slackExecutors[actionId]!;
+      const seen: URL[] = [];
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (target: RequestInfo | URL) => {
+          seen.push(new URL(target.toString()));
+          return Response.json(payload);
+        }),
+      );
+      const context: ExecutionContext = {
+        getCredential: async () => apiKeyCredential("xoxb-bot-token"),
+      };
+
+      const withRaw = (await execute({ ...input, includeRaw: true }, context)) as {
+        ok: true;
+        output: Record<string, Array<Record<string, unknown>>>;
+      };
+      expect(withRaw.ok).toBe(true);
+      const { raw, ...normalized } = withRaw.output[list]![0]!;
+      // The whole vendor record, including the nested payloads the row leaves out.
+      expect(raw).toEqual(record);
+      // The opt-in adds raw and nothing else: no nested payload is lifted onto the row.
+      expect(normalized).toEqual(row);
+      expect(new Validator(action.outputSchema).validate(withRaw.output).valid).toBe(true);
+      // Slack sends message metadata only on request; search.messages has no such flag.
+      expect(seen[0]!.searchParams.get("include_all_metadata")).toBe(requestsMetadata ? "true" : null);
+
+      for (const plain of [input, { ...input, includeRaw: false }]) {
+        const before = seen.length;
+        const withoutRaw = (await execute(plain, context)) as {
+          ok: true;
+          output: Record<string, Array<Record<string, unknown>>>;
+        };
+        expect(withoutRaw.ok).toBe(true);
+        expect(withoutRaw.output[list]![0]).toEqual(row);
+        expect(seen[before]!.searchParams.has("include_all_metadata")).toBe(false);
+      }
+    },
+  );
+
+  it("omits every optional field on a bare message", async () => {
+    const execute = slackExecutors["slack.get_channel_messages"]!;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          ok: true,
+          has_more: false,
+          messages: [{ ts: "1700000000.123456", user: "U023BECGF", text: "hi" }],
+        }),
+      ),
+    );
+    const context: ExecutionContext = {
+      getCredential: async () => apiKeyCredential("xoxb-bot-token"),
+    };
+
+    const result = (await execute({ channelId: "C024BE91L" }, context)) as {
+      ok: true;
+      output: { messages: Array<Record<string, unknown>> };
+    };
+
+    expect(result.output.messages[0]).toEqual({
+      ts: "1700000000.123456",
+      userId: "U023BECGF",
+      text: "hi",
+    });
+  });
+
+  it.each([
+    { actionId: "slack.get_channel_messages", key: "get_channel_messages" },
+    { actionId: "slack.get_thread", key: "get_thread" },
+  ])("declares an output schema $key rows validate against", ({ actionId }) => {
+    const action = slackActions.find((candidate) => candidate.id === actionId)!;
+    const output = new Validator(action.outputSchema);
+    expect(
+      output.validate({
+        messages: [
+          {
+            ts: "1700000000.123456",
+            userId: "U023BECGF",
+            text: "hi",
+            editedUserId: "U0G9QF9C6",
+            threadTs: "1700000000.123456",
+            replyCount: 2,
+            replyUserIds: ["U1"],
+            reactions: [{ name: "tada", count: 2, userIds: ["U1"] }],
+            raw: { ts: "1700000000.123456", user: "U023BECGF", text: "hi" },
+          },
+        ],
+        hasMore: false,
+        nextCursor: "",
+      }).valid,
+    ).toBe(true);
+  });
+});
+
+describe("Slack current credential identity", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("exposes a scope-free, empty-input identity contract only on Slack", () => {
+    const action = slackActions.find((action) => action.id === "slack.get_current_user");
+    expect(action).toBeDefined();
+    expect(action!.requiredScopes).toEqual([]);
+    expect(validateActionInput(action!, {}).valid).toBe(true);
+    expect(validateActionInput(action!, { teamId: "TOTHER" }).valid).toBe(false);
+    const output = new Validator(action!.outputSchema);
+    expect(output.validate({ teamId: "T123", userId: "U123", isBot: false }).valid).toBe(true);
+    for (const invalid of [
+      { userId: "U123", isBot: false },
+      { teamId: "T123", isBot: false },
+      { teamId: "T123", userId: "U123" },
+      { teamId: "", userId: "U123", isBot: false },
+      { teamId: "T123", userId: "", isBot: false },
+    ]) {
+      expect(output.validate(invalid).valid).toBe(false);
+    }
+    expect(slackbotActions.some((action) => action.name === "get_current_user")).toBe(false);
+    expect(slackbotExecutors["slackbot.get_current_user"]).toBeUndefined();
+  });
+
+  it.each([
+    { credential: oauthCredential("user", {}, "opaque-user-token"), botId: undefined, isBot: false },
+    { credential: oauthCredential("user", {}, "xoxp-user-token"), botId: "B123", isBot: true },
+    { credential: apiKeyCredential("xoxb-misleading-prefix"), botId: undefined, isBot: false },
+    { credential: apiKeyCredential("opaque-bot-token"), botId: "B123", isBot: true },
+  ])("uses auth.test identity and bot_id for $credential.authType ($isBot)", async ({ credential, botId, isBot }) => {
+    const execute = slackExecutors["slack.get_current_user"];
+    expect(execute).toBeDefined();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+        expect(String(url)).toBe("https://slack.com/api/auth.test");
+        expect(init?.method).toBe("POST");
+        expect(init?.body).toBeUndefined();
+        const token = credential.authType === "oauth2" ? credential.accessToken : credential.apiKey;
+        expect(new Headers(init?.headers).get("authorization")).toBe(`Bearer ${token}`);
+        return Response.json({ ok: true, team_id: "T024BE7LD", user_id: "U024BE7LH", bot_id: botId });
+      }),
+    );
+    await expect(
+      execute!(
+        {},
+        {
+          getCredential: async (service) => {
+            expect(service).toBe("slack");
+            return credential;
+          },
+        },
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      output: { teamId: "T024BE7LD", userId: "U024BE7LH", isBot },
+    });
+  });
+
+  it.each([
+    {},
+    { team_id: "T123", user_id: "U123" },
+    { ok: "true", team_id: "T123", user_id: "U123" },
+    { ok: true, user_id: "U123" },
+    { ok: true, team_id: "T123" },
+    { ok: true, team_id: "", user_id: "U123" },
+    { ok: true, team_id: "T123", user_id: " " },
+    { ok: true, team_id: 123, user_id: "U123" },
+    { ok: true, team_id: "T123", user_id: null },
+    { ok: true, team_id: " T123", user_id: "U123" },
+    { ok: true, team_id: "T123", user_id: "U123", bot_id: "" },
+    { ok: true, team_id: "T123", user_id: "U123", bot_id: false },
+    { ok: true, team_id: "T123", user_id: "U123", bot_id: null },
+  ])("rejects malformed auth.test identity %j", async (payload) => {
+    const execute = slackExecutors["slack.get_current_user"];
+    expect(execute).toBeDefined();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json(payload)),
+    );
+    const result = await execute!({}, { getCredential: async () => oauthCredential("user") });
+    expect(result).toMatchObject({ ok: false, error: { code: "provider_error", details: { status: 502 } } });
+    expect(result).not.toHaveProperty("output");
+  });
+
+  it("propagates a rejected credential instead of returning an identity", async () => {
+    const execute = slackExecutors["slack.get_current_user"];
+    expect(execute).toBeDefined();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ ok: false, error: "invalid_auth" })),
+    );
+    await expect(execute!({}, { getCredential: async () => oauthCredential("user") })).resolves.toMatchObject({
+      ok: false,
+      error: { code: "authorization_failed" },
+    });
+  });
+});
+
+describe("Slack bot install identity", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const installMetadata = {
+    ok: true,
+    token_type: "bot",
+    bot_user_id: "UBOT0001",
+    app_id: "A0APP0001",
+    team: { id: "T0TEAM001", name: "Example Workspace" },
+    enterprise: { id: "E0ENT0001", name: "Example Enterprise" },
+    authed_user: { id: "U0ADMIN01", scope: "chat:write", token_type: "user" },
+  };
+
+  it("exposes a scope-free, empty-input install contract only on Slack Bot", () => {
+    const action = slackbotActions.find((action) => action.id === "slackbot.get_installation");
+    expect(action).toBeDefined();
+    expect(action!.operationType).toBe("read");
+    expect(action!.requiredScopes).toEqual([]);
+    expect(validateActionInput(action!, {}).valid).toBe(true);
+    expect(validateActionInput(action!, { teamId: "TOTHER" }).valid).toBe(false);
+    const output = new Validator(action!.outputSchema);
+    const valid = {
+      teamId: "T0TEAM001",
+      teamName: "Example Workspace",
+      authedUserId: "U0ADMIN01",
+      botUserId: "UBOT0001",
+      appId: "A0APP0001",
+    };
+    expect(output.validate(valid).valid).toBe(true);
+    expect(output.validate(null).valid).toBe(true);
+    expect(output.validate({}).valid).toBe(false);
+    expect(output.validate({ ...valid, teamName: null, appId: null }).valid).toBe(true);
+    for (const missing of ["teamId", "teamName", "authedUserId", "botUserId", "appId"]) {
+      const { [missing]: _removed, ...rest } = valid as Record<string, unknown>;
+      expect(output.validate(rest).valid).toBe(false);
+    }
+    expect(output.validate({ ...valid, teamId: "" }).valid).toBe(false);
+    expect(output.validate({ ...valid, authedUserId: "" }).valid).toBe(false);
+    // A user connection has its own get_current_user; this one belongs to the bot provider.
+    expect(slackActions.some((action) => action.name === "get_installation")).toBe(false);
+    expect(slackExecutors["slack.get_installation"]).toBeUndefined();
+  });
+
+  it("reads the install identity from stored metadata without calling Slack", async () => {
+    const execute = slackbotExecutors["slackbot.get_installation"];
+    expect(execute).toBeDefined();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await execute!(
+      {},
+      {
+        getCredential: async (service) => {
+          expect(service).toBe("slackbot");
+          return oauthCredential("bot", installMetadata, "xoxb-secret-bot-token");
+        },
+      },
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      output: {
+        teamId: "T0TEAM001",
+        teamName: "Example Workspace",
+        authedUserId: "U0ADMIN01",
+        botUserId: "UBOT0001",
+        appId: "A0APP0001",
+      },
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("never returns tokens, scopes, or enterprise data held beside the identity", async () => {
+    const execute = slackbotExecutors["slackbot.get_installation"]!;
+    const result = await execute(
+      {},
+      {
+        getCredential: async () =>
+          oauthCredential(
+            "bot",
+            {
+              ...installMetadata,
+              refresh_token: "xoxe-secret-refresh",
+              authed_user: { ...installMetadata.authed_user, access_token: "xoxp-secret-user-token" },
+              oauthClientSecretExtra: { appBearerToken: "secret-app-token" },
+            },
+            "xoxb-secret-bot-token",
+          ),
+      },
+    );
+    const serialized = JSON.stringify(result);
+    for (const secret of [
+      "xoxb-secret-bot-token",
+      "xoxe-secret-refresh",
+      "xoxp-secret-user-token",
+      "secret-app-token",
+      "chat:write",
+      "E0ENT0001",
+    ]) {
+      expect(serialized).not.toContain(secret);
+    }
+    expect(result).toEqual({
+      ok: true,
+      output: {
+        teamId: "T0TEAM001",
+        teamName: "Example Workspace",
+        authedUserId: "U0ADMIN01",
+        botUserId: "UBOT0001",
+        appId: "A0APP0001",
+      },
+    });
+  });
+
+  it("reports null for the optional name and app id when the install did not carry them", async () => {
+    const execute = slackbotExecutors["slackbot.get_installation"]!;
+    await expect(
+      execute(
+        {},
+        {
+          getCredential: async () =>
+            oauthCredential("bot", {
+              bot_user_id: "UBOT0001",
+              team: { id: "T0TEAM001" },
+              authed_user: { id: "U0ADMIN01" },
+            }),
+        },
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      output: { teamId: "T0TEAM001", teamName: null, authedUserId: "U0ADMIN01", botUserId: "UBOT0001", appId: null },
+    });
+  });
+
+  it.each([
+    { name: "no metadata at all", metadata: {} },
+    { name: "no team", metadata: { ...installMetadata, team: undefined } },
+    { name: "team without id", metadata: { ...installMetadata, team: { name: "Example Workspace" } } },
+    { name: "blank team id", metadata: { ...installMetadata, team: { id: "  " } } },
+    { name: "no authed_user", metadata: { ...installMetadata, authed_user: undefined } },
+    { name: "authed_user without id", metadata: { ...installMetadata, authed_user: { scope: "chat:write" } } },
+    { name: "authed_user as a string", metadata: { ...installMetadata, authed_user: "U0ADMIN01" } },
+    { name: "team as an array", metadata: { ...installMetadata, team: ["T0TEAM001"] } },
+    { name: "no bot_user_id", metadata: { ...installMetadata, bot_user_id: undefined } },
+    { name: "non-string ids", metadata: { ...installMetadata, team: { id: 123 }, authed_user: { id: 456 } } },
+  ])("returns null when the OAuth metadata has $name", async ({ metadata }) => {
+    const execute = slackbotExecutors["slackbot.get_installation"]!;
+    const result = await execute({}, { getCredential: async () => oauthCredential("bot", metadata) });
+    expect(result).toEqual({ ok: true, output: null });
+  });
+
+  it("returns null for an API-key connection", async () => {
+    const execute = slackbotExecutors["slackbot.get_installation"]!;
+    const result = await execute({}, { getCredential: async () => apiKeyCredential("xoxb-pasted-token") });
+    expect(result).toEqual({ ok: true, output: null });
+  });
+
+  it("still rejects a user-path credential on the bot provider", async () => {
+    const execute = slackbotExecutors["slackbot.get_installation"]!;
+    await expect(
+      execute({}, { getCredential: async () => oauthCredential("user", installMetadata, "xoxp-user-token") }),
+    ).resolves.toMatchObject({ ok: false, error: { code: "authorization_failed" } });
+  });
+});
+
+describe("Slack discovery page validation", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const publicChannel = {
+    id: "C111",
+    is_channel: true,
+    is_group: false,
+    is_im: false,
+    is_mpim: false,
+    is_private: false,
+  };
+  const privateChannel = { ...publicChannel, id: "C222", is_private: true };
+  const context: ExecutionContext = { getCredential: async () => oauthCredential("user") };
+  const execute = slackExecutors["slack.list_conversations"]!;
+
+  async function expectInvalidPage(body: string) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(body, { status: 200 })),
+    );
+    const result = await execute({ cursor: "page-two" }, context);
+    expect(result).toMatchObject({ ok: false, error: { code: "provider_error", details: { status: 502 } } });
+    expect(result).not.toHaveProperty("output");
+  }
+
+  it.each(["", "<html>upstream unavailable</html>", '{"ok":true,"channels":['])(
+    "rejects invalid JSON instead of completing a later page: %j",
+    expectInvalidPage,
+  );
+
+  it.each(
+    [
+      null,
+      [],
+      1,
+      "unexpected",
+      {},
+      { channels: [] },
+      ...[null, 0, 1, "true", [], {}].map((ok) => ({ ok, channels: [] })),
+    ].map((payload) => ({ payload })),
+  )("requires an explicit successful Slack envelope: $payload", async ({ payload }) => {
+    await expectInvalidPage(JSON.stringify(payload));
+  });
+
+  it.each([{}, ...[null, {}, "channels", 0, false].map((channels) => ({ channels }))])(
+    "requires a channels array: %j",
+    async (fields) => {
+      await expectInvalidPage(JSON.stringify({ ok: true, ...fields }));
+    },
+  );
+
+  it.each([null, [], "metadata", 0, false].map((metadata) => ({ metadata })))(
+    "rejects malformed present response_metadata: $metadata",
+    async ({ metadata }) => {
+      await expectInvalidPage(JSON.stringify({ ok: true, channels: [publicChannel], response_metadata: metadata }));
+    },
+  );
+
+  it.each([0, 42, false, [], {}, " ", " next-page", "next-page "].map((cursor) => ({ cursor })))(
+    "rejects malformed present next_cursor: $cursor",
+    async ({ cursor }) => {
+      await expectInvalidPage(
+        JSON.stringify({ ok: true, channels: [publicChannel], response_metadata: { next_cursor: cursor } }),
+      );
+    },
+  );
+
+  it.each([
+    {},
+    { response_metadata: {} },
+    { response_metadata: { next_cursor: "" } },
+    { response_metadata: { next_cursor: null } },
+  ])("accepts documented terminal cursor omissions: %j", async (fields) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ ok: true, channels: [], ...fields })),
+    );
+    await expect(execute({}, context)).resolves.toMatchObject({
+      ok: true,
+      output: { conversations: [], nextCursor: null },
+    });
+  });
+
+  it("preserves the cursor on an empty intermediate page", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          ok: true,
+          channels: [],
+          response_metadata: { next_cursor: "next-page=" },
+        }),
+      ),
+    );
+    await expect(execute({}, context)).resolves.toMatchObject({
+      ok: true,
+      output: { conversations: [], nextCursor: "next-page=" },
+    });
+  });
+
+  it.each(
+    [
+      null,
+      [],
+      "channel",
+      7,
+      ...[undefined, null, 123, "", " ", " C222"].map((id) => ({ ...privateChannel, id })),
+      ...["is_channel", "is_group", "is_im", "is_mpim", "is_private"].map((field) => ({
+        ...privateChannel,
+        [field]: "true",
+      })),
+      { ...privateChannel, is_private: undefined },
+      { id: "C222", is_im: false, is_mpim: false, is_private: true },
+      { id: "C222", is_channel: true },
+      { id: "G222", is_group: true },
+      { id: "G222", is_group: true, is_private: true },
+      { ...privateChannel, is_group: true },
+      { id: "D333", is_im: true, is_mpim: true },
+      { id: "D333", is_im: true, is_private: false },
+      { ...privateChannel, is_im: true },
+      { ...privateChannel, is_mpim: true },
+      { ...privateChannel, is_channel: false, is_group: true, is_private: false },
+    ].map((channel) => ({ channel })),
+  )("rejects an invalid row without publishing the preceding valid row: $channel", async ({ channel }) => {
+    await expectInvalidPage(JSON.stringify({ ok: true, channels: [publicChannel, channel] }));
+  });
+
+  it("preserves modern and legacy channels, minimal IMs, and group DMs without requiring display fields", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          ok: true,
+          channels: [
+            publicChannel,
+            privateChannel,
+            { ...privateChannel, id: "G222", is_channel: false, is_group: true, is_archived: true },
+            { id: "D333", is_im: true },
+            { id: "G444", is_channel: false, is_group: true, is_im: false, is_mpim: true, is_private: true },
+          ],
+        }),
+      ),
+    );
+    const result = await execute({}, context);
+    expect(result).toMatchObject({
+      ok: true,
+      output: {
+        nextCursor: null,
+        conversations: [
+          { channelId: "C111", type: "public_channel" },
+          { channelId: "C222", type: "private_channel" },
+          { channelId: "G222", type: "private_channel", isArchived: true },
+          { channelId: "D333", type: "im" },
+          { channelId: "G444", type: "mpim" },
+        ],
+      },
+    });
+  });
+
+  // Positive discriminators identify the kind; omitted negative flags are not
+  // evidence of a malformed row. The legacy MPIM example omits is_im entirely:
+  // https://docs.slack.dev/reference/objects/mpim-object/
+  // Modern channel privacy is explicit in the conversation boolean contract:
+  // https://docs.slack.dev/reference/objects/conversation-object/#conversation-related-booleans
+  // Legacy groups need is_mpim:false because MPIMs can also appear as groups:
+  // https://docs.slack.dev/reference/objects/group-object/
+  it.each([
+    { row: { id: "D333", is_im: true }, kind: "im" },
+    { row: { id: "G444", is_mpim: true }, kind: "mpim" },
+    { row: { id: "G444", is_mpim: true, is_group: false }, kind: "mpim" },
+    { row: { id: "G444", is_mpim: true, is_group: true }, kind: "mpim" },
+    { row: { id: "C111", is_channel: true, is_private: false }, kind: "public_channel" },
+    { row: { id: "C222", is_channel: true, is_private: true }, kind: "private_channel" },
+    { row: { id: "G222", is_group: true, is_mpim: false }, kind: "private_channel" },
+    { row: { id: "G222", is_group: true, is_mpim: false, is_private: true }, kind: "private_channel" },
+    { row: { ...privateChannel, is_im: undefined }, kind: "private_channel" },
+    { row: { ...privateChannel, is_mpim: undefined }, kind: "private_channel" },
+  ])("accepts an unambiguous minimal $kind row: $row", async ({ row, kind }) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ ok: true, channels: [row] })),
+    );
+    await expect(execute({}, context)).resolves.toMatchObject({
+      ok: true,
+      output: { conversations: [{ channelId: row.id, type: kind }], nextCursor: null },
+    });
+  });
+
+  it.each([
+    { error: "invalid_auth", code: "authorization_failed" },
+    { error: "ratelimited", code: "rate_limited" },
+  ])("preserves Slack's explicit $error failure", async ({ error, code }) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ ok: false, error })),
+    );
+    await expect(execute({}, context)).resolves.toMatchObject({ ok: false, error: { code } });
+  });
+});
+
+describe("Slack discovery rate limit details", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it("preserves Retry-After through the action error envelope", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({ ok: false, error: "ratelimited" }, { status: 429, headers: { "Retry-After": "73" } }),
+      ),
+    );
+    const execute = slackExecutors["slack.list_conversations"]!;
+    const result = await execute(
+      { types: ["public_channel"], cursor: "page-two" },
+      { getCredential: async () => oauthCredential("user") },
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: "rate_limited", details: { status: 429, details: { retryAfterSeconds: 73 } } },
+    });
+  });
+
+  it.each(["", "not JSON", "null"])("preserves Retry-After when the HTTP 429 body is unreadable: %j", async (body) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(body, { status: 429, headers: { "Retry-After": "73" } })),
+    );
+    await expect(
+      slackExecutors["slack.list_conversations"]!(
+        {},
+        {
+          getCredential: async () => oauthCredential("user"),
+        },
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "rate_limited", details: { status: 429, details: { retryAfterSeconds: 73 } } },
+    });
+  });
+});
+
+describe("Slack credential validators require an auth.test identity", () => {
+  const anonymousPayloads = [{ ok: true }, { ok: true, team: "Example workspace" }, { ok: true, team_id: "T123" }];
+
+  it("apiKey rejects a successful auth.test that names no user", async () => {
+    for (const payload of anonymousPayloads) {
+      await expect(
+        credentialValidators.apiKey!(apiKeyCredential("xoxb-bot-token"), {
+          fetcher: async () => Response.json(payload),
+        }),
+      ).rejects.toMatchObject({ status: 502 });
+    }
+  });
+
+  it("oauth2 rejects a successful auth.test that names no user", async () => {
+    for (const payload of anonymousPayloads) {
+      await expect(
+        credentialValidators.oauth2!(oauthCredential("user"), { fetcher: async () => Response.json(payload) }),
+      ).rejects.toMatchObject({ status: 502 });
+    }
+  });
+
+  it("falls back to the workspace ID as displayName when auth.test omits the team name", async () => {
+    await expect(
+      credentialValidators.apiKey!(apiKeyCredential("xoxb-bot-token"), {
+        fetcher: async () => Response.json({ ok: true, team_id: "T123", user_id: "U123" }),
+      }),
+    ).resolves.toMatchObject({ profile: { accountId: "U123", displayName: "T123" } });
+  });
+});
+
+describe("Slack message, member and directory page validation", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const context: ExecutionContext = { getCredential: async () => apiKeyCredential("xoxb-bot-token") };
+  const membersPage = {
+    actionId: "slack.conversations_members",
+    execute: slackExecutors["slack.conversations_members"]!,
+    input: { channelId: "C024BE91L" },
+    list: "members",
+  };
+  const directoryPage = {
+    actionId: "slack.list_users",
+    execute: slackExecutors["slack.list_users"]!,
+    input: {},
+    list: "members",
+  };
+  const messagePages = [
+    {
+      actionId: "slack.get_channel_messages",
+      execute: slackExecutors["slack.get_channel_messages"]!,
+      input: { channelId: "C024BE91L" },
+      list: "messages",
+    },
+    {
+      actionId: "slack.get_thread",
+      execute: slackExecutors["slack.get_thread"]!,
+      input: { channelId: "C024BE91L", threadTs: "1700000000.000100" },
+      list: "messages",
+    },
+  ];
+  const pages = [...messagePages, membersPage, directoryPage];
+
+  async function expectInvalidPage(page: (typeof pages)[number], payload: unknown) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json(payload)),
+    );
+    const result = await page.execute(page.input, context);
+    expect(result).toMatchObject({ ok: false, error: { code: "provider_error", details: { status: 502 } } });
+    expect(result).not.toHaveProperty("output");
+  }
+
+  it.each(pages)("$actionId rejects a page whose list is missing or not an array", async (page) => {
+    for (const value of [undefined, null, {}, "row", 0]) {
+      await expectInvalidPage(page, { ok: true, [page.list]: value });
+    }
+  });
+
+  it.each(pages)("$actionId rejects a present next_cursor that is not a plain string", async (page) => {
+    for (const cursor of [0, false, [], {}, " ", " next", "next "]) {
+      await expectInvalidPage(page, { ok: true, [page.list]: [], response_metadata: { next_cursor: cursor } });
+    }
+    await expectInvalidPage(page, { ok: true, [page.list]: [], response_metadata: "metadata" });
+  });
+
+  it.each(messagePages)("$actionId rejects a message row that is not an object or has no ts", async (page) => {
+    for (const row of [null, "message", 1, {}, { ts: "" }, { ts: 1700000000 }]) {
+      await expectInvalidPage(page, { ok: true, messages: [{ ts: "1700000000.000001" }, row] });
+    }
+    await expectInvalidPage(page, { ok: true, messages: [], has_more: "true" });
+  });
+
+  it.each([null, "", " ", " U1", 7, {}])("conversations_members rejects a malformed member ID %j", async (member) => {
+    await expectInvalidPage(membersPage, { ok: true, members: ["U023BECGF", member] });
+  });
+
+  it.each([null, [], "user", 7, {}, { id: "" }, { id: " U1" }, { id: 7 }])(
+    "list_users rejects a malformed user row %j",
+    async (row) => {
+      await expectInvalidPage(directoryPage, { ok: true, members: [{ id: "U023BECGF" }, row] });
+    },
+  );
+
+  it.each(pages)("$actionId treats an absent, null or empty next_cursor as the last page", async (page) => {
+    for (const fields of [
+      {},
+      { response_metadata: {} },
+      { response_metadata: { next_cursor: "" } },
+      { response_metadata: { next_cursor: null } },
+    ]) {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => Response.json({ ok: true, [page.list]: [], ...fields })),
+      );
+      await expect(page.execute(page.input, context)).resolves.toMatchObject({
+        ok: true,
+        output: { nextCursor: page.actionId === "slack.list_users" ? null : "" },
+      });
+    }
+  });
+});
+
+describe("Slack conversation and user extra fields", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const context: ExecutionContext = { getCredential: async () => oauthCredential("user") };
+  const bareChannel = { id: "C111", is_channel: true, is_private: false };
+  const bareUser = { id: "U111", name: "alice", profile: { real_name: "Alice" } };
+
+  it("keeps the extra conversation fields Slack sends and omits them otherwise", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          ok: true,
+          channels: [
+            {
+              ...bareChannel,
+              created: 1700000000,
+              updated: 1758844800000,
+              creator: "U222",
+              is_shared: true,
+              is_ext_shared: false,
+              is_org_shared: false,
+              context_team_id: "T111",
+              last_read: "1758844800.000100",
+              unread_count: 3,
+            },
+            { ...bareChannel, id: "C222" },
+          ],
+        }),
+      ),
+    );
+    const result = await slackExecutors["slack.list_conversations"]!({}, context);
+    expect(result).toMatchObject({
+      ok: true,
+      output: {
+        conversations: [
+          {
+            channelId: "C111",
+            created: 1700000000,
+            updated: 1758844800000,
+            creatorId: "U222",
+            isShared: true,
+            isExtShared: false,
+            isOrgShared: false,
+            contextTeamId: "T111",
+            lastRead: "1758844800.000100",
+            unreadCount: 3,
+          },
+          { channelId: "C222" },
+        ],
+      },
+    });
+    const output = (result as { output: { conversations: Record<string, unknown>[] } }).output;
+    const action = slackActions.find((candidate) => candidate.id === "slack.list_conversations")!;
+    expect(new Validator(action.outputSchema).validate(output).valid).toBe(true);
+    for (const key of [
+      "created",
+      "updated",
+      "creatorId",
+      "isShared",
+      "isExtShared",
+      "isOrgShared",
+      "contextTeamId",
+      "lastRead",
+      "unreadCount",
+    ]) {
+      expect(output.conversations[1]).not.toHaveProperty(key);
+    }
+  });
+
+  it("keeps the extra user fields Slack sends and omits them otherwise", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          ok: true,
+          members: [
+            {
+              ...bareUser,
+              profile: { ...bareUser.profile, email: "alice@example.com" },
+              tz: "Asia/Shanghai",
+              tz_offset: 28800,
+              updated: 1758844800,
+              team_id: "T111",
+              is_restricted: false,
+              is_ultra_restricted: false,
+              is_app_user: false,
+            },
+            { ...bareUser, id: "U222" },
+          ],
+        }),
+      ),
+    );
+    const result = await slackExecutors["slack.list_users"]!({}, context);
+    expect(result).toMatchObject({
+      ok: true,
+      output: {
+        users: [
+          {
+            userId: "U111",
+            email: "alice@example.com",
+            tz: "Asia/Shanghai",
+            tzOffset: 28800,
+            updated: 1758844800,
+            teamId: "T111",
+            isRestricted: false,
+            isUltraRestricted: false,
+            isAppUser: false,
+          },
+          { userId: "U222", realName: "Alice" },
+        ],
+      },
+    });
+    const output = (result as { output: { users: Record<string, unknown>[] } }).output;
+    const action = slackActions.find((candidate) => candidate.id === "slack.list_users")!;
+    expect(new Validator(action.outputSchema).validate(output).valid).toBe(true);
+    for (const key of [
+      "email",
+      "tz",
+      "tzOffset",
+      "updated",
+      "teamId",
+      "isRestricted",
+      "isUltraRestricted",
+      "isAppUser",
+    ]) {
+      expect(output.users[1]).not.toHaveProperty(key);
+    }
+  });
+});
+
+describe("Slack reactions list", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const context: ExecutionContext = { getCredential: async () => apiKeyCredential("xoxp-user-token") };
+  const execute = slackExecutors["slack.list_reactions"]!;
+
+  it("passes user, limit, cursor and full to reactions.list and normalizes each item", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const target = new URL(input.toString());
+      expect(target.pathname).toBe("/api/reactions.list");
+      expect(target.searchParams.get("user")).toBe("U0G9QF9C6");
+      expect(target.searchParams.get("limit")).toBe("50");
+      expect(target.searchParams.get("cursor")).toBe("dXNlcjpVMDYxTkZUVDI=");
+      expect(target.searchParams.get("full")).toBe("true");
+      return Response.json({
+        ok: true,
+        items: [
+          {
+            type: "message",
+            channel: "C024BE91L",
+            message: {
+              type: "message",
+              user: "U023BECGF",
+              text: "ship it",
+              ts: "1700000000.000100",
+              team: "T024BE7LD",
+              permalink: "https://example.slack.com/archives/C024BE91L/p1700000000000100",
+              reactions: [{ name: "thumbsup", users: ["U0G9QF9C6", "U023BECGF"], count: 2 }],
+            },
+          },
+          {
+            type: "file",
+            file: { id: "F0123456", name: "plan.pdf", reactions: [{ name: "eyes", users: ["U0G9QF9C6"], count: 1 }] },
+          },
+          {
+            type: "file_comment",
+            file: { id: "F0123457", reactions: [{ name: "eyes", users: ["U023BECGF"], count: 1 }] },
+            comment: { id: "Fc0123", reactions: [{ name: "tada", users: ["U0G9QF9C6"], count: 1 }] },
+          },
+        ],
+        response_metadata: { next_cursor: "dXNlcjpVMDYxTkZUVDM=" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await execute(
+      { userId: "U0G9QF9C6", limit: 50, cursor: "dXNlcjpVMDYxTkZUVDI=", full: true },
+      context,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({
+      ok: true,
+      output: {
+        items: [
+          {
+            type: "message",
+            channelId: "C024BE91L",
+            message: {
+              ts: "1700000000.000100",
+              type: "message",
+              userId: "U023BECGF",
+              teamId: "T024BE7LD",
+              text: "ship it",
+              reactions: [{ name: "thumbsup", count: 2, userIds: ["U0G9QF9C6", "U023BECGF"] }],
+            },
+            permalink: "https://example.slack.com/archives/C024BE91L/p1700000000000100",
+          },
+          { type: "file", fileId: "F0123456", reactions: [{ name: "eyes", count: 1, userIds: ["U0G9QF9C6"] }] },
+          {
+            type: "file_comment",
+            fileId: "F0123457",
+            commentId: "Fc0123",
+            reactions: [{ name: "tada", count: 1, userIds: ["U0G9QF9C6"] }],
+          },
+        ],
+        nextCursor: "dXNlcjpVMDYxTkZUVDM=",
+      },
+    });
+    const action = slackActions.find((candidate) => candidate.id === "slack.list_reactions")!;
+    const output = (result as { output: unknown }).output;
+    expect(new Validator(action.outputSchema).validate(output).valid).toBe(true);
+  });
+
+  it("asks for the connected user's first page by default and answers a null nextCursor on the last page", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const target = new URL(input.toString());
+        expect(target.searchParams.get("limit")).toBe("100");
+        expect(target.searchParams.has("user")).toBe(false);
+        expect(target.searchParams.has("cursor")).toBe(false);
+        expect(target.searchParams.has("full")).toBe(false);
+        return Response.json({ ok: true, items: [] });
+      }),
+    );
+
+    await expect(execute({}, context)).resolves.toEqual({ ok: true, output: { items: [], nextCursor: null } });
+  });
+
+  it("rejects a page whose items are missing or malformed", async () => {
+    for (const payload of [
+      { ok: true },
+      { ok: true, items: "items" },
+      { ok: true, items: [null] },
+      { ok: true, items: [{ channel: "C024BE91L" }] },
+      { ok: true, items: [{ type: "message", channel: "C024BE91L", message: { text: "no ts" } }] },
+      { ok: true, items: [], response_metadata: { next_cursor: 7 } },
+    ]) {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => Response.json(payload)),
+      );
+      const result = await execute({}, context);
+      expect(result).toMatchObject({ ok: false, error: { code: "provider_error", details: { status: 502 } } });
+    }
+  });
+
+  it.each([
+    { name: "an unsupported item type", item: { type: "other" } },
+    { name: "a padded item type", item: { type: " message ", channel: "C123", message: { ts: "1700000000.000100" } } },
+    { name: "a message without a message object", item: { type: "message", channel: "C123" } },
+    { name: "a message with a null message", item: { type: "message", channel: "C123", message: null } },
+    { name: "a message with a string message", item: { type: "message", channel: "C123", message: "broken" } },
+    { name: "a message with an array message", item: { type: "message", channel: "C123", message: [] } },
+    { name: "a message without a channel", item: { type: "message", message: { ts: "1700000000.000100" } } },
+    {
+      name: "a message with an empty channel",
+      item: { type: "message", channel: "", message: { ts: "1700000000.000100" } },
+    },
+    {
+      name: "a message with a numeric channel",
+      item: { type: "message", channel: 7, message: { ts: "1700000000.000100" } },
+    },
+    { name: "a file without a file object", item: { type: "file" } },
+    { name: "a file with a null file", item: { type: "file", file: null } },
+    { name: "a file with a string file", item: { type: "file", file: "broken" } },
+    { name: "a file with an array file", item: { type: "file", file: [] } },
+    { name: "a file without an ID", item: { type: "file", file: {} } },
+    { name: "a file with a padded ID", item: { type: "file", file: { id: " F123 " } } },
+    { name: "a file comment without a file", item: { type: "file_comment", comment: { id: "Fc123" } } },
+    {
+      name: "a file comment without a comment despite file reactions",
+      item: { type: "file_comment", file: { id: "F123", reactions: [{ name: "eyes", users: ["U123"], count: 1 }] } },
+    },
+    { name: "a file comment with a null comment", item: { type: "file_comment", file: { id: "F123" }, comment: null } },
+    {
+      name: "a file comment with a string comment",
+      item: { type: "file_comment", file: { id: "F123" }, comment: "broken" },
+    },
+    { name: "a file comment with an array comment", item: { type: "file_comment", file: { id: "F123" }, comment: [] } },
+    { name: "a file comment without a file ID", item: { type: "file_comment", file: {}, comment: { id: "Fc123" } } },
+    { name: "a file comment without a comment ID", item: { type: "file_comment", file: { id: "F123" }, comment: {} } },
+  ])("rejects $name", async ({ item }) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ ok: true, items: [item] })),
+    );
+
+    await expect(execute({}, context)).resolves.toMatchObject({
+      ok: false,
+      error: { code: "provider_error", details: { status: 502 } },
+    });
+  });
+
+  it.each([
+    { name: "an item without a type", item: {} },
+    { name: "an item with an unsupported type", item: { type: "other" } },
+    { name: "a message without a channel ID", item: { type: "message", message: { ts: "1700000000.000100" } } },
+    { name: "a message without a message", item: { type: "message", channelId: "C123" } },
+    { name: "a message without a timestamp", item: { type: "message", channelId: "C123", message: {} } },
+    { name: "a file without a file ID", item: { type: "file" } },
+    { name: "a file comment without a file ID", item: { type: "file_comment", commentId: "Fc123" } },
+    { name: "a file comment without a comment ID", item: { type: "file_comment", fileId: "F123" } },
+  ])("declares an output schema that rejects $name", ({ item }) => {
+    const action = slackActions.find((candidate) => candidate.id === "slack.list_reactions")!;
+    expect(new Validator(action.outputSchema).validate({ items: [item], nextCursor: null }).valid).toBe(false);
+  });
+
+  it("validates its input and is inherited by slackbot", () => {
+    const action = slackActions.find((candidate) => candidate.id === "slack.list_reactions")!;
+    expect(action.operationType).toBe("read");
+    expect(action.requiredScopes).toEqual(["reactions:read"]);
+    for (const input of [{ limit: 0 }, { limit: 201 }, { userId: "" }, { cursor: 7 }]) {
+      expect(validateActionInput(action, input).valid).toBe(false);
+    }
+    expect(validateActionInput(action, { userId: "U0G9QF9C6", limit: 200, full: false }).valid).toBe(true);
+    expect(slackbotActions.some((candidate) => candidate.id === "slackbot.list_reactions")).toBe(true);
+    expect(slackbotExecutors["slackbot.list_reactions"]).toBeTypeOf("function");
+  });
+});
+
+it.each([
+  { kind: "user", metadata: {}, expected: ["legacy.scope"] },
+  { kind: "user", metadata: { scope: "" }, expected: [] },
+  { kind: "user", metadata: { scope: "bot:scope", authed_user: { scope: "" } }, expected: [] },
+  { kind: "user", metadata: { scope: "bot:scope", authed_user: {} }, expected: ["legacy.scope"] },
+  { kind: "user", metadata: { authed_user: { scope: "future:scope" } }, expected: ["future:scope"] },
+  { kind: "bot", metadata: { scope: "", authed_user: { scope: "user:scope" } }, expected: [] },
+])(
+  "keeps absent Slack scopes distinct from explicit empty scopes: $kind $metadata",
+  async ({ kind, metadata, expected }) => {
+    const credential = oauthCredential(kind, metadata);
+    credential.profile.grantedScopes = ["legacy.scope"];
+    const result = await credentialValidators.oauth2!(credential, {
+      fetcher: async () => Response.json({ ok: true, team_id: "T123", user_id: "U123", team: "Example workspace" }),
+    });
+    expect(result?.grantedScopes).toEqual(expected);
+  },
+);

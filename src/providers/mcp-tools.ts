@@ -1,5 +1,6 @@
+import type { McpHttpTransport, McpProtocolVersion } from "./mcp-client.ts";
 import type { ProviderFetch } from "./provider-runtime.ts";
-import type { ToolAnnotations } from "@modelcontextprotocol/client";
+import type { FetchLike, ToolAnnotations } from "@modelcontextprotocol/client";
 
 import {
   Client,
@@ -16,8 +17,8 @@ import {
   createProviderTimeout,
   isAbortLikeError,
   providerFetch,
-  providerUserAgent,
   ProviderRequestError,
+  providerUserAgent,
 } from "./provider-runtime.ts";
 const defaultMcpToolListMaxBytes = 16 * 1024 * 1024;
 const defaultMcpToolListMaxPages = 100;
@@ -29,8 +30,12 @@ export interface McpToolSummary {
   description?: string;
   annotations?: ToolAnnotations;
   inputSchema: Record<string, unknown>;
+  outputSchema?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
 }
 export interface McpToolOptions {
+  transport?: McpHttpTransport;
+  protocolVersion?: McpProtocolVersion;
   endpoint: string;
   service: string;
   fetcher?: ProviderFetch;
@@ -45,13 +50,14 @@ export interface McpToolOptions {
   toolListMaxTools?: number;
   toolListTimeoutMs?: number;
 }
-async function withToolClient<T>(input: McpToolOptions, run: (client: Client) => Promise<T>): Promise<T> {
+export async function withMcpToolClient<T>(input: McpToolOptions, run: (client: Client) => Promise<T>): Promise<T> {
   const fetcher = input.fetcher ?? providerFetch;
   const limitedFetcher = createLimitedMcpFetch(fetcher, input.service, input.maxResponseBytes);
   return withMcpClient(
     {
       endpoint: new URL(input.endpoint),
-      transport: "streamable_http",
+      transport: input.transport ?? "streamable_http",
+      protocolVersion: input.protocolVersion,
       signal: input.signal,
       headers: { "user-agent": providerUserAgent, ...input.headers },
       redirect: input.redirect,
@@ -67,11 +73,13 @@ function createLimitedMcpFetch(
   fetcher: ProviderFetch,
   service: string,
   maxResponseBytes: number | undefined,
-): ProviderFetch {
+): FetchLike {
   if (maxResponseBytes === undefined) return fetcher;
   return (async (url, init) => limitMcpResponse(await fetcher(url, init), service, maxResponseBytes)) as ProviderFetch;
 }
 interface ListMcpToolsOptions {
+  includeMetadata?: boolean;
+  includeOutputSchema?: boolean;
   includeAnnotations?: boolean;
 }
 
@@ -79,13 +87,15 @@ export async function listMcpTools(
   input: McpToolOptions,
   options: ListMcpToolsOptions = {},
 ): Promise<McpToolSummary[]> {
-  return withToolClient(input, async (client) => {
+  return withMcpToolClient(input, async (client) => {
     const tools = await listAllStreamableHttpMcpTools(client, input);
     return tools.map((tool) => ({
+      metadata: options.includeMetadata ? tool._meta : undefined,
       name: tool.name,
       description: tool.description,
       annotations: options.includeAnnotations ? tool.annotations : undefined,
       inputSchema: tool.inputSchema,
+      outputSchema: options.includeOutputSchema ? tool.outputSchema : undefined,
     }));
   });
 }
@@ -98,7 +108,7 @@ interface CallMcpToolOptions extends McpToolOptions {
 }
 
 export async function callMcpTool(input: CallMcpToolOptions): Promise<unknown> {
-  return withToolClient(input, async (client) => {
+  return withMcpToolClient(input, async (client) => {
     if (input.authorizeTool) {
       const tools = await listAllStreamableHttpMcpTools(client, input);
       const matchingTools = tools.filter((tool) => tool.name === input.toolName);
@@ -121,7 +131,7 @@ export async function callMcpTool(input: CallMcpToolOptions): Promise<unknown> {
           name: input.toolName,
           arguments: input.arguments,
         },
-        { signal: requestTimeout.signal },
+        { signal: requestTimeout.signal, timeout: input.requestTimeoutMs },
       );
     } finally {
       requestTimeout.cleanup();

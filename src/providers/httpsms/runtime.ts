@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { Validator } from "@cfworker/json-schema";
 import { createHash } from "node:crypto";
@@ -10,6 +10,7 @@ import {
   providerUserAgent,
   ProviderRequestError,
   readProviderJsonBody,
+  defaultProviderRequestTimeoutMs,
 } from "../provider-runtime.ts";
 
 type HttpsmsRequestPhase = "validate" | "execute";
@@ -32,7 +33,6 @@ interface HttpsmsNormalizedResponse {
   responseMessage: string;
 }
 
-const httpsmsRequestTimeoutMs = 30_000;
 const httpsmsEmailValidator = new Validator({ type: "string", format: "email" }, "2020-12");
 export const httpsmsApiBaseUrl = "https://api.httpsms.com/v1";
 
@@ -89,9 +89,7 @@ export async function validateHttpsmsCredential(
     profile: {
       accountId: userId ? `httpsms:${userId}` : `httpsms:${apiKeyHash.slice(0, 16)}`,
       displayName: email ?? userId ?? "httpSMS Account",
-      grantedScopes: [],
     },
-    grantedScopes: [],
     metadata: compactObject({
       userId,
       email,
@@ -242,7 +240,7 @@ async function requestHttpsmsJson(input: HttpsmsRequestInput): Promise<unknown> 
 }
 
 async function requestHttpsmsRaw(input: HttpsmsRequestInput): Promise<Response> {
-  const timeout = createProviderTimeout(input.signal, httpsmsRequestTimeoutMs);
+  const timeout = createProviderTimeout(input.signal);
   try {
     return await input.fetcher(buildHttpsmsUrl(input.path, input.query), {
       method: input.method,
@@ -257,7 +255,7 @@ async function requestHttpsmsRaw(input: HttpsmsRequestInput): Promise<Response> 
     if (timeout.didTimeout()) {
       throw new ProviderRequestError(
         504,
-        `httpSMS ${input.path} request timed out after ${Math.ceil(httpsmsRequestTimeoutMs / 1000)} seconds`,
+        `httpSMS ${input.path} request timed out after ${Math.ceil(defaultProviderRequestTimeoutMs / 1000)} seconds`,
       );
     }
     const message = error instanceof Error && error.message.trim() ? error.message : "request failed";

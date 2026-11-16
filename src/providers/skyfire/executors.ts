@@ -1,11 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   ProviderRequestError,
   providerUserAgent,
   requiredInputString,
@@ -62,8 +61,7 @@ export const credentialValidators: CredentialValidators = {
     });
 
     return {
-      profile: { accountId: "api_key", displayName: "Skyfire API Key", grantedScopes: [] },
-      grantedScopes: [],
+      profile: { accountId: "api_key", displayName: "Skyfire API Key" },
       metadata: {
         apiBaseUrl: skyfireApiBaseUrl,
         validationEndpoint: skyfireValidationPath,
@@ -114,7 +112,7 @@ function validateCreateTokenInput(input: Record<string, unknown>): void {
 
 async function requestSkyfireJson(input: {
   path: string;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   phase: SkyfireRequestPhase;
   method?: "GET" | "POST";
   body?: Record<string, unknown>;

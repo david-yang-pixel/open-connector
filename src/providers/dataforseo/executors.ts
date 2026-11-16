@@ -7,12 +7,10 @@ import type {
 
 import { Buffer } from "node:buffer";
 import { optionalNumber, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
-import {
-  defineProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  requireCustomCredential,
-} from "../provider-runtime.ts";
+import { requireCustomCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError } from "../provider-runtime.ts";
 import { dataForSeoActionHandlers, dataForSeoApiBaseUrl, requestDataForSeoUserData } from "./runtime.ts";
 
 const service = "dataforseo";
@@ -80,7 +78,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: account,
         displayName: account,
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: "https://api.dataforseo.com/v3",
         login: account,

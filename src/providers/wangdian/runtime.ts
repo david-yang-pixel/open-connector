@@ -3,19 +3,20 @@ import type {
   ProviderActionHandlers,
   ProviderActionName,
   ProviderActionSources,
-  ProviderFetch,
   ProviderRuntimeHandler,
-} from "../provider-runtime.ts";
+} from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import { compactObject, optionalBoolean, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
+import { mapProviderActionSources } from "../provider-executors.ts";
 import {
   createProviderTimeout,
-  mapProviderActionSources,
   ProviderRequestError,
   providerUserAgent,
   toProviderExecutionError,
+  providerInputError,
 } from "../provider-runtime.ts";
 
 export const wangdianApiBaseUrl = "https://api.wangdian.cn/openapi2";
@@ -104,7 +105,6 @@ export async function validateWangdianCredential(
       accountId: `wangdian:${credential.sid}`,
       displayName: `Wangdian ERP · ${credential.sid}`,
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: wangdianApiBaseUrl,
       product: "enterprise",
@@ -159,7 +159,7 @@ export function readWangdianProxyParameters(body: unknown): Record<string, unkno
   if (typeof body === "string") return Object.fromEntries(new URLSearchParams(body));
   const value = optionalRecord(body);
   if (!value) {
-    throw new ProviderRequestError(400, "Wangdian proxy body must be an object or form-encoded string");
+    throw providerInputError("Wangdian proxy body must be an object or form-encoded string");
   }
   return value;
 }
@@ -174,7 +174,7 @@ async function executeWangdianAction(
   context: WangdianContext,
 ): Promise<Record<string, unknown>> {
   const config = actionConfigByName[actionName];
-  if (!config) throw new ProviderRequestError(400, `Unsupported Wangdian action: ${actionName}`);
+  if (!config) throw providerInputError(`Unsupported Wangdian action: ${actionName}`);
   validateActionInput(actionName, input);
   const payload = await requestWangdian({
     endpoint: config.endpoint,
@@ -185,7 +185,12 @@ async function executeWangdianAction(
   const responseRecords = payload[config.responseField];
   const records = responseRecords === undefined && config.optionalResponseList ? [] : responseRecords;
   if (!Array.isArray(records)) {
-    throw wangdianError("provider_error", `Wangdian returned an invalid ${config.responseField} response`, 502);
+    throw new ProviderRequestError(
+      502,
+      `Wangdian returned an invalid ${config.responseField} response`,
+      undefined,
+      "provider_error",
+    );
   }
   return {
     [config.outputField]: records,
@@ -263,7 +268,7 @@ function validateOptionalDateTimes(input: Record<string, unknown>): void {
 }
 
 function invalidInput(message: string): never {
-  throw wangdianError("invalid_input", message, 400);
+  throw new ProviderRequestError(400, message, undefined, "invalid_input");
 }
 
 function hasValue(value: Record<string, unknown>, fields: readonly string[]): boolean {
@@ -286,7 +291,7 @@ function parseChinaDateTime(value: string): number {
 
 function requireCredentialValue(value: unknown, label: string): string {
   const normalized = optionalString(value);
-  if (!normalized) throw new ProviderRequestError(400, `${label} is required`);
+  if (!normalized) throw providerInputError(`${label} is required`);
   return normalized;
 }
 
@@ -381,7 +386,7 @@ function buildActionParameters(actionName: string, input: Record<string, unknown
         ...page,
       });
     default:
-      throw new ProviderRequestError(400, `Unsupported Wangdian action: ${actionName}`);
+      throw providerInputError(`Unsupported Wangdian action: ${actionName}`);
   }
 }
 
@@ -431,19 +436,20 @@ async function requestWangdian(input: WangdianRequest): Promise<Record<string, u
     const root = optionalRecord(payload);
     const code = parseOptionalInteger(root?.code);
     if (!root || code === undefined) {
-      throw wangdianError("provider_error", "Wangdian returned an invalid response", 502);
+      throw new ProviderRequestError(502, "Wangdian returned an invalid response", undefined, "provider_error");
     }
     if (code !== 0) throw createWangdianError(200, root, input.phase);
     return root;
   } catch (error) {
     if (error instanceof ProviderRequestError) throw error;
     if (timeout.didTimeout() || (error instanceof Error && error.name === "AbortError")) {
-      throw wangdianError("provider_error", "Wangdian request timed out", 504);
+      throw new ProviderRequestError(504, "Wangdian request timed out", undefined, "provider_error");
     }
-    throw wangdianError(
-      "provider_error",
-      error instanceof Error ? `Wangdian request failed: ${error.message}` : "Wangdian request failed",
+    throw new ProviderRequestError(
       502,
+      error instanceof Error ? `Wangdian request failed: ${error.message}` : "Wangdian request failed",
+      undefined,
+      "provider_error",
     );
   } finally {
     timeout.cleanup();
@@ -456,7 +462,7 @@ async function readWangdianPayload(response: Response): Promise<unknown> {
   try {
     return JSON.parse(text) as unknown;
   } catch {
-    throw wangdianError("provider_error", "Wangdian returned invalid JSON", 502);
+    throw new ProviderRequestError(502, "Wangdian returned invalid JSON", undefined, "provider_error");
   }
 }
 
@@ -465,9 +471,9 @@ function createWangdianError(status: number, payload: unknown, phase: WangdianRe
   const code = parseOptionalInteger(root?.code);
   const message = optionalString(root?.message) ?? `Wangdian request failed with status ${status}`;
   const lowerMessage = message.toLowerCase();
-  if (status === 429) return wangdianError("rate_limited", message, 429, payload);
+  if (status === 429) return new ProviderRequestError(429, message, payload, "rate_limited");
   if (message.includes("权限不足") || message.includes("无仓库访问权限")) {
-    return wangdianError("authorization_failed", message, 403, payload);
+    return new ProviderRequestError(403, message, payload, "authorization_failed");
   }
   if (
     status === 401 ||
@@ -484,21 +490,17 @@ function createWangdianError(status: number, payload: unknown, phase: WangdianRe
     lowerMessage.includes("invalid sign") ||
     lowerMessage.includes("sign is")
   ) {
-    return wangdianError(
-      phase === "validate" ? "invalid_input" : "authorization_failed",
-      message,
+    return new ProviderRequestError(
       phase === "validate" ? 400 : 401,
+      message,
       payload,
+      phase === "validate" ? "invalid_input" : "authorization_failed",
     );
   }
   if (status === 400 || status === 422 || code === 1 || code === 100 || code === 2104) {
-    return wangdianError("invalid_input", message, 400, payload);
+    return new ProviderRequestError(400, message, payload, "invalid_input");
   }
-  return wangdianError("provider_error", message, 502, payload);
-}
-
-function wangdianError(code: string, message: string, status: number, details?: unknown): ProviderRequestError {
-  return new ProviderRequestError(status, message, details, code);
+  return new ProviderRequestError(502, message, payload, "provider_error");
 }
 
 function parseOptionalInteger(value: unknown): number | undefined {

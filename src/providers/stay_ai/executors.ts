@@ -1,11 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalString, requiredRecord, requiredString } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   providerInputError,
   providerResponseError,
   providerUserAgent,
@@ -119,7 +118,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "stay_ai:api_key",
         displayName: emailSenderName ?? emailSenderAddress ?? "Stay AI API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: stayAiApiBaseUrl,
         validationEndpoint: "/settings",
@@ -132,7 +130,7 @@ export const credentialValidators: CredentialValidators = {
 
 async function requestStayAiJson(input: {
   path: string;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   phase: StayAiRequestPhase;
   searchParams?: URLSearchParams;
 }): Promise<unknown> {
@@ -146,7 +144,7 @@ async function requestStayAiJson(input: {
 
 async function requestStayAi(input: {
   path: string;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   searchParams?: URLSearchParams;
 }): Promise<Response> {
   const url = stayAiUrl(input.path);

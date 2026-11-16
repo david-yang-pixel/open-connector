@@ -1,4 +1,4 @@
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -14,11 +14,11 @@ import {
   ProviderRequestError,
   providerUserAgent,
   requiredInputString,
+  defaultProviderRequestTimeoutMs,
 } from "../provider-runtime.ts";
 
 const auth0ApiSegment = "api/v2";
 const auth0CredentialHelpUrl = "https://auth0.com/docs/api/management/v2";
-const auth0ManagementRequestTimeoutMs = 30_000;
 
 type Auth0ManagementPhase = "validate" | "execute";
 type Auth0QueryValue = string | number | boolean | undefined;
@@ -99,7 +99,6 @@ export async function validateAuth0ManagementCredential(
   signal?: AbortSignal,
 ): Promise<{
   profile: { accountId: string; displayName: string };
-  grantedScopes: string[];
   metadata: Record<string, unknown>;
 }> {
   const domain = normalizeAuth0ManagementDomain(domainValue);
@@ -123,7 +122,6 @@ export async function validateAuth0ManagementCredential(
       accountId: `auth0_management:${domain}`,
       displayName: `Auth0 ${domain}`,
     },
-    grantedScopes: [],
     metadata: compactObject({
       domain,
       apiBaseUrl: buildAuth0ManagementBaseUrl(domain),
@@ -379,7 +377,7 @@ async function listRoleUsers(input: Record<string, unknown>, context: Auth0Actio
 }
 
 async function requestAuth0ManagementJson(input: Auth0ManagementRequest): Promise<unknown> {
-  const timeoutSignal = AbortSignal.timeout(auth0ManagementRequestTimeoutMs);
+  const timeoutSignal = AbortSignal.timeout(defaultProviderRequestTimeoutMs);
   const signal = input.signal ? AbortSignal.any([input.signal, timeoutSignal]) : timeoutSignal;
 
   let response: Response;

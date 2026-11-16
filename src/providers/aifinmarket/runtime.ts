@@ -1,13 +1,18 @@
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 import type { AifinMarketServerType } from "./actions.ts";
 import type { Client } from "@modelcontextprotocol/client";
 
 import { withMcpClient } from "../mcp-client.ts";
-import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
+import {
+  ProviderRequestError,
+  providerUserAgent,
+  providerInputError,
+  providerResponseError,
+  defaultProviderRequestTimeoutMs,
+} from "../provider-runtime.ts";
 
 const origin = "https://mcp.wind.com.cn";
 const actionTimeoutMs = 28_000;
-const validationTimeoutMs = 30_000;
 const maxResponseBytes = 16 * 1024 * 1024;
 const maxToolPages = 100;
 const maxTools = 10_000;
@@ -136,7 +141,7 @@ export async function callTool(
 }
 
 export async function discoverAccessibleTools(context: ApiKeyProviderContext): Promise<DiscoveredTools> {
-  const deadline = Date.now() + validationTimeoutMs;
+  const deadline = Date.now() + defaultProviderRequestTimeoutMs;
   let lastError: unknown;
   for (const serverType of serverTypes) {
     const remaining = deadline - Date.now();
@@ -216,8 +221,8 @@ function mapAifinMarketMcpError(error: unknown): unknown {
 }
 
 function createLimitedFetch(fetcher: typeof fetch): typeof fetch {
-  return (async (request, init) => {
-    const response = await fetcher(request, { ...init, redirect: "error" });
+  return async (request, init) => {
+    const response = await fetcher(request, { ...init, redirect: "manual" });
     if (response.status === 403) {
       await response.body?.cancel().catch(() => undefined);
       throw new ProviderRequestError(403, "Wind AIFin Market denied access to this service or tool");
@@ -241,7 +246,7 @@ function createLimitedFetch(fetcher: typeof fetch): typeof fetch {
       }),
     );
     return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
-  }) as typeof fetch;
+  };
 }
 
 function normalizeNamedArguments(actionName: string, input: Record<string, unknown>): Record<string, unknown> {
@@ -360,7 +365,7 @@ function classifyWindError(message: string, phase: "validate" | "execute"): Prov
       "market_target_not_found",
     ])
   )
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   const namesParameter = includesAny(normalized, ["参数", "字段", "param", "argument", "field"]);
   const invalid = includesAny(normalized, [
     "错误",
@@ -374,16 +379,16 @@ function classifyWindError(message: string, phase: "validate" | "execute"): Prov
     "missing",
     "required",
   ]);
-  if (namesParameter && invalid) return new ProviderRequestError(400, message);
+  if (namesParameter && invalid) return providerInputError(message);
   if (includesAny(normalized, ["route_error", "unknown server_type", "未知 server_type"]))
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   return undefined;
 }
 
 function transformWindToolResult(result: unknown, apiKey: string): unknown {
   const cloned = structuredClone(result);
   const error = readEmbeddedWindError(cloned, apiKey);
-  if (error) throw new ProviderRequestError(502, error);
+  if (error) throw providerResponseError(error);
   return asRecord(cloned)?.structuredContent ?? cloned;
 }
 

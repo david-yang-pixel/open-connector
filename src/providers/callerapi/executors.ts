@@ -1,15 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-  setSearchParams,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent, setSearchParams } from "../provider-runtime.ts";
 
 const service = "callerapi";
 const callerapiApiBaseUrl = "https://api.callerapi.com";
@@ -69,7 +64,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: email ?? "callerapi",
         displayName: email ?? "CallerAPI Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         validationEndpoint: "/api/me",
         apiBaseUrl: callerapiApiBaseUrl,
@@ -84,7 +78,7 @@ export const credentialValidators: CredentialValidators = {
 
 async function requestCallerapi(input: {
   path: string;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   phase: CallerapiRequestPhase;
   query?: Record<string, string | undefined>;
 }): Promise<Record<string, unknown>> {

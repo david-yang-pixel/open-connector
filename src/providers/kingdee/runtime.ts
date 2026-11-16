@@ -1,5 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers, ProviderFetch } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { looseArray, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
 import { assertPublicHttpUrl, isPrivateNetworkAccessAllowed } from "../../core/request.ts";
@@ -80,7 +81,6 @@ export async function validateCredential(
       accountId: `${credential.baseUrl}:${credential.dataCenterId}:${credential.username}`,
       displayName: `${credential.username} · ${new URL(credential.baseUrl).host}`,
     },
-    grantedScopes: [],
     metadata: { baseUrl: credential.baseUrl },
   };
 }
@@ -95,7 +95,7 @@ export async function login(
       new URL("Kingdee.BOS.WebApi.ServicesStub.AuthService.LoginByAppSecret.common.kdsvc", credential.baseUrl),
       {
         method: "POST",
-        redirect: "error",
+        redirect: "manual",
         signal,
         headers: { "content-type": "application/json", accept: "application/json" },
         body: JSON.stringify({
@@ -164,7 +164,7 @@ async function execute(action: ActionName, input: Record<string, unknown>, conte
       {
         method: "POST",
         signal,
-        redirect: "error",
+        redirect: "manual",
         headers: { "content-type": "application/json", "kdservice-sessionid": sessionId },
         body: JSON.stringify(body),
       },

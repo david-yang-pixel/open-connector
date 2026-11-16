@@ -5,12 +5,10 @@ import type {
   ProviderProxyExecutor,
 } from "../../core/types.ts";
 
-import {
-  defineProviderExecutors,
-  defineProviderProxy,
-  requireApiKeyCredential,
-  requiredInputString,
-} from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { requiredInputString } from "../provider-runtime.ts";
 import { mingdaoActionHandlers, mingdaoApiBaseUrl, validateMingdaoCredential } from "./runtime.ts";
 
 const service = "mingdao";

@@ -185,4 +185,16 @@ describe("safeRunLogError", () => {
       safeRunLogError({ code: "provider_error", message: "provider returned secret-token", details: { raw: true } }),
     ).toEqual({ errorCode: "provider_error", errorMessage: "The provider request failed." });
   });
+
+  it("explains a failed OAuth refresh without the provider message", () => {
+    expect(
+      safeRunLogError({
+        code: "oauth_token_refresh_failed",
+        message: "invalid_grant: refresh token revoked for client secret",
+      }),
+    ).toEqual({
+      errorCode: "oauth_token_refresh_failed",
+      errorMessage: "The OAuth credential could not be refreshed.",
+    });
+  });
 });

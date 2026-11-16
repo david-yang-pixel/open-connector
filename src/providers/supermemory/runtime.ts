@@ -1,8 +1,8 @@
-import type { ApiKeyActionRequest, ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ApiKeyActionRequest, ProviderActionHandlers } from "../provider-executors.ts";
 import type { SupermemoryActionName } from "./actions.ts";
 
 import { compactObject, requiredString } from "../../core/cast.ts";
-import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
+import { ProviderRequestError, providerUserAgent, providerInputError } from "../provider-runtime.ts";
 
 export interface SupermemoryCredentialCheck {
   providerAccountId?: string;
@@ -111,7 +111,7 @@ export function executeSupermemoryAction(
   fetcher: typeof fetch,
 ): Promise<unknown> {
   return supermemoryActionHandlers[input.actionName](input.input, {
-    apiKey: requiredString(input.apiKey, "apiKey", (message) => new ProviderRequestError(400, message)),
+    apiKey: requiredString(input.apiKey, "apiKey", providerInputError),
     fetcher,
   });
 }
@@ -167,7 +167,7 @@ async function buildSupermemoryError(response: Response, phase: "validate" | "ex
   }
   if (response.status === 401 || response.status === 403) {
     if (phase === "validate") {
-      return new ProviderRequestError(400, message);
+      return providerInputError(message);
     }
     return new ProviderRequestError(response.status, message);
   }

@@ -1,6 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
 import {
@@ -67,7 +66,6 @@ export async function validateEncodianCredential(
       accountId: "encodian",
       displayName: "Encodian API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl,
       validationEndpoint: encodianCreateGuidPath,
@@ -184,7 +182,7 @@ async function executeUnlockPdfDocument(input: Record<string, unknown>, context:
 }
 
 async function requestEncodianJson(input: {
-  context: Pick<EncodianContext, "apiKey" | "apiBaseUrl" | "fetcher" | "signal">;
+  context: EncodianContext;
   path: string;
   body: Record<string, unknown>;
   phase: EncodianPhase;

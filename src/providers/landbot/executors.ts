@@ -4,17 +4,12 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalInteger, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerInputError,
-  providerUserAgent,
-  ProviderRequestError,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerInputError, providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 
 const service = "landbot";
 const landbotApiBaseUrl = "https://api.landbot.io/v1/";
@@ -103,9 +98,7 @@ export const credentialValidators: CredentialValidators = {
   },
 };
 
-async function validateLandbotCredential(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
-): Promise<CredentialValidationResult> {
+async function validateLandbotCredential(context: ApiKeyProviderContext): Promise<CredentialValidationResult> {
   await landbotRequest({
     path: "channels/",
     query: { limit: 1 },
@@ -118,7 +111,6 @@ async function validateLandbotCredential(
       accountId: "landbot",
       displayName: "Landbot",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: landbotApiBaseUrl,
       validationEndpoint: "channels/",
@@ -129,7 +121,7 @@ async function validateLandbotCredential(
 async function landbotRequest(input: {
   path: string;
   method?: string;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   query?: Record<string, LandbotQueryValue>;
   body?: Record<string, unknown>;
   phase?: LandbotPhase;

@@ -1,9 +1,10 @@
 import type { CredentialValidationResult, ProviderExecutors } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { compactObject, optionalNumber, optionalRecord, optionalString, requiredRecord } from "../../core/cast.ts";
-import { defineApiKeyProviderExecutors, providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 
 const service = "serpdog";
 export const serpdogBaseUrl: string = "https://api.serpdog.io";
@@ -157,7 +158,6 @@ export async function validateSerpdogCredential(
       accountId: accountInfo.email,
       displayName: accountInfo.email,
     },
-    grantedScopes: [],
     metadata: {
       validationEndpoint: "/account_info",
       apiBaseUrl: serpdogBaseUrl,
@@ -171,7 +171,7 @@ export async function validateSerpdogCredential(
 }
 
 async function requestSerpdogAccountInfo(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: SerpdogPhase,
 ): Promise<SerpdogAccountInfo> {
   const payload = await requestSerpdogJson("account_info", {}, context, phase);
@@ -181,7 +181,7 @@ async function requestSerpdogAccountInfo(
 async function requestSerpdogJson(
   path: string,
   query: Record<string, SerpdogQueryValue>,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: SerpdogPhase,
 ): Promise<unknown> {
   let response: Response;

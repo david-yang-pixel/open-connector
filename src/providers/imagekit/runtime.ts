@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
 import { compactObject, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
@@ -75,7 +75,6 @@ export async function validateImagekitCredential(
       accountId: "api_key",
       displayName: "ImageKit API Key",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: imagekitApiBaseUrl,
       validationEndpoint: "/v1/files",

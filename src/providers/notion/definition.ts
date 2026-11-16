@@ -1,7 +1,9 @@
 import type { ProviderDefinition } from "../../core/types.ts";
 
 import { notionActions } from "./actions.ts";
-import { notionReadScopes, notionWriteScopes } from "./scopes.ts";
+import { notionInsertCommentScopes, notionReadCommentScopes, notionReadScopes, notionWriteScopes } from "./scopes.ts";
+import { snapshot as triggerSnapshot0_0 } from "./trigger-on-database-page-event.definition.ts";
+import { triggerPermissions } from "./trigger-permissions.ts";
 
 const service = "notion";
 
@@ -21,7 +23,7 @@ export const provider: ProviderDefinition = {
       type: "oauth2",
       authorizationUrl: "https://api.notion.com/v1/oauth/authorize",
       tokenUrl: "https://api.notion.com/v1/oauth/token",
-      scopes: [...notionReadScopes, ...notionWriteScopes],
+      scopes: [...notionReadScopes, ...notionWriteScopes, ...notionReadCommentScopes, ...notionInsertCommentScopes],
       tokenEndpointAuthMethod: "client_secret_basic",
       tokenRequestFormat: "json",
       authorizationParams: {
@@ -33,9 +35,11 @@ export const provider: ProviderDefinition = {
       label: "Internal Integration Secret",
       placeholder: "secret_...",
       description:
-        "Notion internal integration secret used with the Authorization Bearer header. Create an internal integration from the Notion integrations dashboard, then share target pages or databases with it.",
+        "Notion internal integration secret used with the Authorization Bearer header. Create an internal integration and copy its secret from the Creator dashboard, then share target pages or databases with it. Setup guide: https://developers.notion.com/guides/connections-and-tokens/internal-connections.",
     },
   ],
   homepageUrl: "https://www.notion.so",
   actions: notionActions,
+  triggers: [triggerSnapshot0_0],
+  triggerPermissions,
 };

@@ -1,6 +1,5 @@
 import type { CredentialValidationResult, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -11,7 +10,9 @@ import {
   optionalString,
 } from "../../core/cast.ts";
 import { readBoundedResponseBytes } from "../../core/request.ts";
-import { defineApiKeyProviderExecutors, defineProviderProxy, ProviderRequestError } from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError } from "../provider-runtime.ts";
 
 const service = "remove_bg";
 const removeBgApiBaseUrl = "https://api.remove.bg/v1.0";
@@ -50,9 +51,7 @@ export const credentialValidators = {
       profile: {
         accountId: "remove-bg-api-key",
         displayName: "remove.bg API Key",
-        grantedScopes: [],
       },
-      grantedScopes: [],
       metadata: {
         validationEndpoint: removeBgAccountPath,
         apiBaseUrl: removeBgApiBaseUrl,
@@ -62,9 +61,7 @@ export const credentialValidators = {
   },
 };
 
-async function fetchRemoveBgAccount(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
-): Promise<unknown> {
+async function fetchRemoveBgAccount(context: ApiKeyProviderContext): Promise<unknown> {
   const response = await context.fetcher(`${removeBgApiBaseUrl}${removeBgAccountPath}`, {
     headers: removeBgHeaders(context.apiKey, { acceptJson: true }),
     signal: context.signal,

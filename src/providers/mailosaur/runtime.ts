@@ -1,6 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
 import {
@@ -76,7 +75,6 @@ export async function validateMailosaurCredential(
       accountId: firstServer?.id ? `mailosaur:server:${firstServer.id}` : "mailosaur-api-key",
       displayName: firstServer?.name ? `Mailosaur: ${firstServer.name}` : "Mailosaur API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: mailosaurApiBaseUrl,
       validationEndpoint: "/api/servers",
@@ -209,7 +207,7 @@ async function mailosaurRequest(
     query?: Record<string, string | number | undefined>;
     body?: Record<string, unknown>;
   },
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: MailosaurRequestPhase,
 ): Promise<unknown> {
   const url = new URL(path, mailosaurApiBaseUrl);

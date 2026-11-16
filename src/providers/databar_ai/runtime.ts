@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean, optionalNumber, optionalString, recordOrEmpty } from "../../core/cast.ts";
 import { encodePathSegment } from "../../core/request.ts";
@@ -118,7 +118,6 @@ export async function validateDatabarAiCredential(
   const user = normalizeUser(recordOrEmpty(await requestDatabarAi({ path: "/v1/user/me", context })));
   return {
     profile: { accountId: user.email || "databar_ai:token", displayName: user.email || "Databar API Key" },
-    grantedScopes: [],
     metadata: compactObject({ apiBaseUrl: databarAiApiBaseUrl, workspace: user.workspace, plan: user.plan }),
   };
 }

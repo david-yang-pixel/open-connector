@@ -6,11 +6,14 @@ import {
   providerUserAgent,
   requiredResponseRecord,
   runProviderRequest,
+  providerInputError,
+  providerResponseError,
 } from "../provider-runtime.ts";
 import { chuhaijiangOperations } from "./chuhaijiang-actions.ts";
 import { normalizeChuhaijiang, searchChuhaijiangImage } from "./chuhaijiang-runtime.ts";
 import { mercadoOperations } from "./mercado-actions.ts";
 import { seerfarOperations } from "./seerfar-actions.ts";
+import { sifOperations } from "./sif-actions.ts";
 import { zhihuiyaOperations } from "./zhihuiya-actions.ts";
 import { validateZhihuiyaInput } from "./zhihuiya-runtime.ts";
 
@@ -42,6 +45,7 @@ interface DirectOperation {
   path: string;
   timeoutMs?: number;
   method?: "GET" | "POST";
+  gatewayBusinessCodeOnly?: boolean;
   buildBody?: (input: ActionInput) => ActionInput;
   normalize: (payload: unknown) => unknown;
 }
@@ -65,6 +69,12 @@ const directOperations: Record<string, DirectOperation> = {
         path,
         normalize: (payload: unknown) => requiredResponseRecord(payload, "LinkFox Seerfar response"),
       },
+    ]),
+  ),
+  ...Object.fromEntries(
+    sifOperations.map(({ action, path }) => [
+      action.name,
+      { path, gatewayBusinessCodeOnly: true, normalize: normalizeSifResult },
     ]),
   ),
   get_current_account: {
@@ -368,12 +378,14 @@ export async function executeLinkfoxAction(
   }
   const direct = directOperations[actionName];
   if (direct) {
+    if (direct.gatewayBusinessCodeOnly) validateSifInput(actionName, input);
     const body = direct.buildBody ? direct.buildBody(input) : input;
     const payload = await requestLinkfoxPayload(
       direct.path,
       {
         method: direct.method ?? "POST",
         timeoutMs: direct.timeoutMs,
+        gatewayBusinessCodeOnly: direct.gatewayBusinessCodeOnly,
         ...((direct.method ?? "POST") === "POST" ? { body } : {}),
       },
       apiKey,
@@ -387,59 +399,82 @@ export async function executeLinkfoxAction(
 
   const handler = customHandlers[actionName];
   if (!handler) {
-    throw providerError("invalid_input", `unknown linkfox action: ${actionName}`, 400);
+    throw providerInputError(`unknown linkfox action: ${actionName}`);
   }
   return handler(input, { apiKey, fetcher, signal: parentSignal });
 }
 
+function validateSifInput(actionName: string, input: ActionInput): void {
+  if (actionName === "list_sif_asin_keywords") {
+    const periodType = optionalString(input.timePieceType) ?? "latelyDay";
+    const periodValue = optionalString(input.timePieceValue);
+    if ((periodType === "month" || periodType === "week") && !periodValue) {
+      throw providerInputError("timePieceValue is required for month or week periods");
+    }
+  }
+  const startDate = optionalString(input.startDate);
+  const endDate = optionalString(input.endDate);
+  if ((startDate && !endDate) || (!startDate && endDate)) {
+    throw providerInputError("startDate and endDate must be provided together");
+  }
+  if ((startDate || endDate) && input.last7d !== false) {
+    throw providerInputError("last7d must be false when a date range is provided");
+  }
+  if (startDate && endDate && startDate > endDate) {
+    throw providerInputError("startDate must not be later than endDate");
+  }
+  if (actionName === "get_sif_asin_traffic_summary") {
+    const asins = optionalString(input.asins);
+    if (asins && asins.split(",").length > 10) {
+      throw providerInputError("asins must contain at most 10 comma-separated ASINs");
+    }
+  }
+}
+
 function validateLinkfoxActionInput(actionName: string, input: ActionInput): void {
   if (actionName === "search_amazon_by_image" && input.deliveryZip && input.countryOrAreaCode) {
-    throw new ProviderRequestError(400, "deliveryZip and countryOrAreaCode cannot be used together");
+    throw providerInputError("deliveryZip and countryOrAreaCode cannot be used together");
   }
   if (actionName === "search_amazon_opportunities") {
     const meaningful = Object.keys(input).some(
       (key) => key !== "amazonDomain" && key !== "limit" && input[key] !== undefined,
     );
-    if (!meaningful)
-      throw new ProviderRequestError(400, "Provide keyword, nicheName, or at least one opportunity metric filter");
+    if (!meaningful) throw providerInputError("Provide keyword, nicheName, or at least one opportunity metric filter");
   }
   if (actionName === "search_1688_products" && !input.keyWord && !input.goodsUrl && !input.productIds) {
-    throw new ProviderRequestError(400, "Provide keyWord, goodsUrl, or productIds");
+    throw providerInputError("Provide keyWord, goodsUrl, or productIds");
   }
   if (actionName === "search_1688_by_image" && !input.imageUrl && !input.imageId) {
-    throw new ProviderRequestError(400, "Provide imageUrl or imageId");
+    throw providerInputError("Provide imageUrl or imageId");
   }
   if (actionName === "get_echotik_products") validateIdentifierLists(input, "productIds", "productUrls");
   if (actionName === "get_echotik_videos") validateIdentifierLists(input, "videoIds", "videoUrls");
   if (actionName === "search_amazon_store_orders" && Boolean(input.createdAfter) === Boolean(input.lastUpdatedAfter)) {
-    throw new ProviderRequestError(400, "Provide exactly one of createdAfter or lastUpdatedAfter");
+    throw providerInputError("Provide exactly one of createdAfter or lastUpdatedAfter");
   }
   if (
     actionName === "get_amazon_store_report" &&
     !input.reportId &&
     (!input.reportType || !Array.isArray(input.marketplaceIds) || input.marketplaceIds.length === 0)
   ) {
-    throw new ProviderRequestError(
-      400,
-      "Provide reportId, or provide reportType and marketplaceIds to create a report",
-    );
+    throw providerInputError("Provide reportId, or provide reportType and marketplaceIds to create a report");
   }
   if (actionName === "get_amazon_ads_report" && !input.reportId) {
     for (const field of ["reportTypeId", "adProduct", "groupBy", "columns", "startDate", "endDate"]) {
       const value = input[field];
       if (value === undefined || (Array.isArray(value) && value.length === 0)) {
-        throw new ProviderRequestError(400, `${field} is required when reportId is not provided`);
+        throw providerInputError(`${field} is required when reportId is not provided`);
       }
     }
   }
   if (actionName === "search_ozon_products" && !input.keyword && !input.productIds) {
-    throw new ProviderRequestError(400, "Provide keyword or productIds");
+    throw providerInputError("Provide keyword or productIds");
   }
   if (Array.isArray(input.filters)) {
     for (const filter of input.filters) {
       const record = optionalRecord(filter);
       if (record?.op === "BETWEEN" && record.value2 === undefined) {
-        throw new ProviderRequestError(400, "value2 is required when op is BETWEEN");
+        throw providerInputError("value2 is required when op is BETWEEN");
       }
     }
   }
@@ -455,23 +490,22 @@ function validateLinkfoxActionInput(actionName: string, input: ActionInput): voi
     typeof input.pageSize === "number" &&
     input.pageSize % 10 !== 0
   ) {
-    throw new ProviderRequestError(400, "pageSize must be a multiple of 10");
+    throw providerInputError("pageSize must be a multiple of 10");
   }
 }
 
 function validateIdentifierLists(input: ActionInput, idsField: string, urlsField: string): void {
   const ids = Array.isArray(input[idsField]) ? input[idsField] : [];
   const urls = Array.isArray(input[urlsField]) ? input[urlsField] : [];
-  if (ids.length === 0 && urls.length === 0)
-    throw new ProviderRequestError(400, `${idsField} or ${urlsField} is required`);
+  if (ids.length === 0 && urls.length === 0) throw providerInputError(`${idsField} or ${urlsField} is required`);
   if (new Set([...ids, ...urls]).size > 1000) {
-    throw new ProviderRequestError(400, `The combined ${idsField} and ${urlsField} count cannot exceed 1000`);
+    throw providerInputError(`The combined ${idsField} and ${urlsField} count cannot exceed 1000`);
   }
 }
 
 function validateTikTokProductInput(value: unknown): void {
   const productInput = optionalString(value);
-  if (!productInput) throw new ProviderRequestError(400, "productInput is required");
+  if (!productInput) throw providerInputError("productInput is required");
   if (isNineteenDigitId(productInput)) return;
   try {
     const url = new URL(productInput);
@@ -489,7 +523,7 @@ function validateTikTokProductInput(value: unknown): void {
   } catch {
     // Return the input error below for both invalid cases.
   }
-  throw new ProviderRequestError(400, "productInput must be a 19-digit product ID or supported TikTok product URL");
+  throw providerInputError("productInput must be a 19-digit product ID or supported TikTok product URL");
 }
 
 function isNineteenDigitId(value: string): boolean {
@@ -498,7 +532,12 @@ function isNineteenDigitId(value: string): boolean {
 
 async function requestLinkfoxPayload(
   path: string,
-  options: { method: "GET" | "POST"; body?: ActionInput; timeoutMs?: number },
+  options: {
+    method: "GET" | "POST";
+    body?: ActionInput;
+    timeoutMs?: number;
+    gatewayBusinessCodeOnly?: boolean;
+  },
   apiKey: string,
   fetcher: typeof fetch,
   phase: LinkfoxRequestPhase = "execute",
@@ -520,7 +559,9 @@ async function requestLinkfoxPayload(
         signal,
       });
       const payload = await readJsonPayload(response);
-      const businessCode = readBusinessCode(payload);
+      const businessCode = options.gatewayBusinessCodeOnly
+        ? readGatewayBusinessCode(payload)
+        : readBusinessCode(payload);
       if (acceptCreditError && businessCode === 402) return payload;
       if (!response.ok || (businessCode !== undefined && businessCode !== 200)) {
         throw createLinkfoxError(response.status, businessCode, payload, phase);
@@ -541,7 +582,7 @@ async function readJsonPayload(response: Response) {
     if (!response.ok) {
       return text;
     }
-    throw providerError("provider_error", "LinkFox returned invalid JSON", 502);
+    throw providerResponseError("LinkFox returned invalid JSON");
   }
 }
 
@@ -554,28 +595,24 @@ function createLinkfoxError(
   const code = businessCode ?? httpStatus;
   const message = readErrorMessage(payload) ?? `LinkFox request failed with code ${code}`;
   if (businessCode === 401) {
-    return providerError(
-      phase === "validate" ? "invalid_input" : "credential_expired",
-      message,
-      phase === "validate" ? 400 : 401,
-    );
+    return new ProviderRequestError(phase === "validate" ? 400 : 401, message);
   }
   if (httpStatus === 401 || httpStatus === 403 || businessCode === 403) {
-    return providerError("provider_error", message, httpStatus >= 400 ? httpStatus : 403);
+    return new ProviderRequestError(httpStatus >= 400 ? httpStatus : 403, message);
   }
   if (code === 402 || httpStatus === 402) {
-    return providerError("invalid_input", message || "LinkFox credits are insufficient", 402);
+    return new ProviderRequestError(402, message || "LinkFox credits are insufficient");
   }
   if (code === 429 || httpStatus === 429 || code === 1003) {
-    return providerError("rate_limited", message, 429);
+    return new ProviderRequestError(429, message);
   }
   if (code === 501 && message.toLowerCase().includes("kalodata api http 5")) {
-    return providerError("provider_error", message, 502);
+    return providerResponseError(message);
   }
   if ((httpStatus >= 400 && httpStatus < 500) || [400, 403, 404, 422, 501, 1002, 1004, 1005].includes(code)) {
-    return providerError("invalid_input", message, 400);
+    return providerInputError(message);
   }
-  return providerError("provider_error", message, httpStatus >= 500 ? httpStatus : 502);
+  return new ProviderRequestError(httpStatus >= 500 ? httpStatus : 502, message);
 }
 
 function readBusinessCode(payload: unknown) {
@@ -588,6 +625,16 @@ function readBusinessCode(payload: unknown) {
     if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) {
       return Number(value);
     }
+  }
+  return undefined;
+}
+
+function readGatewayBusinessCode(payload: unknown): number | undefined {
+  const record = optionalRecord(payload);
+  for (const key of ["errcode", "errorCode"] as const) {
+    const value = record?.[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) return Number(value);
   }
   return undefined;
 }
@@ -632,6 +679,32 @@ function normalizeDataList(payload: unknown) {
   return {
     total: readInteger(record.total) ?? data.length,
     data,
+    costToken: readNumber(record.costToken),
+  };
+}
+
+function normalizeSifResult(payload: unknown): Record<string, unknown> {
+  const record = requireRecord(payload, "LinkFox returned an invalid SIF response");
+  const code = typeof record.code === "string" || typeof record.code === "number" ? String(record.code) : undefined;
+  if (code !== "1") {
+    throw new ProviderRequestError(
+      502,
+      readString(record.msg) ?? "LinkFox SIF returned an unsuccessful business response",
+      record,
+    );
+  }
+  const data = readArray(record.data);
+  if (!data) throw new ProviderRequestError(502, "LinkFox SIF response did not include data", record);
+  return {
+    ...record,
+    code,
+    msg: readString(record.msg) ?? null,
+    total: readInteger(record.total) ?? data.length,
+    data,
+    columns: readArray(record.columns) ?? [],
+    type: readString(record.type) ?? null,
+    title: readString(record.title) ?? null,
+    costTime: readInteger(record.costTime),
     costToken: readNumber(record.costToken),
   };
 }
@@ -707,7 +780,7 @@ function normalizeOpportunityReport(payload: unknown) {
   const record = requireRecord(payload, "LinkFox returned an invalid opportunity report response");
   const report = readString(record.stdout);
   if (!report) {
-    throw providerError("provider_error", "LinkFox opportunity report did not include stdout", 502);
+    throw providerResponseError("LinkFox opportunity report did not include stdout");
   }
   return {
     report,
@@ -720,7 +793,7 @@ function normalizeAuthorizationUrl(payload: unknown) {
   const record = requireRecord(payload, "LinkFox returned an invalid authorization response");
   const authorizeUrl = readString(record.authorizeUrl);
   if (!authorizeUrl) {
-    throw providerError("provider_error", "LinkFox response did not include authorizeUrl", 502);
+    throw providerResponseError("LinkFox response did not include authorizeUrl");
   }
   return { authorizeUrl };
 }
@@ -907,7 +980,7 @@ async function executeStoreReport(input: ActionInput, context: { apiKey: string;
     );
     reportId = readString(readDeveloperProxyBody(created).reportId);
     if (!reportId) {
-      throw providerError("provider_error", "Amazon report creation did not return reportId", 502);
+      throw providerResponseError("Amazon report creation did not return reportId");
     }
   }
 
@@ -935,7 +1008,7 @@ async function executeStoreReport(input: ActionInput, context: { apiKey: string;
     if (status === "DONE") {
       const documentId = readString(statusBody.reportDocumentId);
       if (!documentId) {
-        throw providerError("provider_error", "Completed Amazon report did not include reportDocumentId", 502);
+        throw providerResponseError("Completed Amazon report did not include reportDocumentId");
       }
       const documentPayload = await callDeveloperProxy(
         "/spApi/developerProxy",
@@ -950,7 +1023,7 @@ async function executeStoreReport(input: ActionInput, context: { apiKey: string;
       const document = readDeveloperProxyBody(documentPayload);
       const downloadUrl = readString(document.url);
       if (!downloadUrl) {
-        throw providerError("provider_error", "Amazon report document did not include url", 502);
+        throw providerResponseError("Amazon report document did not include url");
       }
       return {
         reportId,
@@ -961,10 +1034,10 @@ async function executeStoreReport(input: ActionInput, context: { apiKey: string;
       };
     }
     if (["FATAL", "CANCELLED"].includes(status)) {
-      throw providerError("provider_error", `Amazon report generation ended with ${status}`, 502);
+      throw providerResponseError(`Amazon report generation ended with ${status}`);
     }
     if (!["IN_QUEUE", "IN_PROGRESS"].includes(status)) {
-      throw providerError("provider_error", `Amazon report returned unknown status ${status}`, 502);
+      throw providerResponseError(`Amazon report returned unknown status ${status}`);
     }
     if (attempt < maxAttempts && Date.now() + pollIntervalSeconds * 1000 < pollDeadline) {
       await waitSeconds(pollIntervalSeconds);
@@ -1061,7 +1134,7 @@ async function executeAdsReport(input: ActionInput, context: { apiKey: string; f
       reportId = readString(readDeveloperProxyBody(created).reportId);
     }
     if (!reportId) {
-      throw providerError("provider_error", "Amazon Ads report creation did not return reportId", 502);
+      throw providerResponseError("Amazon Ads report creation did not return reportId");
     }
   }
 
@@ -1089,7 +1162,7 @@ async function executeAdsReport(input: ActionInput, context: { apiKey: string; f
     if (["COMPLETED", "SUCCESS"].includes(status)) {
       const downloadUrl = readString(statusBody.url);
       if (!downloadUrl) {
-        throw providerError("provider_error", "Completed Amazon Ads report did not include url", 502);
+        throw providerResponseError("Completed Amazon Ads report did not include url");
       }
       return {
         reportId,
@@ -1101,14 +1174,12 @@ async function executeAdsReport(input: ActionInput, context: { apiKey: string; f
     }
     if (["FAILURE", "FAILED", "CANCELLED"].includes(status)) {
       const reason = readString(statusBody.failureReason);
-      throw providerError(
-        "provider_error",
+      throw providerResponseError(
         reason ? `Amazon Ads report failed: ${reason}` : `Amazon Ads report ended with ${status}`,
-        502,
       );
     }
     if (!["PENDING", "PROCESSING", "IN_QUEUE", "IN_PROGRESS"].includes(status)) {
-      throw providerError("provider_error", `Amazon Ads report returned unknown status ${status}`, 502);
+      throw providerResponseError(`Amazon Ads report returned unknown status ${status}`);
     }
     if (attempt < maxAttempts && Date.now() + pollIntervalSeconds * 1000 < pollDeadline) {
       await waitSeconds(pollIntervalSeconds);
@@ -1134,7 +1205,7 @@ async function callDeveloperProxy(path: string, body: ActionInput, context: { ap
 function readDeveloperProxyBody(payload: Record<string, unknown>) {
   const httpStatus = readInteger(payload.httpStatus);
   if (httpStatus === null) {
-    throw providerError("provider_error", "LinkFox developer proxy omitted httpStatus", 502);
+    throw providerResponseError("LinkFox developer proxy omitted httpStatus");
   }
   const body = parseNestedJson(payload.body);
   if (httpStatus >= 200 && httpStatus < 300) {
@@ -1142,18 +1213,18 @@ function readDeveloperProxyBody(payload: Record<string, unknown>) {
   }
   const message = readErrorMessage(body) ?? `Amazon upstream request failed with status ${httpStatus}`;
   if (httpStatus === 401) {
-    throw providerError("credential_expired", message, 401);
+    throw new ProviderRequestError(401, message);
   }
   if (httpStatus === 403) {
-    throw providerError("scope_missing", message, 403);
+    throw new ProviderRequestError(403, message);
   }
   if (httpStatus === 429) {
-    throw providerError("rate_limited", message, 429);
+    throw new ProviderRequestError(429, message);
   }
   if (httpStatus >= 400 && httpStatus < 500) {
-    throw providerError("invalid_input", message, 400);
+    throw providerInputError(message);
   }
-  throw providerError("provider_error", message, httpStatus);
+  throw new ProviderRequestError(httpStatus, message);
 }
 
 function parseNestedJson(value: unknown) {
@@ -1166,7 +1237,7 @@ function parseNestedJson(value: unknown) {
   try {
     return JSON.parse(value) as unknown;
   } catch {
-    throw providerError("provider_error", "LinkFox developer proxy returned invalid JSON", 502);
+    throw providerResponseError("LinkFox developer proxy returned invalid JSON");
   }
 }
 
@@ -1206,7 +1277,7 @@ function appendQuery(query: URLSearchParams, name: string, value: unknown) {
 function requireRecord(value: unknown, message: string) {
   const record = optionalRecord(value);
   if (!record) {
-    throw providerError("provider_error", message, 502);
+    throw providerResponseError(message);
   }
   return record;
 }
@@ -1242,8 +1313,4 @@ function waitSeconds(seconds: number) {
   return new Promise<void>((resolve) => {
     setTimeout(resolve, seconds * 1000);
   });
-}
-
-function providerError(_code: string, message: string, status: number): ProviderRequestError {
-  return new ProviderRequestError(status, message);
 }

@@ -1,6 +1,6 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -10,13 +10,9 @@ import {
   optionalString,
   positiveInteger,
 } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-  requiredInputString,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent, requiredInputString } from "../provider-runtime.ts";
 
 const service = "short_io";
 const shortIoApiBaseUrl = "https://api.short.io";
@@ -93,7 +89,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: defaultDomainId === undefined ? "short-io-api-key" : String(defaultDomainId),
         displayName: defaultDomainHostname ?? "Short.io API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         validationEndpoint: shortIoValidationPath,
         apiBaseUrl: shortIoApiBaseUrl,

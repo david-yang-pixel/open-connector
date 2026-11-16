@@ -1,7 +1,8 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
 
 import { optionalString } from "../../core/cast.ts";
-import { defineOAuthProviderExecutors, defineProviderProxy } from "../provider-runtime.ts";
+import { defineOAuthProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import { fetchHelpscoutCurrentUser, helpscoutActionHandlers } from "./runtime.ts";
 
 const service = "helpscout";
@@ -29,7 +30,6 @@ export const credentialValidators: CredentialValidators = {
     const email = optionalString(user.email);
     return {
       profile: { accountId: id, displayName: name || email || (id ? `Help Scout User ${id}` : "Help Scout User") },
-      grantedScopes: input.profile.grantedScopes,
       metadata: { apiBaseUrl: helpscoutApiBaseUrl },
     };
   },

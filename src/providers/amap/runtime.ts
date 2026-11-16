@@ -1,8 +1,8 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { optionalBoolean } from "../../core/cast.ts";
-import { ProviderRequestError, requiredInputString } from "../provider-runtime.ts";
+import { ProviderRequestError, requiredInputString, providerInputError } from "../provider-runtime.ts";
 
 export const amapApiBaseUrl = "https://restapi.amap.com";
 const amapAuthErrorInfos = new Set([
@@ -135,7 +135,6 @@ export async function validateAmapCredential(
       accountId: "amap_api_key",
       displayName: "AMap API Key",
     },
-    grantedScopes: [],
     metadata: {
       validationEndpoint: "/v3/weather/weatherInfo",
       apiBaseUrl: amapApiBaseUrl,
@@ -477,13 +476,13 @@ function normalizeAmapError(response: Response, payload: AmapResponsePayload, mo
     amapAuthErrorInfocodes.has(infocode ?? "")
   ) {
     if (mode === "validate") {
-      return new ProviderRequestError(400, message);
+      return providerInputError(message);
     }
     return new ProviderRequestError(401, message);
   }
 
   if (response.status === 400 || amapInputErrorInfos.has(info ?? "") || amapInputErrorInfocodes.has(infocode ?? "")) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
 
   return new ProviderRequestError(response.status || 500, message);

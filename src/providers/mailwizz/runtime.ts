@@ -1,5 +1,5 @@
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { optionalInteger, optionalRecord } from "../../core/cast.ts";
 import { assertPublicHttpUrl, isPrivateNetworkAccessAllowed } from "../../core/request.ts";
@@ -55,7 +55,6 @@ export async function validateMailWizzCredential(
   signal?: AbortSignal,
 ): Promise<{
   profile: { accountId: string; displayName: string };
-  grantedScopes: string[];
   metadata: Record<string, unknown>;
 }> {
   const context = createMailWizzContext(values, apiKey, fetcher, signal);
@@ -63,7 +62,6 @@ export async function validateMailWizzCredential(
   const host = new URL(context.baseUrl).host;
   return {
     profile: { accountId: `mailwizz:${host}`, displayName: `MailWizz ${host}` },
-    grantedScopes: [],
     metadata: { baseUrl: context.baseUrl },
   };
 }

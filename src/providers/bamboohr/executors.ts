@@ -5,18 +5,13 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
 import { optionalInteger, optionalRecord, optionalString, recordOrEmpty, requiredString } from "../../core/cast.ts";
-import {
-  defineProviderProxy,
-  defineProviderExecutors,
-  providerInputError,
-  ProviderRequestError,
-  providerUserAgent,
-} from "../provider-runtime.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerInputError, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "bamboohr";
 
@@ -130,7 +125,6 @@ export const credentialValidators: CredentialValidators = {
       {
         authorization: buildBamboohrApiKeyAuthorization(input.apiKey),
         companyDomain: normalizeBamboohrCompanyDomain(input.values.companyDomain),
-        grantedScopes: [],
       },
       fetcher,
       signal,
@@ -150,7 +144,7 @@ export const credentialValidators: CredentialValidators = {
 };
 
 async function validateBamboohrCredential(
-  auth: BamboohrAuthorization & { grantedScopes: string[] },
+  auth: BamboohrAuthorization & { grantedScopes?: string[] },
   fetcher: typeof fetch,
   signal?: AbortSignal,
 ): Promise<CredentialValidationResult> {
@@ -238,7 +232,7 @@ function buildBamboohrApiBaseUrl(companyDomain: string): string {
 }
 
 async function requestBamboohrJson(input: {
-  context: Pick<BamboohrContext, "authorization" | "companyDomain" | "fetcher" | "signal">;
+  context: BamboohrContext;
   path: string;
   query?: Record<string, string | number | boolean | undefined>;
 }): Promise<unknown> {

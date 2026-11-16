@@ -1,9 +1,13 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
-import { createProviderTimeout, providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
+import {
+  createProviderTimeout,
+  providerUserAgent,
+  ProviderRequestError,
+  providerInputError,
+} from "../provider-runtime.ts";
 
 export const spiderApiBaseUrl = "https://api.spider.cloud";
 
@@ -64,7 +68,6 @@ export async function validateSpiderCredential(
       accountId: "spider:api-key",
       displayName: "Spider Cloud API Key",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: spiderApiBaseUrl,
       credits: payload,
@@ -83,7 +86,7 @@ function buildSearchBody(input: Record<string, unknown>): Record<string, unknown
 
 async function requestSpiderJson(
   input: SpiderRequestInput,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: RequestPhase,
 ): Promise<unknown> {
   const timeout = createProviderTimeout(context.signal, requestTimeoutMs);
@@ -143,7 +146,7 @@ function createSpiderError(status: number, payload: unknown, phase: RequestPhase
     return new ProviderRequestError(429, message);
   }
   if (phase === "validate" && status >= 400 && status < 500) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (status === 401 || status === 403) {
     return new ProviderRequestError(401, message);

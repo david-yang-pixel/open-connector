@@ -1,13 +1,13 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { optionalRecord } from "../../core/cast.ts";
 import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 
 export const superSaasApiBaseUrl = "https://www.supersaas.com";
 
-interface SuperSaasContext extends Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal"> {
+interface SuperSaasContext extends ApiKeyProviderContext {
   accountName: string;
 }
 
@@ -58,7 +58,6 @@ export async function validateSuperSaasCredential(
       accountId: `super_saas:${accountName}`,
       displayName: `SuperSaaS ${accountName}`,
     },
-    grantedScopes: [],
     metadata: {
       accountName,
       apiBaseUrl: superSaasApiBaseUrl,

@@ -4,16 +4,12 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 
 const service = "polar";
 const polarApiBaseUrl = "https://api.polar.sh/v1";
@@ -112,7 +108,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: optionalString(firstOrganization?.id) ?? "polar-organization-access-token",
         displayName: buildAccountLabel(firstOrganization),
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: polarApiBaseUrl,
         validationEndpoint: polarValidationPath,
@@ -124,11 +119,7 @@ export const credentialValidators: CredentialValidators = {
   },
 };
 
-async function polarGetJson(
-  path: string,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
-  phase: PolarRequestPhase,
-): Promise<unknown> {
+async function polarGetJson(path: string, context: ApiKeyProviderContext, phase: PolarRequestPhase): Promise<unknown> {
   let response: Response, payload: unknown;
   try {
     response = await context.fetcher(new URL(`${polarApiBaseUrl}${path}`), {

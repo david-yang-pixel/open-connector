@@ -28,4 +28,4 @@ maintainers:
     email: dev@timoa.com
 annotations:
   category: AI Infrastructure
-  licenses: Apache-2.0
+  licenses: LicenseRef-OpenConnector

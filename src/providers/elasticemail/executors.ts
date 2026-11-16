@@ -1,6 +1,7 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
 
-import { defineApiKeyProviderExecutors, defineProviderProxy } from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import { elasticemailActionHandlers, elasticemailApiBaseUrl, validateElasticemailCredential } from "./runtime.ts";
 
 const service = "elasticemail";
@@ -24,7 +25,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "elasticemail",
         displayName: "Elastic Email API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: elasticemailApiBaseUrl,
         validationEndpoint: "/contacts",

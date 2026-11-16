@@ -5,19 +5,15 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { createHash } from "node:crypto";
 import { compactObject, optionalInteger, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
-import {
-  defineProviderProxy,
-  defineProviderExecutors,
-  ProviderRequestError,
-  providerUserAgent,
-  requireApiKeyCredential,
-  requiredInputString,
-} from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent, requiredInputString } from "../provider-runtime.ts";
 
 const service = "recallai";
 const recallaiApiBaseUrlByRegion: Record<RecallAiRegion, string> = {
@@ -148,9 +144,7 @@ export async function validateRecallAiCredential(
     profile: {
       accountId: buildRecallAiAccountId(apiKey, region),
       displayName: `Recall.ai API Key (${region})`,
-      grantedScopes: [],
     },
-    grantedScopes: [],
     metadata: {
       region,
       apiBaseUrl,
@@ -169,7 +163,7 @@ export const credentialValidators: CredentialValidators = {
 
 async function requestRecallAi(input: {
   path: string;
-  context: Pick<RecallAiContext, "apiKey" | "apiBaseUrl" | "fetcher" | "signal">;
+  context: RecallAiContext;
   mode: "validate" | "execute";
   method?: "GET" | "POST";
   body?: Record<string, unknown>;

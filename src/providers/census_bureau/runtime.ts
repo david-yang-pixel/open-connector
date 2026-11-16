@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { optionalInteger, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
 import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
@@ -44,7 +44,6 @@ export async function validateCensusBureauCredential(
       accountId: "census_bureau",
       displayName: "Census Bureau API Key",
     },
-    grantedScopes: [],
     metadata: {
       validationEndpoint: "/data/2022/acs/acs5",
       apiBaseUrl: censusBureauApiBaseUrl,

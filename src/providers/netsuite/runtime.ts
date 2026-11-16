@@ -1,6 +1,7 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ProviderFetch, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { createHmac, randomBytes } from "node:crypto";
 import {
@@ -125,7 +126,6 @@ export async function validateNetsuiteCredential(
       accountId: context.accountId,
       displayName: `NetSuite ${context.accountId}`,
     },
-    grantedScopes: [],
     metadata: {
       accountId: context.accountId,
       restBaseUrl: context.restBaseUrl,

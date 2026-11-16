@@ -1,6 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
 import { isAbortLikeError, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
@@ -89,7 +88,6 @@ export async function validateBigDataCloudCredential(
       accountId: "big_data_cloud-api-key",
       displayName: "BigDataCloud API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: bigDataCloudApiBaseUrl,
       validationEndpoint: countryByIpPath,
@@ -102,7 +100,7 @@ export async function validateBigDataCloudCredential(
 
 async function requestBigDataCloudJson(input: {
   path: string;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   query: Record<string, unknown>;
   phase: BigDataCloudRequestPhase;
 }): Promise<Record<string, unknown>> {

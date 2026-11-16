@@ -6,23 +6,26 @@ import type {
   ProviderProxyExecutor,
   TransitFileWriter,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import AliOss from "ali-oss";
 import { compactObject, optionalInteger, optionalRecord, optionalString, requiredRawString } from "../../core/cast.ts";
 import { assertGuardedEgressUrl } from "../../core/guarded-fetch.ts";
-import { assertPublicHttpUrl, isPrivateNetworkAccessAllowed, readBoundedResponseBytes } from "../../core/request.ts";
+import { assertPublicHttpUrl, isPrivateNetworkAccessAllowed, storeResponseInTransit } from "../../core/request.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
 import {
-  createProviderFetch,
   createProviderProxyUrl,
-  defineProviderExecutors,
   normalizeProviderProxyHeaders,
-  providerFetch,
-  ProviderRequestError,
-  providerUserAgent,
   readProviderProxyErrorMessage,
   readProviderProxyResponse,
   toProviderProxyError,
+} from "../provider-proxy.ts";
+import {
+  createProviderFetch,
+  providerFetch,
+  ProviderRequestError,
+  providerUserAgent,
+  providerInputError,
 } from "../provider-runtime.ts";
 
 const service = "aliyun_oss";
@@ -316,7 +319,6 @@ async function validateAliyunOssCredential(input: Record<string, string>): Promi
           ? `Alibaba Cloud OSS - ${firstBucket.name}`
           : `Alibaba Cloud OSS - ${stripProtocol(endpoint)}`,
       },
-      grantedScopes: [],
       metadata: compactObject({
         endpoint,
         bucket,
@@ -333,7 +335,7 @@ async function createAliyunOssClient(input: AliyunClientOptions): Promise<Aliyun
   const endpoint = normalizeEndpoint(input.endpoint);
   await assertGuardedEgressUrl(endpoint, {
     fieldName: "endpoint",
-    createError: (message) => new ProviderRequestError(400, message),
+    createError: providerInputError,
     allowPrivateNetwork: isPrivateNetworkAccessAllowed(),
   });
   return new AliOss({
@@ -401,11 +403,7 @@ function encodeOssObjectKey(value: string): string {
 }
 
 function readObjectKey(input: Record<string, unknown>): string {
-  const objectKey = requiredRawString(
-    input.objectKey,
-    "objectKey",
-    (message) => new ProviderRequestError(400, message),
-  );
+  const objectKey = requiredRawString(input.objectKey, "objectKey", providerInputError);
   if (objectKey.length === 0) {
     throw new ProviderRequestError(400, "objectKey must not be empty");
   }
@@ -541,12 +539,13 @@ async function aliyunDownloadObject(input: Record<string, unknown>, context: Ali
 
     const name = optionalString(input.fileName) ?? defaultObjectFileName(objectKey);
     const mimeType = optionalString(response.headers.get("content-type")) ?? "application/octet-stream";
-    const bytes = await readBoundedResponseBytes(response, {
-      maxBytes: context.transitFiles.maxBytes,
+    const file = await storeResponseInTransit(response, context.transitFiles, {
+      name,
+      mimeType,
       fieldName: "Alibaba Cloud OSS download",
       createError: (message) => new ProviderRequestError(413, message),
+      signal: context.signal,
     });
-    const file = await context.transitFiles.create(new File([Uint8Array.from(bytes)], name, { type: mimeType }));
 
     return {
       objectKey,
@@ -574,7 +573,7 @@ async function aliyunPutObject(input: Record<string, unknown>, context: AliyunOs
     sourceFile?.bytes ??
     (optionalString(input.contentBase64) != null
       ? Buffer.from(String(input.contentBase64), "base64")
-      : String(input.contentText ?? ""));
+      : Buffer.from(String(input.contentText ?? ""), "utf8"));
   const result = await client.put(objectKey, body, {
     mime: resolvedContentType,
     meta: normalizeMetadataInput(optionalRecord(input.metadata)),
@@ -698,7 +697,7 @@ function resolveBucket(input: Record<string, unknown>, context: AliyunOssContext
 }
 
 function missingAliyunField(message: string): never {
-  throw new ProviderRequestError(400, message);
+  throw providerInputError(message);
 }
 
 function normalizeBucket(bucket: AliyunBucket | undefined | null): Record<string, unknown> {
@@ -809,7 +808,7 @@ function normalizeAliyunError(error: unknown, phase: "validate" | "execute"): Pr
   const status = readAliyunErrorStatus(error);
   const message = error instanceof Error && error.message.trim() ? error.message : "aliyun_oss request failed";
   if (phase === "validate" && (status === 401 || status === 403)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (status === 429) {
     return new ProviderRequestError(429, message);
@@ -853,7 +852,7 @@ function parseAndValidateEndpoint(value: string, allowPrivateNetwork = isPrivate
   // which otherwise bypasses the guarded fetch.
   assertPublicHttpUrl(url.toString(), {
     fieldName: "endpoint",
-    createError: (message) => new ProviderRequestError(400, message),
+    createError: providerInputError,
     allowPrivateNetwork,
   });
   return url;
@@ -868,7 +867,7 @@ function validateSourceUrl(value: string): string {
   // deployment's private-network opt-in (which only covers the trusted endpoint).
   assertPublicHttpUrl(url.toString(), {
     fieldName: "sourceUrl",
-    createError: (message) => new ProviderRequestError(400, message),
+    createError: providerInputError,
     allowPrivateNetwork: false,
   });
   return url.toString();

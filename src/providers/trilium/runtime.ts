@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { createHash } from "node:crypto";
 import { compactObject, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
@@ -394,7 +394,6 @@ export async function validateTriliumCredential(
       accountId: `trilium:${host}:${tokenId}`,
       displayName: `Trilium ${host}`,
     },
-    grantedScopes: [],
     metadata: compactObject({
       baseUrl: context.baseUrl,
       apiBaseUrl: context.baseUrl,
@@ -591,13 +590,13 @@ function readErrorMessage(payload: unknown) {
 
 function mapTriliumHttpError(status: number, message: string, phase: TriliumRequest["phase"]) {
   if (phase === "validate" && (status === 401 || status === 403)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (phase === "execute" && status === 401) {
     return new ProviderRequestError(401, message);
   }
   if (status === 400 || status === 403 || status === 404 || status === 409 || status === 422) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (status === 429) {
     return new ProviderRequestError(429, message);

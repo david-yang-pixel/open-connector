@@ -1,6 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { optionalRecord, optionalString, optionalStringArray, requiredString } from "../../core/cast.ts";
 import {
@@ -200,7 +199,6 @@ export async function validateRaiselyCredential(
       accountId: userUuid,
       displayName: fullName ?? email ?? preferredName ?? "Raisely API Key",
     },
-    grantedScopes: [],
     metadata: {
       validationEndpoint: "/authenticate",
       userUuid,
@@ -213,7 +211,7 @@ export async function validateRaiselyCredential(
 }
 
 async function requestRaiselyJson(input: {
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   method: RaiselyRequestMethod;
   path: string;
   query?: URLSearchParams;

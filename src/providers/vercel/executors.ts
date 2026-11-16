@@ -4,10 +4,14 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
+import type { IntegrationDefinition } from "../../triggers/common/integration.ts";
 import type { VercelActionContext } from "./runtime.ts";
 
-import { defineProviderExecutors, defineProviderProxy, requireApiKeyCredential } from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import { readVercelTeamScope, validateVercelCredential, vercelActionHandlers, vercelApiBaseUrl } from "./runtime.ts";
+import { vercelDeploymentEvent } from "./trigger-on-deployment-event.ts";
 
 const service = "vercel";
 const vercelProxyUserAgent = "oomol-connector/1.0 (+https://oomol.com)";
@@ -20,6 +24,7 @@ export const executors: ProviderExecutors = defineProviderExecutors<VercelAction
     return {
       apiKey: credential.apiKey,
       fetcher,
+      signal: context.signal,
       ...readVercelTeamScope(credential.values),
     };
   },
@@ -40,3 +45,5 @@ export const credentialValidators: CredentialValidators = {
     return validateVercelCredential(input, fetcher);
   },
 };
+
+export const triggers: readonly IntegrationDefinition[] = [vercelDeploymentEvent];

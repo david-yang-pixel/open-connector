@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -77,7 +77,6 @@ export async function validateGlobalpingCredential(
       accountId: `globalping:${input.apiKey.slice(-4) || input.apiKey}`,
       displayName: "Globalping Dashboard Token",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: globalpingApiBaseUrl,
       validationEndpoint: "/v1/limits",

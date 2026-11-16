@@ -2,12 +2,10 @@ import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } f
 import type { PrintavoActionContext } from "./runtime.ts";
 
 import { requiredString } from "../../core/cast.ts";
-import {
-  defineProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  requireApiKeyCredential,
-} from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError } from "../provider-runtime.ts";
 import { printavoActionHandlers, printavoApiBaseUrl, validatePrintavoCredential } from "./runtime.ts";
 
 const service = "printavo";

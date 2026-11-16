@@ -1,12 +1,12 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderRequestContext } from "../provider-runtime.ts";
 
 import { nullableString, optionalBoolean, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   isAbortLikeError,
   ProviderRequestError,
   providerUserAgent,
@@ -125,7 +125,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "starton-api-key",
         displayName: "Starton API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: startonApiBaseUrl,
         validationEndpoint: "/v3/ipfs/pin",
@@ -140,7 +139,7 @@ async function requestStartonJson(input: {
   apiKey: string;
   path: string;
   method: "GET" | "POST" | "DELETE";
-  context: Pick<ApiKeyProviderContext, "fetcher" | "signal">;
+  context: ProviderRequestContext;
   phase: StartonPhase;
   query?: Record<string, string | boolean | undefined>;
   body?: Record<string, unknown>;

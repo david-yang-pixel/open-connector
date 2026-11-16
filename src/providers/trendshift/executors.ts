@@ -1,6 +1,7 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
 
-import { defineApiKeyProviderExecutors, defineProviderProxy } from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   trendshiftActionHandlers,
   trendshiftApiBaseUrl,
@@ -30,7 +31,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: trendshiftCredentialId(input.apiKey),
         displayName: "Trendshift API Token",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: trendshiftApiBaseUrl,
         validationEndpoint: `${trendshiftValidationPath}?limit=1`,

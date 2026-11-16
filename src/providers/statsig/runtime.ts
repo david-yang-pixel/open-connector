@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { booleanString, compactObject, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
 import { providerUserAgent, ProviderRequestError, requiredInputString } from "../provider-runtime.ts";
@@ -11,8 +11,7 @@ export const statsigApiVersion = "20240601";
 type StatsigRequestPhase = "validate" | "execute";
 type StatsigRequestMethod = "GET";
 type StatsigQueryValue = string | number | boolean | readonly (string | number | boolean)[] | null | undefined;
-type StatsigActionContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
-type StatsigActionHandler = (input: Record<string, unknown>, context: StatsigActionContext) => Promise<unknown>;
+type StatsigActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 
 interface StatsigRequestOptions {
   apiKey: string;
@@ -121,7 +120,6 @@ export async function validateStatsigCredential(
       accountId: projectId ? `statsig:${projectId}` : "statsig:project",
       displayName: projectId ? `Statsig ${projectId}` : "Statsig Project",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: statsigApiBaseUrl,
       apiVersion: statsigApiVersion,

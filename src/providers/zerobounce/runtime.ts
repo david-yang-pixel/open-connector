@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -95,7 +95,6 @@ export async function validateZerobounceCredential(
       accountId: "zerobounce",
       displayName: "ZeroBounce API Key",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: zerobounceApiBaseUrl,
       validationEndpoint: "/v2/getcredits",

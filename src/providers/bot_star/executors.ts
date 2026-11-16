@@ -1,6 +1,6 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -10,10 +10,10 @@ import {
   requiredRecord,
   requiredString,
 } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   isAbortLikeError,
   providerInputError,
   ProviderRequestError,
@@ -278,7 +278,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: firstBotId ?? "bot_star",
         displayName: firstTeamName ?? firstBotName ?? firstBotId ?? "BotStar API Token",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: botStarApiBaseUrl,
         validationEndpoint: botStarValidationPath,

@@ -4,8 +4,7 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -16,12 +15,13 @@ import {
   optionalString,
   requiredString,
 } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   ProviderRequestError,
   providerUserAgent,
   requiredInputString,
+  providerInputError,
 } from "../provider-runtime.ts";
 
 const service = "scrapfly";
@@ -96,7 +96,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "scrapfly",
         displayName: "Scrapfly API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         validationEndpoint: "/scrape/monitoring/metrics",
         apiBaseUrl: scrapflyApiBaseUrl,
@@ -142,7 +141,7 @@ async function requestScrapflyRaw(
   url: string,
   query: Record<string, ScrapflyQueryValue | string[]>,
   init: RequestInit,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: ScrapflyPhase,
   options: { allowValidNonEnterpriseStatus?: boolean },
 ): Promise<Response> {
@@ -294,7 +293,7 @@ function createScrapflyError(
     return new ProviderRequestError(429, message);
   }
   if (phase === "validate" && status >= 400 && status < 500) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   return new ProviderRequestError(status || 500, message);
 }

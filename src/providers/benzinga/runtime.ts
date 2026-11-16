@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
 import { providerUserAgent, ProviderRequestError, runProviderRequest } from "../provider-runtime.ts";
@@ -8,7 +8,6 @@ import { providerUserAgent, ProviderRequestError, runProviderRequest } from "../
 const benzingaApiBaseUrl = "https://api.benzinga.com";
 
 type BenzingaPhase = "validate" | "execute";
-type BenzingaContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
 type BenzingaActionHandler = ProviderRuntimeHandler<ApiKeyProviderContext>;
 
 export const benzingaActionHandlers: ProviderActionHandlers<"benzinga", BenzingaActionHandler> = {
@@ -86,7 +85,6 @@ export async function validateBenzingaCredential(
       accountId: "benzinga-api-key",
       displayName: "Benzinga API Key",
     },
-    grantedScopes: [],
     metadata: {
       validationEndpoint: "/api/v2.1/news/channels",
       channelCount: channels.length,
@@ -106,7 +104,7 @@ function buildCalendarParams(input: Record<string, unknown>): Record<string, str
 
 async function requestBenzingaJson(input: {
   path: string;
-  context: BenzingaContext;
+  context: ApiKeyProviderContext;
   params: Record<string, string | undefined>;
   phase: BenzingaPhase;
 }): Promise<unknown> {

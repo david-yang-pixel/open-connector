@@ -9,7 +9,9 @@ describe("RuntimeTokenService", () => {
     const store: IRuntimeTokenStore = {
       add: vi.fn(),
       list: vi.fn(async () => []),
+      hasAny: vi.fn(async () => false),
       findByHash: vi.fn(),
+      findById: vi.fn(),
       updatePolicy: vi.fn(),
       revoke: vi.fn(async () => false),
       markUsed: vi.fn(),
@@ -37,13 +39,16 @@ describe("RuntimeTokenService", () => {
     const store: IRuntimeTokenStore = {
       add: vi.fn(),
       list: vi.fn(async () => [record]),
+      hasAny: vi.fn(async () => true),
       findByHash: vi.fn(async () => record),
+      findById: vi.fn(),
       updatePolicy: vi.fn(),
       revoke: vi.fn(async () => false),
       markUsed: vi.fn(),
     };
 
     await expect(new RuntimeTokenService(store).resolveToken(token)).resolves.toEqual({
+      allowedTriggers: [],
       tokenId: "token-1",
       allowedActions: ["github.*"],
       blockedActions: ["github.delete_repository"],
@@ -72,7 +77,9 @@ describe("RuntimeTokenService", () => {
     const store: IRuntimeTokenStore = {
       add: vi.fn(),
       list: vi.fn(async () => [record]),
+      hasAny: vi.fn(async () => true),
       findByHash: vi.fn(async () => record),
+      findById: vi.fn(),
       updatePolicy: vi.fn(),
       revoke: vi.fn(async () => false),
       markUsed: vi.fn(async () => {
@@ -82,6 +89,7 @@ describe("RuntimeTokenService", () => {
     const logger = { error: vi.fn(), info: vi.fn(), warn: vi.fn() };
 
     await expect(new RuntimeTokenService(store, logger).resolveToken(token)).resolves.toEqual({
+      allowedTriggers: [],
       tokenId: "token-1",
       allowedActions: [],
       blockedActions: [],
@@ -252,6 +260,8 @@ describe("RuntimeTokenService", () => {
       list: vi.fn(async () => {
         throw new Error("D1_ERROR: network connection lost");
       }),
+      hasAny: vi.fn(async () => true),
+      findById: vi.fn(),
       findByHash: vi.fn(),
       updatePolicy: vi.fn(),
       revoke: vi.fn(async () => false),
@@ -270,6 +280,10 @@ describe("RuntimeTokenService", () => {
 class MemoryRuntimeTokenStore implements IRuntimeTokenStore {
   private readonly tokens = new Map<string, RuntimeTokenRecord>();
 
+  async hasAny(): Promise<boolean> {
+    return this.tokens.size > 0;
+  }
+
   async add(record: RuntimeTokenRecord): Promise<void> {
     this.tokens.set(record.id, record);
   }
@@ -280,6 +294,10 @@ class MemoryRuntimeTokenStore implements IRuntimeTokenStore {
 
   async findByHash(tokenHash: string): Promise<RuntimeTokenRecord | undefined> {
     return [...this.tokens.values()].find((token) => token.tokenHash === tokenHash);
+  }
+
+  async findById(id: string): Promise<RuntimeTokenRecord | undefined> {
+    return this.tokens.get(id);
   }
 
   async updatePolicy(id: string, policy: TokenPolicy): Promise<RuntimeTokenRecord | undefined> {

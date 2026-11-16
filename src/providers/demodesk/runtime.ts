@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
 import { encodePathSegment } from "../../core/request.ts";
@@ -141,7 +141,6 @@ export async function validateDemodeskCredential(
       accountId: userId ?? email ?? "api_key",
       displayName: fullName || email || "Demodesk API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: demodeskApiBaseUrl,
       validationEndpoint: "/me",

@@ -1,14 +1,11 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
-import {
-  defineProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-  requireApiKeyCredential,
-} from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 interface Context {
   siteUrl: string;
   authorization: string;
@@ -197,7 +194,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: `chargify:${siteId ?? subdomain}`,
         displayName: typeof record.name === "string" ? record.name : `Maxio ${subdomain}`,
       },
-      grantedScopes: [],
       metadata: {
         siteUrl: resolvedSiteUrl,
         validationEndpoint: "/site.json",

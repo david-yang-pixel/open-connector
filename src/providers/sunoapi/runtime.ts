@@ -1,19 +1,19 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
 import {
   providerUserAgent,
   ProviderRequestError,
+  withRetryAfterSeconds,
   requiredInputString,
   runProviderRequest,
 } from "../provider-runtime.ts";
 
 export const sunoApiBaseUrl = "https://api.sunoapi.org";
 
-type SunoApiActionContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
-type SunoApiActionHandler = (input: Record<string, unknown>, context: SunoApiActionContext) => Promise<unknown>;
+type SunoApiActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 
 export const sunoapiActionHandlers: ProviderActionHandlers<"sunoapi", SunoApiActionHandler> = {
   get_remaining_credits(_input, context) {
@@ -112,7 +112,6 @@ export async function validateSunoApiCredential(
       accountId: "api_key",
       displayName: "SunoAPI API Key",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: sunoApiBaseUrl,
       validationEndpoint: "/api/v1/generate/credit",
@@ -121,7 +120,7 @@ export async function validateSunoApiCredential(
   };
 }
 
-async function getRemainingCredits(context: SunoApiActionContext): Promise<{ credits: number }> {
+async function getRemainingCredits(context: ApiKeyProviderContext): Promise<{ credits: number }> {
   const payload = await requestSunoApiJson({
     ...context,
     method: "GET",
@@ -137,7 +136,7 @@ async function getRemainingCredits(context: SunoApiActionContext): Promise<{ cre
 
 async function getSunoApiRecordInfo(
   input: Record<string, unknown>,
-  context: SunoApiActionContext,
+  context: ApiKeyProviderContext,
   path: string,
   label: string,
 ): Promise<Record<string, unknown>> {
@@ -154,7 +153,7 @@ async function getSunoApiRecordInfo(
 
 async function submitSunoApiTask(
   input: Record<string, unknown>,
-  context: SunoApiActionContext,
+  context: ApiKeyProviderContext,
   path: string,
   label: string,
 ): Promise<{ taskId: string }> {
@@ -180,7 +179,7 @@ async function submitSunoApiTask(
 
 async function submitSunoApiObject(
   input: Record<string, unknown>,
-  context: SunoApiActionContext,
+  context: ApiKeyProviderContext,
   path: string,
   label: string,
 ): Promise<Record<string, unknown>> {
@@ -228,7 +227,7 @@ async function requestSunoApiJson(input: SunoApiRequest): Promise<unknown> {
       throw new ProviderRequestError(
         response.ok ? 502 : response.status,
         `${extractSunoApiErrorMessage(payload) ?? response.statusText ?? "sunoapi request failed"}${code === undefined ? ` (HTTP ${response.status})` : ` (SunoAPI code ${code}, HTTP ${response.status})`}`,
-        payload,
+        withRetryAfterSeconds(response, payload),
       );
     }
     if (typeof payload === "string") {

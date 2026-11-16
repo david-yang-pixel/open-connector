@@ -1,13 +1,10 @@
-import type { CredentialValidators, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderExecutors, CredentialValidators, ProviderProxyExecutor } from "../../core/types.ts";
+import type { ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-executors.ts";
 
-import {
-  defineProviderProxy,
-  defineProviderExecutors,
-  ProviderRequestError,
-  providerUserAgent,
-  requireApiKeyCredential,
-} from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 interface Context {
   baseUrl: string;
@@ -45,7 +42,7 @@ const handlers: ProviderActionHandlers<"z_api", ProviderRuntimeHandler<Context>>
   send_location: (input, context) => request("send-location", input, context),
 };
 
-export const executors: import("../../core/types.ts").ProviderExecutors = defineProviderExecutors<Context>({
+export const executors: ProviderExecutors = defineProviderExecutors<Context>({
   service: "z_api",
   skipDnsValidation: true,
   async createContext(context, fetcher) {
@@ -100,7 +97,6 @@ export const credentialValidators: CredentialValidators = {
     );
     return {
       profile: { accountId: instanceId, displayName: `Z-API ${instanceId}` },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: "https://api.z-api.io",
         instanceId,

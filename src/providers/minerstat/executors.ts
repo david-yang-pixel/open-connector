@@ -1,15 +1,17 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   providerUserAgent,
   ProviderRequestError,
   readProviderTextBody,
+  providerInputError,
+  providerResponseError,
 } from "../provider-runtime.ts";
 
 const service = "minerstat";
@@ -59,7 +61,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "api_key",
         displayName: "Minerstat API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: minerstatApiBaseUrl,
         validationEndpoint: "/coins",
@@ -159,9 +160,9 @@ function createMinerstatError(status: number, payload: unknown, phase: Minerstat
     return new ProviderRequestError(429, message);
   }
   if (status === 400 || status === 404 || status === 422) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
-  return new ProviderRequestError(502, message);
+  return providerResponseError(message);
 }
 
 function extractMinerstatErrorMessage(payload: unknown): string | undefined {

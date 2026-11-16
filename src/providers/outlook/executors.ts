@@ -1,10 +1,15 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { OAuthProviderContext } from "../provider-runtime.ts";
+import type { IntegrationDefinition } from "../../triggers/common/integration.ts";
+import type { PollDefinition } from "../../triggers/common/poll.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { OAuthProviderContext } from "../provider-executors.ts";
 
-import { compactObject, requiredRecord } from "../../core/cast.ts";
-import { defineOAuthProviderExecutors, defineProviderProxy, ProviderRequestError } from "../provider-runtime.ts";
+import { compactObject, optionalString, requiredBoolean, requiredRecord } from "../../core/cast.ts";
+import { defineOAuthProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerInputError, requiredInputString, ProviderRequestError } from "../provider-runtime.ts";
 import { microsoftGraphJson, microsoftGraphRequest } from "./microsoft-graph.ts";
+import { outlookMessageReceived } from "./trigger-on-message-received.ts";
 
 const outlookGraphBaseUrl = "https://graph.microsoft.com/v1.0";
 
@@ -42,6 +47,30 @@ const outlookActionHandlers: ProviderActionHandlers<"outlook", OutlookActionHand
   },
   get_message(input, deps) {
     return getMessage(input, deps);
+  },
+  move_message(input, deps) {
+    return moveMessage(input, requiredInputString(input.destinationId, "destinationId"), deps);
+  },
+  archive_message(input, deps) {
+    return moveMessage(input, "archive", deps);
+  },
+  async delete_message(input, { accessToken, fetcher, signal }) {
+    await outlookRequest(`me/messages/${encodeURIComponent(requiredInputString(input.messageId, "messageId"))}`, {
+      accessToken,
+      fetcher,
+      signal,
+      method: "DELETE",
+    });
+    return { success: true };
+  },
+  set_message_read(input, { accessToken, fetcher, signal }) {
+    return outlookJsonRequest(`me/messages/${encodeURIComponent(requiredInputString(input.messageId, "messageId"))}`, {
+      accessToken,
+      fetcher,
+      signal,
+      method: "PATCH",
+      body: { isRead: requiredBoolean(input.isRead, "isRead", providerInputError) },
+    });
   },
   create_draft(input, deps) {
     return createDraft(input, deps);
@@ -128,6 +157,14 @@ function isAllowedOutlookMessageNextLinkPath(pathname: string) {
   const normalizedPath = trimTrailingSlash(pathname);
   const segments = normalizedPath.split("/").filter(Boolean);
 
+  // Delta continuation links (@odata.nextLink inside a delta round and
+  // @odata.deltaLink) end in a trailing `delta` segment on the two
+  // folder-scoped message-collection shapes. Graph tracks message changes per
+  // folder, so `/v1.0/me/messages/delta` is not admitted.
+  if (segments.length > 4 && segments[segments.length - 1] === "delta") {
+    segments.pop();
+  }
+
   if (segments[0] !== "v1.0") {
     return false;
   }
@@ -212,14 +249,27 @@ async function listMailFolders(input: Record<string, unknown>, { accessToken, fe
 }
 
 async function listMessages(input: Record<string, unknown>, { accessToken, fetcher }: OutlookRuntimeDeps) {
-  const pathOrUrl =
+  // A nextLink continues the current page sequence; a deltaLink starts the
+  // next delta round. Both are opaque Graph URLs checked by the allowlist.
+  const followUpLink =
     typeof input.nextLink === "string"
       ? input.nextLink
-      : typeof input.mailFolderId === "string"
-        ? `me/mailFolders/${encodeURIComponent(input.mailFolderId)}/messages`
-        : "me/messages";
+      : typeof input.deltaLink === "string"
+        ? input.deltaLink
+        : undefined;
+  const folderPath =
+    typeof input.mailFolderId === "string"
+      ? `me/mailFolders/${encodeURIComponent(input.mailFolderId)}/messages`
+      : undefined;
+  // Graph tracks message changes per folder: there is no mailbox-wide
+  // messages/delta, so a delta listing needs a folder.
+  if (followUpLink === undefined && input.delta === true && folderPath === undefined) {
+    throw providerInputError("mailFolderId is required when delta is true.");
+  }
+  const collectionPath = folderPath ?? "me/messages";
+  const pathOrUrl = followUpLink ?? (input.delta === true ? `${collectionPath}/delta` : collectionPath);
   const query =
-    typeof input.nextLink === "string"
+    followUpLink !== undefined
       ? undefined
       : compactObject({
           $top: typeof input.top === "number" ? String(input.top) : undefined,
@@ -237,6 +287,7 @@ async function listMessages(input: Record<string, unknown>, { accessToken, fetch
   const payload = await outlookJsonRequest<{
     value?: unknown[];
     "@odata.nextLink"?: unknown;
+    "@odata.deltaLink"?: unknown;
   }>(pathOrUrl, {
     accessToken,
     fetcher,
@@ -244,9 +295,11 @@ async function listMessages(input: Record<string, unknown>, { accessToken, fetch
     headers,
   });
 
+  // Rows stay raw: a delta round reports removals as `{ id, "@removed": {...} }`.
   return {
     messages: Array.isArray(payload.value) ? payload.value : [],
     nextLink: typeof payload["@odata.nextLink"] === "string" ? payload["@odata.nextLink"] : null,
+    deltaLink: typeof payload["@odata.deltaLink"] === "string" ? payload["@odata.deltaLink"] : null,
   };
 }
 
@@ -267,6 +320,23 @@ async function getMessage(input: Record<string, unknown>, { accessToken, fetcher
     query,
     headers,
   });
+}
+
+async function moveMessage(
+  input: Record<string, unknown>,
+  destinationId: string,
+  { accessToken, fetcher, signal }: OutlookRuntimeDeps,
+) {
+  return outlookJsonRequest(
+    `me/messages/${encodeURIComponent(requiredInputString(input.messageId, "messageId"))}/move`,
+    {
+      accessToken,
+      fetcher,
+      signal,
+      method: "POST",
+      body: { destinationId },
+    },
+  );
 }
 
 async function createDraft(input: Record<string, unknown>, { accessToken, fetcher }: OutlookRuntimeDeps) {
@@ -443,14 +513,14 @@ function buildMailboxSettingsPayload(input: Record<string, unknown>) {
       input.automaticRepliesSetting && typeof input.automaticRepliesSetting === "object"
         ? buildAutomaticRepliesSettingPayload(asObject(input.automaticRepliesSetting))
         : undefined,
-    dateFormat: typeof input.dateFormat === "string" ? input.dateFormat : undefined,
+    dateFormat: optionalString(input.dateFormat),
     delegateMeetingMessageDeliveryOptions:
       typeof input.delegateMeetingMessageDeliveryOptions === "string"
         ? input.delegateMeetingMessageDeliveryOptions
         : undefined,
     language:
       input.language && typeof input.language === "object" ? buildLanguagePayload(asObject(input.language)) : undefined,
-    timeFormat: typeof input.timeFormat === "string" ? input.timeFormat : undefined,
+    timeFormat: optionalString(input.timeFormat),
     timeZone: typeof input.timeZone === "string" ? input.timeZone : undefined,
     workingHours:
       input.workingHours && typeof input.workingHours === "object"
@@ -517,3 +587,5 @@ function requiredString(value: unknown, field: string) {
 function asObject(value: unknown): Record<string, unknown> {
   return requiredRecord(value, "object input", (message) => new ProviderRequestError(400, message));
 }
+
+export const triggers: readonly (IntegrationDefinition | PollDefinition)[] = [outlookMessageReceived];

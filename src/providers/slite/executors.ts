@@ -1,15 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-  requiredResponseRecord,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent, requiredResponseRecord } from "../provider-runtime.ts";
 
 const service = "slite";
 const sliteApiBaseUrl = "https://api.slite.com";
@@ -19,7 +14,7 @@ type SliteActionHandler = (input: Record<string, unknown>, context: ApiKeyProvid
 
 interface SliteRequestOptions {
   path: string;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   phase: SliteRequestPhase;
   method?: "GET" | "POST" | "PUT" | "DELETE";
   query?: Record<string, string | number | boolean | undefined>;
@@ -54,9 +49,7 @@ export const credentialValidators: CredentialValidators = {
       profile: {
         accountId: email ?? organizationDomain ?? "api_key",
         displayName: displayName || email || "Slite API Key",
-        grantedScopes: [],
       },
-      grantedScopes: [],
       metadata: compactObject({
         email,
         organizationName,

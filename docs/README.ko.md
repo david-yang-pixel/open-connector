@@ -4,7 +4,7 @@
 
 [English](../README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Русский](README.ru.md) | [Français](README.fr.md) | [Español](README.es.md)
 
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](../LICENSE.txt)
+[![License: Modified Apache-2.0](https://img.shields.io/badge/License-Modified%20Apache--2.0-blue.svg)](../LICENSE.txt)
 [![npm](https://img.shields.io/npm/v/@oomol-lab/open-connector.svg)](https://www.npmjs.com/package/@oomol-lab/open-connector)
 ![Node.js 22+](https://img.shields.io/badge/Node.js-22%2B-339933)
 ![Cloudflare compatible](https://img.shields.io/badge/Cloudflare-compatible-F38020)
@@ -29,7 +29,7 @@ Agent와 애플리케이션에 공통 catalog로 제공할 수 있습니다.
   <tr>
     <td width="33.33%" valign="top">Managed OAuth와 hosted runtime을 바로 사용할 수 있습니다. 배포하거나 OAuth app을 설정할 필요가 없습니다.</td>
     <td width="33.33%" valign="top">Docker 또는 Node.js로 로컬이나 자체 인프라에서 실행합니다. Storage와 OAuth app은 직접 관리합니다.</td>
-    <td width="33.33%" valign="top"><strong>Cloudflare</strong>, <strong>Fly.io</strong>, <strong>RepoCloud</strong>, <strong>nibrun</strong> 등.</td>
+    <td width="33.33%" valign="top"><strong>Cloudflare</strong>, <strong>Fly.io</strong>, <strong>RepoCloud</strong>, <strong>nibrun</strong>, <strong>NEXUS AI</strong>, <strong>Pethost</strong>, <strong>ZopDay</strong> 등.</td>
   </tr>
   <tr>
     <td width="33.33%" align="center">🚀 <a href="https://oomol.com/docs/connector-saas/"><strong>OOMOL Hosted</strong></a></td>
@@ -200,19 +200,11 @@ version, 최신 `main` build에는 `tip`을 사용하세요.
 
 Image tag, 가져오기, 실행 방법은 [docker-ghcr.md](docker-ghcr.md)를 참조하세요.
 
-## Wanta로 데스크톱 Agent 만들기
+## 바로 사용할 수 있는 AI 봇: Leina
 
-OpenConnector와 [Wanta](https://github.com/oomol-lab/wanta)는 OOMOL 오픈 소스 생태계에서 AI Agent를
-지원하는 두 프로젝트입니다. OpenConnector는 Gmail, Slack, Notion 같은 외부 서비스를 Agent에 연결합니다.
-Wanta는 OpenCode로 실행되는 완전한 데스크톱 Agent 애플리케이션이며, OpenConnector를 통해 연결된 SaaS
-서비스를 사용합니다.
+바로 사용할 수 있는 AI 봇을 찾고 있다면 [Leina](https://leina.ai/)를 사용해 보세요. Leina는 1,500개 이상의 SaaS 앱에 연결할 수 있으며, 앱 연결, 스킬, 지식 베이스를 자유롭게 조합해 팀의 업무 흐름에 맞는 나만의 AI 에이전트를 구성할 수 있습니다.
 
-- **로컬 실행:** Wanta 계정 없이 자신의 OpenAI 호환 모델을 사용할 수 있습니다.
-- **직접 개발:** Wanta를 fork하여 prompt, 도구, 인터페이스, 모델, branding을 맞춤 설정할 수 있습니다.
-- **호스팅 서비스:** 선택 사항인 [호스팅 환경](https://wanta.ai/)은 managed model, OAuth 연결, 팀
-  workspace를 제공합니다.
-
-Issue와 pull request를 통한 기여를 환영합니다.
+Slack, Microsoft Teams, Discord, Telegram의 채팅에서 사용자가 접근을 허용한 앱을 통해 정보 검색, 주간 보고서 작성, 고객 피드백 정리, 영업 후속 연락 준비 등을 요청할 수 있습니다.
 
 ## 문서
 
@@ -257,10 +249,15 @@ Provider 코드는 `src/providers/<service>`에 있습니다. Provider 기여 �
 ## 라이선스 범위
 
 별도로 명시하지 않는 한 이 repository를 위해 작성된 source code, script, 생성된 project scaffolding,
-test, 문서는 Apache License Version 2.0에 따라 사용이 허가됩니다.
+test, 문서는 Apache License 2.0을 수정한 OpenConnector License에 따라 사용이 허가됩니다.
 [LICENSE.txt](../LICENSE.txt)를 참조하세요.
 
-이 repository의 Apache-2.0 license는 각 권리자가 소유한 타사 제품, provider, app, API, 상표,
+상용 사용과 자체 제품에 포함하는 것을 비롯해 어떤 목적으로든 OpenConnector를 사용, 수정, self-host할
+수 있습니다. 추가 조건은 하나뿐이며, OpenConnector를 hosted connector service로 제3자에게 제공하려면
+OOMOL의 commercial license가 필요합니다. v1.9.4 이하 release는 계속 수정되지 않은 Apache License
+2.0을 따릅니다. [NOTICE.md](../NOTICE.md)를 참조하세요.
+
+이 repository의 license는 각 권리자가 소유한 타사 제품, provider, app, API, 상표,
 service mark, trade name, logo, icon, brand asset, 문서, screenshot 또는 기타 저작물에 대한 권리를
 부여하지 않습니다.
 

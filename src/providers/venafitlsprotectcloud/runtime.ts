@@ -1,21 +1,22 @@
 import type { CredentialValidationResult, ProviderExecutors } from "../../core/types.ts";
-import type { ProviderFetch, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { createHash } from "node:crypto";
 import { optionalInteger, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
 import {
-  defineProviderExecutors,
   providerInputError,
   ProviderRequestError,
   providerUserAgent,
-  requireApiKeyCredential,
+  defaultProviderRequestTimeoutMs,
 } from "../provider-runtime.ts";
 
 export const venafiCloudBaseUrls = {
   us: "https://api.venafi.cloud",
   eu: "https://api.venafi.eu",
 };
-const requestTimeoutMs = 30_000;
 
 interface VenafiCloudContext {
   apiKey: string;
@@ -48,7 +49,6 @@ export async function validateVenafiCloudCredential(
       displayName:
         optionalString(data.username) ?? optionalString(data.email) ?? `Venafi Cloud (${region.toUpperCase()})`,
     },
-    grantedScopes: [],
     metadata: { region, apiBaseUrl: venafiCloudBaseUrls[region] },
   };
 }
@@ -134,7 +134,7 @@ async function requestVenafiCloud(input: {
       "tppl-api-key": input.apiKey,
       "user-agent": providerUserAgent,
     },
-    signal: input.signal ?? AbortSignal.timeout(requestTimeoutMs),
+    signal: input.signal ?? AbortSignal.timeout(defaultProviderRequestTimeoutMs),
   });
   const payload = await readPayload(response);
   if (!response.ok) throw upstreamError(response.status, payload, input.operation, input.phase);

@@ -1,16 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  isAbortLikeError,
-  providerUserAgent,
-  ProviderRequestError,
-  requiredInputString,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { isAbortLikeError, providerUserAgent, ProviderRequestError, requiredInputString } from "../provider-runtime.ts";
 
 const service = "next_dns";
 const nextDnsApiBaseUrl = "https://api.nextdns.io";
@@ -98,7 +92,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: optionalString(firstProfile?.id) ?? "next_dns:api_key",
         displayName: "NextDNS API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: nextDnsApiBaseUrl,
         validationEndpoint: nextDnsValidationPath,
@@ -125,7 +118,7 @@ function requestNextDnsAnalytics(
 async function requestNextDnsJson(input: {
   path: string;
   query: Record<string, unknown>;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   phase: NextDnsRequestPhase;
 }): Promise<unknown> {
   const url = buildNextDnsUrl(input.path, input.query);

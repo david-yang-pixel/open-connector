@@ -8,18 +8,16 @@ import type {
 import type { CloudflareR2Context } from "./runtime.ts";
 
 import { compactObject, optionalString, requiredString } from "../../core/cast.ts";
-import { cloudflareCurrentUserDisplayName } from "../cloudflare-current-user.ts";
+import { cloudflareCurrentUserDisplayName } from "../cloudflare_dns/runtime-user.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
 import {
-  createProviderFetch,
   createProviderProxyUrl,
-  defineProviderExecutors,
   normalizeProviderProxyHeaders,
-  ProviderRequestError,
-  providerUserAgent,
   readProviderProxyErrorMessage,
   readProviderProxyResponse,
   toProviderProxyError,
-} from "../provider-runtime.ts";
+} from "../provider-proxy.ts";
+import { createProviderFetch, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 import {
   cloudflareR2ActionHandlers,
   cloudflareR2ApiBaseUrl,
@@ -126,7 +124,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: user.userId,
         displayName,
       },
-      grantedScopes: input.profile.grantedScopes,
       metadata: compactObject({
         userId: user.userId,
         email: user.email,

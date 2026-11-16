@@ -1,16 +1,12 @@
 import type { CredentialValidationResult, ExecutionContext, ProviderExecutors } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
 import { compactObject, optionalBoolean, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
 import { encodePathSegment } from "../../core/request.ts";
-import {
-  defineProviderExecutors,
-  providerUserAgent,
-  ProviderRequestError,
-  requireApiKeyCredential,
-  requiredInputString,
-} from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { providerUserAgent, ProviderRequestError, requiredInputString } from "../provider-runtime.ts";
 
 const mailgunDefaultApiBaseUrl = "https://api.mailgun.net";
 const mailgunAllowedApiBaseUrls = new Set([mailgunDefaultApiBaseUrl, "https://api.eu.mailgun.net"]);
@@ -214,7 +210,6 @@ export async function validateMailgunCredential(
       accountId: firstDomain ? `mailgun:domain:${firstDomain}` : "mailgun-api-key",
       displayName: firstDomain ? `Mailgun: ${firstDomain}` : "Mailgun API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl,
       validationEndpoint: validationPath,

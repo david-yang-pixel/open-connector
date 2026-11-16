@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -114,7 +114,6 @@ export async function validateMapleBillingCredential(
       accountId: `maple_billing:${companyId}`,
       displayName: `Measure ${companyId}`,
     },
-    grantedScopes: [],
     metadata: compactObject({
       companyId,
       apiBaseUrl: buildMapleBillingApiBaseUrl(companyId),

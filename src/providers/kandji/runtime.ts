@@ -1,9 +1,14 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { createHash } from "node:crypto";
 import { compactObject, optionalBoolean, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
-import { ProviderRequestError, providerUserAgent, runProviderRequest } from "../provider-runtime.ts";
+import {
+  ProviderRequestError,
+  providerUserAgent,
+  runProviderRequest,
+  providerInputError,
+} from "../provider-runtime.ts";
 
 type KandjiPhase = "validate" | "execute";
 type KandjiActionHandler = (input: Record<string, unknown>, context: KandjiActionContext) => Promise<unknown>;
@@ -126,7 +131,6 @@ export async function validateKandjiCredential(
       accountId: `kandji:${hashValue(host).slice(0, 16)}`,
       displayName: `Kandji ${host}`,
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiUrl,
       validationEndpoint: "/api/v1/blueprints",
@@ -246,7 +250,7 @@ function createKandjiError(
     return new ProviderRequestError(429, message);
   }
   if (phase === "validate" && status >= 400 && status < 500) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (phase === "execute" && status === 401) {
     return new ProviderRequestError(401, message);

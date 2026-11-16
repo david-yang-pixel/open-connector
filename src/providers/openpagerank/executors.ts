@@ -1,14 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "openpagerank";
 const openPageRankApiBaseUrl = "https://openpagerank.com/api/v1.0";
@@ -52,9 +48,7 @@ export const credentialValidators: CredentialValidators = {
     return {
       profile: {
         displayName: "OpenPageRank API Key",
-        grantedScopes: [],
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: openPageRankApiBaseUrl,
         validationEndpoint: openPageRankLookupPath,
@@ -79,7 +73,7 @@ function readDomains(value: unknown): string[] {
 
 async function openPageRankGetJson(
   domains: string[],
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: OpenPageRankRequestPhase,
 ): Promise<unknown> {
   const url = new URL(`${openPageRankApiBaseUrl}${openPageRankLookupPath}`);

@@ -1,8 +1,13 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { compactObject, optionalRawString } from "../../core/cast.ts";
-import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
+import {
+  ProviderRequestError,
+  providerUserAgent,
+  providerInputError,
+  providerResponseError,
+} from "../provider-runtime.ts";
 
 type RawgActionContext = {
   apiKey: string;
@@ -44,7 +49,7 @@ export async function validateRawgCredential(
   const firstPlatform = asOptionalObject(results[0]);
 
   return {
-    profile: { accountId: "rawg", displayName: "RAWG API Key", grantedScopes: [] },
+    profile: { accountId: "rawg", displayName: "RAWG API Key" },
     metadata: compactObject({
       validationEndpoint: "/platforms",
       apiBaseUrl: rawgApiBaseUrl,
@@ -283,7 +288,7 @@ function buildRawgError(status: number, payload: unknown, phase: "validate" | "e
 
   if (status === 401 || status === 403) {
     if (phase === "validate") {
-      return new ProviderRequestError(400, message);
+      return providerInputError(message);
     }
     return new ProviderRequestError(401, message);
   }
@@ -293,10 +298,10 @@ function buildRawgError(status: number, payload: unknown, phase: "validate" | "e
   }
 
   if (status >= 400 && status < 500) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
 
-  return new ProviderRequestError(502, message);
+  return providerResponseError(message);
 }
 
 function defaultErrorMessage(status: number) {

@@ -1,5 +1,5 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { createHash } from "node:crypto";
@@ -11,17 +11,14 @@ import {
   optionalScalarString,
   optionalString,
 } from "../../core/cast.ts";
-import { googleJsonRequest, googleRequest } from "../google-runtime.ts";
-import {
-  defineProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  requireOAuthCredential,
-  requiredInputString,
-} from "../provider-runtime.ts";
+import { googleJsonRequest, googleRequest } from "../googledrive/runtime-request.ts";
+import { requireOAuthCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, requiredInputString } from "../provider-runtime.ts";
 import { googleAdsScope } from "./scopes.ts";
 
-export const googleAdsApiBaseUrl = "https://googleads.googleapis.com/v22";
+export const googleAdsApiBaseUrl = "https://googleads.googleapis.com/v25";
 
 const service = "googleads";
 const customerMatchUserListType = "CUSTOMER_MATCH_USER_LIST";
@@ -158,8 +155,8 @@ async function getCampaignById(input: Record<string, unknown>, context: GoogleAd
         "campaign.status,",
         "campaign.advertising_channel_type,",
         "campaign.advertising_channel_sub_type,",
-        "campaign.start_date,",
-        "campaign.end_date",
+        "campaign.start_date_time,",
+        "campaign.end_date_time",
         "FROM campaign",
         `WHERE campaign.id = ${campaignId}`,
         "LIMIT 1",
@@ -186,8 +183,8 @@ async function getCampaignByName(input: Record<string, unknown>, context: Google
         "campaign.status,",
         "campaign.advertising_channel_type,",
         "campaign.advertising_channel_sub_type,",
-        "campaign.start_date,",
-        "campaign.end_date",
+        "campaign.start_date_time,",
+        "campaign.end_date_time",
         "FROM campaign",
         `WHERE campaign.name = ${JSON.stringify(requireNonEmptyString(input.name, "name"))}`,
         "ORDER BY campaign.id",
@@ -532,8 +529,8 @@ function normalizeCampaign(row: SearchRow): Record<string, unknown> {
     status: optionalString(campaign.status),
     advertisingChannelType: optionalString(campaign.advertisingChannelType),
     advertisingChannelSubType: optionalString(campaign.advertisingChannelSubType),
-    startDate: optionalString(campaign.startDate),
-    endDate: optionalString(campaign.endDate),
+    startDateTime: optionalString(campaign.startDateTime),
+    endDateTime: optionalString(campaign.endDateTime),
   });
 }
 
@@ -630,8 +627,8 @@ function normalizeCampaignMutationData(
       : {}),
     name: mode === "create" ? requireNonEmptyString(value.name, "create.name") : optionalString(value.name),
     status: normalizeOptionalEnumValue(value.status, "status", campaignStatusAliases),
-    startDate: optionalString(value.startDate),
-    endDate: optionalString(value.endDate),
+    startDateTime: optionalString(value.startDateTime),
+    endDateTime: optionalString(value.endDateTime),
     manualCpc: optionalRecord(value.manualCpc),
     campaignBudget:
       mode === "create"

@@ -2,7 +2,7 @@ import type { TransitFileWriter } from "../../core/types.ts";
 
 import { posix } from "node:path";
 import { compactObject, optionalInteger, optionalString, requiredRawString, requiredString } from "../../core/cast.ts";
-import { readBoundedResponseBytes } from "../../core/request.ts";
+import { storeResponseInTransit } from "../../core/request.ts";
 import { providerFetch, ProviderRequestError, readProviderTextBody } from "../provider-runtime.ts";
 
 export const baiduPanBaseUrl = "https://pan.baidu.com";
@@ -166,12 +166,13 @@ export async function downloadBaiduNetdiskFile(
   }
 
   const mimeType = optionalString(response.headers.get("content-type")) ?? "application/octet-stream";
-  const bytes = await readBoundedResponseBytes(response, {
-    maxBytes: context.transitFiles.maxBytes,
+  const file = await storeResponseInTransit(response, context.transitFiles, {
+    name: metadata.name,
+    mimeType,
     fieldName: "Baidu Netdisk download",
     createError: (message) => new ProviderRequestError(413, message),
+    signal: context.signal,
   });
-  const file = await context.transitFiles.create(new File([Uint8Array.from(bytes)], metadata.name, { type: mimeType }));
 
   return {
     fileId: metadata.fileId,

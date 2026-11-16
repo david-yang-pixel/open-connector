@@ -48,6 +48,13 @@ const importance = s.stringEnum(["low", "normal", "high"], { description: "Messa
 const messageId = nonEmptyString("Outlook message ID.");
 const mailFolderId = nonEmptyString("Outlook mail folder ID.");
 const nextLink = s.url("Opaque pagination URL returned by a previous Outlook response.");
+const deltaLink = s.url(
+  "Opaque delta URL (deltaLink) returned by a previous delta round; starts the next round of changes for the same mail folder. Ignored when nextLink is set.",
+);
+const delta = s.boolean({
+  description:
+    "Track changes in a mail folder with a Microsoft Graph delta query instead of listing it; requires mailFolderId because Graph tracks message changes per folder. The first round returns every message, later rounds (started with deltaLink) return only additions, updates and removals (rows carrying @removed). Graph accepts top and select on delta queries but only filter on receivedDateTime (ge or gt) and orderby receivedDateTime desc.",
+});
 const outlookUser = s.looseObject(
   {
     id: nonEmptyString("Unique identifier for the current account."),
@@ -128,8 +135,11 @@ const listMessagesOutput = s.object(
   {
     messages: s.array(outlookMessage, { description: "Messages returned by Outlook." }),
     nextLink: s.nullableString("Pagination URL for the next page, or null when there is no next page."),
+    deltaLink: s.nullableString(
+      "Delta URL for the next round of changes once a delta round is complete, or null (always null for plain listings).",
+    ),
   },
-  { required: ["messages", "nextLink"], description: "Outlook message list response." },
+  { required: ["messages", "nextLink", "deltaLink"], description: "Outlook message list response." },
 );
 const listFoldersOutput = s.object(
   {
@@ -153,7 +163,7 @@ const actions: OutlookActionSource[] = [
     "read",
     "List the root-level Outlook mail folders for the connected mailbox, with optional hidden folders and field selection.",
     outlookReadScopes,
-    [outlookProviderScopes.mailReadWrite],
+    [outlookProviderScopes.mailRead],
     input({
       nextLink,
       includeHiddenFolders: s.boolean({ description: "Whether to include hidden mail folders." }),
@@ -167,7 +177,7 @@ const actions: OutlookActionSource[] = [
     "read",
     "List Outlook messages from the mailbox or from a specific mail folder, with support for OData filters, sorting, field selection, and pagination.",
     outlookReadScopes,
-    [outlookProviderScopes.mailReadWrite],
+    [outlookProviderScopes.mailRead],
     input({
       mailFolderId,
       top: s.integer({ minimum: 1, maximum: 1000, description: "Maximum number of messages to return." }),
@@ -181,6 +191,8 @@ const actions: OutlookActionSource[] = [
       }),
       select: stringArray("Message fields to request from Microsoft Graph."),
       nextLink,
+      delta,
+      deltaLink,
       bodyContentType,
     }),
     listMessagesOutput,
@@ -190,9 +202,56 @@ const actions: OutlookActionSource[] = [
     "read",
     "Get a single Outlook message by message ID, including message metadata and optional body formatting.",
     outlookReadScopes,
-    [outlookProviderScopes.mailReadWrite],
+    [outlookProviderScopes.mailRead],
     input({ messageId, select: stringArray("Message fields to request from Microsoft Graph."), bodyContentType }, [
       "messageId",
+    ]),
+    outlookMessage,
+  ),
+  action(
+    "move_message",
+    "write",
+    "Move an Outlook message to another folder in the same mailbox. Use the returned message ID for subsequent operations because moving can change it.",
+    outlookWriteScopes,
+    [outlookProviderScopes.mailReadWrite],
+    input(
+      {
+        messageId,
+        destinationId: nonEmptyString(
+          "Destination folder ID or well-known name, such as inbox, archive, or deleteditems.",
+        ),
+      },
+      ["messageId", "destinationId"],
+    ),
+    outlookMessage,
+  ),
+  action(
+    "archive_message",
+    "write",
+    "Move an Outlook message to the mailbox's Archive folder. Use the returned message ID for subsequent operations. This does not move messages to an Exchange Online archive mailbox.",
+    outlookWriteScopes,
+    [outlookProviderScopes.mailReadWrite],
+    input({ messageId }, ["messageId"]),
+    outlookMessage,
+  ),
+  action(
+    "delete_message",
+    "destructive",
+    "Delete an Outlook message using the standard mailbox deletion operation. To explicitly move a message to Deleted Items, use move_message with destinationId deleteditems.",
+    outlookWriteScopes,
+    [outlookProviderScopes.mailReadWrite],
+    input({ messageId }, ["messageId"]),
+    success,
+  ),
+  action(
+    "set_message_read",
+    "write",
+    "Mark an Outlook message as read or unread.",
+    outlookWriteScopes,
+    [outlookProviderScopes.mailReadWrite],
+    input({ messageId, isRead: s.boolean({ description: "True to mark as read; false to mark as unread." }) }, [
+      "messageId",
+      "isRead",
     ]),
     outlookMessage,
   ),

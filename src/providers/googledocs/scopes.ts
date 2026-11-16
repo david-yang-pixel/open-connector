@@ -1,3 +1,5 @@
+import { googleIdentityScopes } from "../googleads/scopes.ts";
+
 export const googleDocsReadonlyScope = "https://www.googleapis.com/auth/documents.readonly";
 export const googleDocsWriteScope = "https://www.googleapis.com/auth/documents";
 export const googleDriveFileScope = "https://www.googleapis.com/auth/drive.file";
@@ -11,4 +13,5 @@ export const googledocsOAuthScopes: string[] = [
   googleDocsWriteScope,
   googleDriveFileScope,
   googleSheetsReadonlyScope,
+  ...googleIdentityScopes,
 ];

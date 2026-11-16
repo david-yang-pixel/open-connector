@@ -2,6 +2,12 @@ import type { ProviderDefinition } from "../../core/types.ts";
 
 import { googledriveActions } from "./actions.ts";
 import { googledriveOAuthScopes } from "./scopes.ts";
+import {
+  snapshot as triggerSnapshot0_0,
+  additionalSnapshot0 as triggerSnapshot0_1,
+} from "./trigger-changes.definition.ts";
+import { snapshot as triggerSnapshot1_0 } from "./trigger-on-file-change.definition.ts";
+import { triggerPermissions } from "./trigger-permissions.ts";
 
 const service = "googledrive";
 
@@ -20,6 +26,7 @@ export const provider: ProviderDefinition = {
       type: "oauth2",
       authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth",
       tokenUrl: "https://oauth2.googleapis.com/token",
+      revocationUrl: "https://oauth2.googleapis.com/revoke",
       scopes: googledriveOAuthScopes,
       tokenEndpointAuthMethod: "client_secret_post",
       authorizationParams: {
@@ -58,4 +65,6 @@ export const provider: ProviderDefinition = {
   ],
   homepageUrl: "https://workspace.google.com/products/drive/",
   actions: googledriveActions,
+  triggers: [triggerSnapshot0_0, triggerSnapshot0_1, triggerSnapshot1_0],
+  triggerPermissions,
 };

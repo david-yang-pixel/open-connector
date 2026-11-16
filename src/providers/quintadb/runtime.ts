@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -183,7 +183,6 @@ export async function validateQuintaDbCredential(
       accountId: "quintadb_api_key",
       displayName: "QuintaDB API Key",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: quintaDbApiBaseUrl,
       validationEndpoint: quintaDbValidationPath,
@@ -254,12 +253,12 @@ function createQuintaDbError(status: number, payload: unknown, phase: QuintaDbRe
   }
   if (status === 401 || status === 403) {
     if (phase === "validate") {
-      return new ProviderRequestError(400, message);
+      return providerInputError(message);
     }
     return new ProviderRequestError(status, message);
   }
   if (status === 400 || status === 404 || status === 422) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   return new ProviderRequestError(status || 500, message);
 }

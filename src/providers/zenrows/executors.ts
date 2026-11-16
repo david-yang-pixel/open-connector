@@ -4,8 +4,7 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -15,11 +14,10 @@ import {
   optionalString,
   requiredString,
 } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy, providerProxyEndpointPrefixes } from "../provider-proxy.ts";
 import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   providerInputError,
-  providerProxyEndpointPrefixes,
   ProviderRequestError,
   providerUserAgent,
   runProviderRequest,
@@ -110,7 +108,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: service,
         displayName: "ZenRows API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         validationEndpoint: "/v1/subscriptions/self/details/",
         apiBaseUrl: "https://api.zenrows.com/v1",
@@ -125,7 +122,7 @@ export const credentialValidators: CredentialValidators = {
 };
 
 async function requestZenrowsUsage(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: ZenrowsPhase,
 ): Promise<Record<string, unknown>> {
   const response = await requestZenrowsUrl(zenrowsSubscriptionsApiUrl, {}, context, "header", phase);
@@ -135,7 +132,7 @@ async function requestZenrowsUsage(
 
 async function requestZenrowsRaw(
   query: Record<string, ZenrowsQueryValue>,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: ZenrowsPhase,
 ): Promise<Response> {
   return requestZenrowsUrl(zenrowsApiBaseUrl, query, context, "query", phase);
@@ -144,7 +141,7 @@ async function requestZenrowsRaw(
 async function requestZenrowsUrl(
   url: string,
   query: Record<string, ZenrowsQueryValue>,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   authLocation: ZenrowsAuthLocation,
   phase: ZenrowsPhase,
 ): Promise<Response> {

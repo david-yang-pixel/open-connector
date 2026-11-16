@@ -2,7 +2,13 @@ import type { ActionDefinition, JsonSchema } from "../../core/types.ts";
 
 import { s } from "../../core/json-schema.ts";
 import { defineProviderAction } from "../../core/provider-definition.ts";
-import { notionReadScopes, notionWriteScopes } from "./scopes.ts";
+import {
+  notionInsertCommentScopes,
+  notionReadCommentScopes,
+  notionReadScopes,
+  notionUpdateContentCapability,
+  notionWriteScopes,
+} from "./scopes.ts";
 
 const service = "notion";
 
@@ -88,6 +94,79 @@ const dataSource = s.looseObject(
   { description: "A Notion data source object." },
 );
 
+const comment = s.looseObject(
+  {
+    object: s.literal("comment", { description: "The Notion object type." }),
+    id: s.string({ description: "The comment ID." }),
+    parent: notionParent,
+    discussion_id: s.string({ description: "The discussion thread the comment belongs to." }),
+    created_time: s.dateTime("The time when the comment was created."),
+    last_edited_time: s.dateTime("The time when the comment was last edited."),
+    created_by: notionObject,
+    rich_text: notionRichText,
+    display_name: s.looseObject(
+      {
+        type: s.stringEnum(["integration", "user", "custom"], { description: "How the author name was chosen." }),
+        resolved_name: s.nullable(s.string({ description: "The author name Notion shows on the comment." })),
+      },
+      { description: "The author name shown on the comment." },
+    ),
+    attachments: s.array(notionObject, { description: "Files attached to the comment." }),
+  },
+  { description: "A Notion comment object." },
+);
+
+const view = s.object(
+  {
+    object: s.literal("view", { description: "The Notion object type." }),
+    id: s.string({ description: "The saved view ID." }),
+    parent: notionParent,
+    data_source_id: s.nullable(s.string({ description: "The data source shown by the view." })),
+    name: s.string({ description: "The saved view name." }),
+    type: s.string({ description: "The layout type, such as table, board, calendar, or dashboard." }),
+    filter: s.nullable(notionObject),
+    sorts: s.nullable(s.array(notionObject)),
+    quick_filters: s.nullable(notionObject),
+    configuration: s.nullable(notionObject),
+    created_time: s.dateTime("The time when the view was created."),
+    last_edited_time: s.dateTime("The time when the view was last edited."),
+    url: s.url("The Notion URL for the view."),
+  },
+  {
+    required: ["object", "id"],
+    additionalProperties: true,
+    description: "A saved Notion view. List results contain references; retrieve a view for its full settings.",
+  },
+);
+
+const viewConfiguration = s.object(
+  {
+    type: s.stringEnum(["table", "board", "list", "calendar", "timeline", "gallery", "form", "chart", "map"], {
+      description: "Must match the existing view type. Dashboard layout is read-only.",
+    }),
+    properties: s.nullable(
+      s.array(
+        s.object(
+          {
+            property_id: s.string({ minLength: 1, description: "The data source property ID." }),
+            visible: s.boolean({ description: "Whether the property is displayed." }),
+            width: s.integer({ minimum: 1, description: "The column width for table views." }),
+            wrap: s.boolean({ description: "Whether text wraps in the column." }),
+          },
+          { required: ["property_id"], additionalProperties: true },
+        ),
+        { description: "Displayed properties in order, with visibility and optional table column settings." },
+      ),
+    ),
+  },
+  {
+    required: ["type"],
+    additionalProperties: true,
+    description:
+      "Notion's view-specific presentation settings, such as properties, group_by, and wrap_cells. Include only settings to change; nullable nested fields accept null to clear them. The type must match the existing layout.",
+  },
+);
+
 const listOutput = (items: JsonSchema, description: string): JsonSchema =>
   s.object(
     {
@@ -164,7 +243,147 @@ const pageParent = s.oneOf(
       { required: ["workspace"], description: "Workspace parent." },
     ),
   ],
-  { description: "The official Notion parent object." },
+  {
+    description:
+      'A Notion parent object, not a string: {"page_id":"..."}, {"data_source_id":"..."}, or {"workspace":true}.',
+  },
+);
+
+const commentParent = s.oneOf(
+  [
+    s.object(
+      {
+        page_id: s.string({ minLength: 1, description: "The page to comment on." }),
+        type: s.literal("page_id", { description: "Always page_id." }),
+      },
+      { required: ["page_id"], description: "Page parent." },
+    ),
+    s.object(
+      {
+        block_id: s.string({ minLength: 1, description: "The block to attach the comment to." }),
+        type: s.literal("block_id", { description: "Always block_id." }),
+      },
+      { required: ["block_id"], description: "Block parent." },
+    ),
+  ],
+  { description: "The page or block that starts a new discussion." },
+);
+
+const commentDisplayName = s.oneOf(
+  [
+    s.object(
+      { type: s.literal("integration", { description: "Show the integration's name." }) },
+      { required: ["type"], description: "Integration name." },
+    ),
+    s.object(
+      { type: s.literal("user", { description: "Show the authorizing user's name." }) },
+      { required: ["type"], description: "User name." },
+    ),
+    s.object(
+      {
+        type: s.literal("custom", { description: "Show the name given in custom." }),
+        custom: s.object(
+          { name: s.string({ minLength: 1, description: "The author name to show." }) },
+          { required: ["name"], description: "The custom author name." },
+        ),
+      },
+      { required: ["type", "custom"], description: "Custom name." },
+    ),
+  ],
+  { description: "The author name Notion shows on the comment." },
+);
+
+const commentAttachment = s.object(
+  {
+    file_upload_id: s.string({ minLength: 1, description: "The ID of a Notion file upload whose status is uploaded." }),
+    type: s.literal("file_upload", { description: "Always file_upload." }),
+  },
+  { required: ["file_upload_id"], description: "A file upload to attach." },
+);
+
+/**
+ * `retrieve_page_markdown`'s output, DECLARED rather than a loose object.
+ *
+ * Every other notion action forwards Notion's body verbatim under a
+ * `notionObject`, which is right for objects whose shape belongs to Notion. A
+ * rendered page is different: it is one row a consumer will map columns onto,
+ * and a declared schema is what lets a consumer's fingerprint of this action
+ * catch an upstream rename at registration instead of at scan time.
+ *
+ * **Declaring it may not silently narrow it.** This action shipped with the
+ * provider — SDK and CLI callers already read the fields Notion's own body
+ * carries. So Notion's fields keep NOTION'S names and are forwarded
+ * unchanged, and the two fields this action adds are additive. An earlier
+ * revision of this schema renamed `unknown_block_ids` to `unknownBlockIds`
+ * and dropped `object`/`id`, which would have broken every existing caller on
+ * upgrade for no gain: a consumer mapping columns can read a snake_case key
+ * as easily as a camelCase one.
+ *
+ * `additionalProperties: true`, not the `s.object` default: the executor
+ * forwards Notion's body with a spread, so keys Notion adds beside the
+ * declared ones (`request_id` today, whatever comes next) stay on the wire,
+ * and a schema that closed the object would fail validation against the very
+ * body it describes.
+ */
+const notionPageMarkdownSchema = s.object(
+  {
+    // ---- Notion's own, forwarded verbatim ------------------------------
+    // Not required: they are Notion's to send, and declaring them mandatory
+    // would turn an upstream omission into a validation failure on a render
+    // that is otherwise perfectly usable.
+    object: s.string({ description: "Notion's object tag for the rendered result." }),
+    id: s.string({ description: "The id Notion echoes for the rendered page, in Notion's own spelling." }),
+    markdown: s.string({
+      description: "The page rendered as enhanced Markdown. An empty string for a page with no content.",
+    }),
+    truncated: s.boolean({
+      description:
+        "Whether the render stopped short of the whole page (Notion renders roughly 20,000 blocks at most). Resubmit the ids in unknown_block_ids to fetch what was left out.",
+    }),
+    unknown_block_ids: s.array(s.string({ description: "A block id." }), {
+      description:
+        "Blocks rendered as <unknown>: truncated subtrees, children this grant cannot read, and unsupported block types. Non-empty on many complete pages, so not on its own a sign of a partial render.",
+    }),
+
+    // ---- Constructed here, and additive --------------------------------
+    // camelCase, matching this provider's convention for fields it builds
+    // rather than forwards (see `notionCurrentUserSchema`).
+    pageId: s.string({
+      description:
+        "The page or block id the render was requested for, exactly as given in the input. Notion may spell an id dashed or undashed in its own body, so a consumer joining rows to bindings needs the spelling it asked with.",
+    }),
+    lastEditedTime: s.dateTime(
+      "When the page or block was last edited, read from its own object — the markdown response carries no revision.",
+    ),
+  },
+  {
+    required: ["markdown", "truncated", "unknown_block_ids", "pageId", "lastEditedTime"],
+    additionalProperties: true,
+    description: "A Notion page rendered as Markdown, with its revision and how complete the render was.",
+  },
+);
+
+/**
+ * `get_current_user`'s output. Read off what is stored with the credential,
+ * never by calling `GET /users/me` at action time: that endpoint describes
+ * the BOT, and the workspace id and owning user it does carry (under `bot`)
+ * were already recorded by the validator, next to the OAuth grant's own
+ * `workspace_id` and `owner`.
+ */
+const notionCurrentUserSchema = s.object(
+  {
+    workspaceId: s.string({ description: "The Notion workspace the grant was issued in." }),
+    workspaceName: s.nullable(s.string({ description: "The workspace's display name, when the grant carried one." })),
+    userId: s.nullable(
+      s.string({ description: "The person who authorized the grant. Null when the grant names no user." }),
+    ),
+    userName: s.nullable(s.string({ description: "That person's display name, when the grant carried one." })),
+    isBot: s.boolean({ description: "Whether the credential resolves to a bot rather than a person." }),
+  },
+  {
+    required: ["workspaceId", "workspaceName", "userId", "userName", "isBot"],
+    description: "The workspace and owning user of the connected Notion credential.",
+  },
 );
 
 const action = (input: {
@@ -186,6 +405,15 @@ const action = (input: {
 
 export const notionActions: ActionDefinition[] = [
   action({
+    name: "get_current_user",
+    operationType: "read",
+    description:
+      "The workspace and owning user of the connected Notion credential, read from what was stored with it: the OAuth grant, or the bot object recorded when the credential was validated. Makes no API call. An internal integration answers with its workspace and no user.",
+    requiredScopes: [],
+    inputSchema: s.object({}),
+    outputSchema: notionCurrentUserSchema,
+  }),
+  action({
     name: "search",
     operationType: "read",
     description: "Search Notion pages and data sources with optional filter, sort, and pagination controls.",
@@ -193,8 +421,43 @@ export const notionActions: ActionDefinition[] = [
     inputSchema: s.object(
       {
         query: s.string({ description: "The search query text." }),
-        filter: s.record(notionValue, { description: "The filter object to narrow results." }),
-        sort: s.record(notionValue, { description: "The sort object to order results." }),
+        filter: s.union(
+          [
+            s.object(
+              {
+                property: s.literal("object", { description: "The property to filter by." }),
+                value: s.stringEnum(["page", "data_source"], { description: "The object type to return." }),
+                in_trash: s.boolean({ description: "Whether to return objects in the trash." }),
+              },
+              { required: ["property", "value"], description: "Filter by object type and optionally trash status." },
+            ),
+            s.object(
+              { in_trash: s.boolean({ description: "Whether to return objects in the trash." }) },
+              { required: ["in_trash"], description: "Filter by trash status only." },
+            ),
+          ],
+          { description: "The filter object to narrow results." },
+        ),
+        sort: s.union(
+          [
+            s.object(
+              {
+                timestamp: s.literal("last_edited_time", { description: "The timestamp to sort by." }),
+                direction: s.stringEnum(["ascending", "descending"], { description: "The sort direction." }),
+              },
+              { required: ["timestamp", "direction"], description: "Sort by last edited time." },
+            ),
+            s.object(
+              { property: s.literal("relevance", { description: "The property to sort by." }) },
+              { required: ["property"], description: "Sort by relevance." },
+            ),
+          ],
+          { description: "The sort object to order results." },
+        ),
+        filterProperties: s.array(s.string({ description: "A page property name or ID." }), {
+          description:
+            "Page property names or IDs to include. Unknown properties are skipped; data source schemas are unaffected.",
+        }),
         pageSize: s.integer({
           minimum: 1,
           maximum: 100,
@@ -203,7 +466,6 @@ export const notionActions: ActionDefinition[] = [
         startCursor: s.string({ description: "The cursor for pagination." }),
       },
       {
-        required: ["query"],
         description: "The input payload for this action.",
       },
     ),
@@ -227,21 +489,48 @@ export const notionActions: ActionDefinition[] = [
   action({
     name: "create_page",
     operationType: "write",
-    description: "Create a Notion page under a parent page, data source, or workspace-level private area.",
+    description:
+      "Create a Notion page. For a child of a page, use parentId + title. For native Notion input, use a parent object + properties without a top-level title.",
     requiredScopes: notionWriteScopes,
-    inputSchema: s.object(
-      {
-        parent: pageParent,
-        parentId: s.string({ description: "Simple parent page ID." }),
-        title: s.string({ description: "Simple page title used with parentId." }),
-        properties: notionProperties,
-        children: s.array(notionObject, { description: "Child blocks to create with the page." }),
-        markdown: s.string({ description: "Enhanced Markdown content for the page." }),
-        icon: notionObject,
-        cover: notionObject,
-        template: notionObject,
-      },
-      { description: "The input payload for this action." },
+    inputSchema: s.withExamples(
+      s.object(
+        {
+          parent: {
+            ...pageParent,
+            description:
+              'A parent object, not a string: {"page_id":"..."}, {"data_source_id":"..."}, or {"workspace":true}. Use properties for the title. For a plain page ID and title, omit parent and use parentId + title instead. Workspace parents require a public connection or personal access token.',
+          },
+          parentId: s.string({
+            description: "Plain page ID string, not a data source ID. Use with title instead of parent.",
+          }),
+          title: s.string({
+            description:
+              "Page title for the simple parentId form. Do not combine with parent; native parent objects use properties instead.",
+          }),
+          properties: {
+            ...notionProperties,
+            description:
+              "Notion page properties. A page parent permits only the title property. For a data source parent, keys must match its schema (for example, Name). With parentId + title, the title property is generated automatically.",
+          },
+          children: s.array(notionObject, { description: "Child blocks to create with the page." }),
+          markdown: s.string({ description: "Enhanced Markdown content for the page." }),
+          icon: notionObject,
+          cover: notionObject,
+          template: notionObject,
+        },
+        { description: "The input payload for this action." },
+      ),
+      [
+        { parentId: "7b2e4c1a-9d3f-4e5b-8a6c-1f2d3e4b5a60", title: "Test Note", markdown: "Page content" },
+        {
+          parent: { page_id: "7b2e4c1a-9d3f-4e5b-8a6c-1f2d3e4b5a60" },
+          properties: { title: { title: [{ text: { content: "Test Note" } }] } },
+        },
+        {
+          parent: { data_source_id: "7b2e4c1a-9d3f-4e5b-8a6c-1f2d3e4b5a60" },
+          properties: { Name: { title: [{ text: { content: "Test Note" } }] } },
+        },
+      ],
     ),
     outputSchema: page,
   }),
@@ -274,7 +563,11 @@ export const notionActions: ActionDefinition[] = [
     inputSchema: s.object(
       {
         pageId: s.string({ minLength: 1, description: "The page ID to move." }),
-        parent: pageParent,
+        parent: {
+          ...pageParent,
+          description:
+            'Destination parent object, not a string: {"page_id":"..."} or {"data_source_id":"..."}. This action has no parentId shorthand.',
+        },
       },
       { required: ["pageId", "parent"], description: "The input payload for this action." },
     ),
@@ -316,7 +609,7 @@ export const notionActions: ActionDefinition[] = [
       },
       { required: ["pageId"], description: "The input payload for this action." },
     ),
-    outputSchema: notionObject,
+    outputSchema: notionPageMarkdownSchema,
   }),
   action({
     name: "update_page_markdown",
@@ -536,7 +829,9 @@ export const notionActions: ActionDefinition[] = [
         filterProperties: s.array(s.string({ minLength: 1 }), {
           description: "Property IDs to include.",
         }),
-        in_trash: s.boolean({ description: "Whether to query trashed pages." }),
+        is_archived: s.boolean({
+          description: "Set to true to query archived pages; false or omitted queries non-archived pages.",
+        }),
         result_type: s.string({ description: "The Notion result type filter." }),
       },
       { required: ["dataSourceId"], description: "The input payload for this action." },
@@ -550,5 +845,98 @@ export const notionActions: ActionDefinition[] = [
     requiredScopes: notionReadScopes,
     inputSchema: paginationInput("dataSourceId", "The data source ID whose templates should be listed."),
     outputSchema: listOutput(notionObject, "Data source templates returned by Notion."),
+  }),
+  action({
+    name: "list_views",
+    operationType: "read",
+    description:
+      "List saved Notion view references with pagination. Supply databaseId for views in one database, or dataSourceId to include accessible linked views across the workspace. Retrieve each view to inspect its filters, sorts, and layout settings.",
+    requiredScopes: notionReadScopes,
+    inputSchema: s.requireAnyProperty(
+      s.object({
+        databaseId: s.string({ minLength: 1, description: "The database whose views should be listed." }),
+        dataSourceId: s.string({ minLength: 1, description: "The data source whose views should be listed." }),
+        pageSize: s.integer({ minimum: 1, maximum: 100, description: "The number of results per page." }),
+        startCursor: s.string({ description: "The next_cursor returned by the previous page." }),
+      }),
+      ["databaseId", "dataSourceId"],
+    ),
+    outputSchema: listOutput(view, "Saved view references returned by Notion."),
+  }),
+  action({
+    name: "retrieve_view",
+    operationType: "read",
+    description: "Retrieve a saved Notion view's name, layout configuration, filters, sorts, and displayed properties.",
+    requiredScopes: notionReadScopes,
+    inputSchema: idInput("viewId", "The saved view ID to retrieve."),
+    outputSchema: view,
+  }),
+  action({
+    name: "update_view",
+    operationType: "destructive",
+    description:
+      "Update a saved Notion view's name, filters, sorts, quick filters, or presentation settings. Omitted fields stay unchanged. Pass null to clear filters or sorts. Configuration type must match the existing view; this action does not change the layout type.",
+    requiredScopes: [notionUpdateContentCapability],
+    inputSchema: s.object(
+      {
+        viewId: s.string({ minLength: 1, description: "The saved view ID to update." }),
+        name: s.string({ description: "The new saved view name." }),
+        filter: s.nullable(s.record(notionValue, { description: "The saved filter. Pass null to clear it." })),
+        sorts: s.nullable(
+          s.array(
+            s.object(
+              {
+                property: s.string({ minLength: 1, description: "The property name or ID to sort by." }),
+                direction: s.stringEnum(["ascending", "descending"], { description: "The sort direction." }),
+              },
+              { required: ["property", "direction"] },
+            ),
+            { maxItems: 100, description: "Property-based sorts. Pass null to clear sorting." },
+          ),
+        ),
+        quick_filters: s.nullable(
+          s.record(s.nullable(notionObject), {
+            description:
+              "Filter-bar conditions keyed by property name or ID. Null removes a key or clears all quick filters.",
+          }),
+        ),
+        configuration: viewConfiguration,
+      },
+      { required: ["viewId"] },
+    ),
+    outputSchema: view,
+  }),
+  action({
+    name: "list_comments",
+    operationType: "read",
+    description:
+      "List the unresolved comments on a Notion page or block with pagination. Comments on a page's blocks are listed by the block's ID. The integration needs the read comments capability.",
+    requiredScopes: notionReadCommentScopes,
+    inputSchema: paginationInput("blockId", "The page or block ID whose comments should be listed."),
+    outputSchema: listOutput(comment, "Comments returned by Notion."),
+  }),
+  action({
+    name: "create_comment",
+    operationType: "write",
+    description:
+      "Create a Notion comment: on a page or block through parent, or as a reply in an existing discussion through discussion_id. The integration needs the insert comments capability; without the read comments capability Notion returns only the new comment's object and id.",
+    requiredScopes: notionInsertCommentScopes,
+    inputSchema: s.requireExactlyOneProperty(
+      s.object(
+        {
+          parent: commentParent,
+          discussion_id: s.string({ minLength: 1, description: "The discussion thread to reply in." }),
+          rich_text: richTextArray("The comment body as Notion rich text objects."),
+          attachments: s.array(commentAttachment, {
+            maxItems: 3,
+            description: "Up to 3 uploaded files to attach to the comment.",
+          }),
+          display_name: commentDisplayName,
+        },
+        { required: ["rich_text"], description: "The input payload for this action." },
+      ),
+      ["parent", "discussion_id"],
+    ),
+    outputSchema: comment,
   }),
 ];

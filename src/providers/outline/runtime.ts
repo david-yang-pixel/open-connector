@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 import type { ProviderFetch } from "../provider-runtime.ts";
 
 import {
@@ -95,7 +95,6 @@ export async function validateOutlineCredential(
       accountId: userId,
       displayName: userName ?? userEmail ?? "Outline API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       baseUrl: apiBaseUrl,
       validationEndpoint: "/auth.info",

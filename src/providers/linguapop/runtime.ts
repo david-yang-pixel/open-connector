@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
 import { providerInputError, providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
@@ -39,9 +39,7 @@ export async function validateLinguapopCredential(
     profile: {
       accountId: "linguapop:integration-api-key",
       displayName: "Linguapop Integration API Key",
-      grantedScopes: [],
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: linguapopApiBaseUrl,
       validationEndpoint: getLanguagesPath,
@@ -202,7 +200,7 @@ function mapLinguapopError(status: number, message: string, phase: LinguapopRequ
     return new ProviderRequestError(401, message);
   }
   if (status >= 400 && status < 500) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   return new ProviderRequestError(status || 502, message);
 }

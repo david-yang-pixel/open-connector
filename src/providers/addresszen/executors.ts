@@ -4,17 +4,13 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { compactObject, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-  requireApiKeyCredential,
-  requiredResponseRecord,
-} from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError, requiredResponseRecord } from "../provider-runtime.ts";
 
 const service = "addresszen";
 const addresszenApiBaseUrl = "https://api.addresszen.com";
@@ -97,7 +93,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "api_key",
         displayName: "AddressZen API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: `${addresszenApiBaseUrl}/${addresszenApiVersion}`,
         validationEndpoint: "/keys/{key}",

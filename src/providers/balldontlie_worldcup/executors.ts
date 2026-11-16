@@ -1,15 +1,11 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalRawString, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-  requireApiKeyCredential,
-} from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "balldontlie_worldcup";
 const balldontlieWorldcupBaseUrl = "https://api.balldontlie.io/fifa/worldcup/v1";
@@ -141,7 +137,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: optionalRawString(firstTeam?.id),
         displayName: "BALLDONTLIE World Cup API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: balldontlieWorldcupBaseUrl,
         validationEndpoint: "/teams",
@@ -191,7 +186,7 @@ function filteredQuery(input: Record<string, unknown>): Record<string, string | 
 async function balldontlieRequestJson(input: {
   path: string;
   query: Record<string, string | string[] | undefined>;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   phase: BalldontliePhase;
 }): Promise<unknown> {
   const url = new URL(`/fifa/worldcup/v1${input.path}`, balldontlieWorldcupApiOrigin);

@@ -1,15 +1,17 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { optionalInteger, optionalRawString, optionalRecord, optionalString } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   providerUserAgent,
   ProviderRequestError,
   readProviderTextBody,
+  providerInputError,
+  providerResponseError,
 } from "../provider-runtime.ts";
 
 const service = "predis_ai";
@@ -100,7 +102,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "predis_ai",
         displayName: "Predis.ai API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl,
         validationEndpoint: getTemplatesPath,
@@ -259,9 +260,9 @@ function createPredisAiError(status: number, payload: unknown, phase: PredisAiPh
     return new ProviderRequestError(429, message);
   }
   if (status >= 400 && status < 500) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
-  return new ProviderRequestError(502, message);
+  return providerResponseError(message);
 }
 
 function readErrorMessage(payload: unknown): string | undefined {

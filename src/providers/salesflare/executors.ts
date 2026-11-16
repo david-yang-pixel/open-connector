@@ -4,8 +4,7 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -16,12 +15,9 @@ import {
   optionalString,
   requiredString,
 } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "salesflare";
 const salesflareApiBaseUrl = "https://api.salesflare.com";
@@ -32,7 +28,7 @@ type SalesflareActionHandler = (input: Record<string, unknown>, context: ApiKeyP
 interface SalesflareRequestInput {
   method: "GET" | "POST" | "PUT";
   path: string;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   phase?: SalesflareRequestPhase;
   query?: Record<string, unknown>;
   body?: unknown;
@@ -191,7 +187,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: userId == null ? "salesflare-api-key" : String(userId),
         displayName: userName ?? userEmail ?? "Salesflare API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: salesflareApiBaseUrl,
         validationEndpoint: "/me",

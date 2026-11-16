@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { compactObject, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
 import { ProviderRequestError, providerUserAgent, runProviderRequest } from "../provider-runtime.ts";
@@ -265,7 +265,6 @@ export async function validateCentralStationCrmCredential(
         userId === undefined ? `central_station_crm:${subdomain}` : `central_station_crm:${subdomain}:user:${userId}`,
       displayName: buildAccountLabel(user, subdomain),
     },
-    grantedScopes: [],
     metadata: compactObject({
       subdomain,
       apiBaseUrl,

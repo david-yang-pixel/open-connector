@@ -1,14 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "cohere";
 const cohereApiBaseUrl = "https://api.cohere.com";
@@ -45,7 +41,6 @@ export const credentialValidators: CredentialValidators = {
       profile: {
         displayName: "Cohere API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: cohereApiBaseUrl,
         validationEndpoint: "/v1/models",
@@ -76,7 +71,7 @@ async function coherePost(
 }
 
 async function cohereGet(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   path: string,
   mode: "validate" | "execute" = "execute",
 ): Promise<unknown> {

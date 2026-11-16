@@ -6,13 +6,10 @@ import type {
 } from "../../core/types.ts";
 
 import { compactObject, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-  requireApiKeyCredential,
-} from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "surveymethods";
 const surveyMethodsApiBaseUrl = "https://api.surveymethods.com/v1";
@@ -79,7 +76,6 @@ export const credentialValidators: CredentialValidators = {
     const account = requireObjectField(payload, "user", "SurveyMethods account response");
     return {
       profile: { accountId: credentials.loginId, displayName: credentials.loginId },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: surveyMethodsApiBaseUrl,
         loginId: credentials.loginId,

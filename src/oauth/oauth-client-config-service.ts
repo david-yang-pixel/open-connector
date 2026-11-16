@@ -15,15 +15,23 @@ export type OAuthClientConfig = {
   clientSecret: string;
   /** Non-empty provider-declared scope subset to request. Omit to use every provider default. */
   requestedScopes?: string[];
+  /**
+   * Absolute redirect URI registered with the provider in place of the runtime's
+   * `<origin>/oauth/callback`; any scheme (a custom app scheme, RFC 8252 §7.1).
+   * Omit to use the runtime callback.
+   */
+  redirectUri?: string;
   extra: Record<string, string>;
   secretExtra: Record<string, string>;
 };
 
 export interface OAuthClientConfigInput {
   clientId: string;
-  clientSecret: string;
+  clientSecret?: string;
   /** Non-empty provider-declared scope subset to request. Omit to use every provider default. */
   requestedScopes?: string[];
+  /** Absolute redirect URI override, any scheme. Omit to use the runtime callback. */
+  redirectUri?: string;
   extra?: Record<string, unknown>;
   secretExtra?: Record<string, unknown>;
 }
@@ -36,7 +44,10 @@ export interface OAuthClientConfigSummary {
   configured: boolean;
   customClientAvailable: boolean;
   clientId: string | null;
+  /** Redirect URI the provider must send the browser to: the configured override, else the runtime callback. */
   expectedRedirectUri: string;
+  /** Configured redirect URI override, or null when the runtime callback is used. */
+  redirectUri: string | null;
   /** Required client inputs absent from the stored configuration; never contains values. */
   missingFields: string[];
   auth: OAuth2AuthDefinition;
@@ -110,15 +121,32 @@ export class OAuthClientConfigService {
   }
 
   async upsertConfig(input: OAuthClientConfigInput & { service: string }): Promise<OAuthClientConfigSummary> {
-    const config = this.normalizeConfig(input.service, input);
+    const previous = await this.getConfig(input.service);
+    const sameClient = previous?.clientId === input.clientId.trim();
+    const secretExtra: Record<string, unknown> = sameClient ? { ...previous?.secretExtra } : {};
+    for (const field of filterClientConfigFields(
+      this.getOAuthDefinition(input.service).clientConfigFields,
+      "secretExtra",
+    )) {
+      if (input.extra && field.key in input.extra) secretExtra[field.key] = input.extra[field.key];
+    }
+    Object.assign(secretExtra, input.secretExtra);
+    const config = this.normalizeConfig(input.service, {
+      ...input,
+      clientSecret: input.clientSecret ?? (sameClient ? previous?.clientSecret : undefined),
+      secretExtra,
+    });
     await this.store.set(config);
     return this.toSummary(input.service, this.getOAuthDefinition(input.service), config);
   }
 
-  normalizeConfig(service: string, input: OAuthClientConfigInput): OAuthClientConfig {
-    const auth = this.getOAuthDefinition(service);
+  normalizeConfig(
+    service: string,
+    input: OAuthClientConfigInput,
+    auth: OAuth2AuthDefinition = this.getOAuthDefinition(service),
+  ): OAuthClientConfig {
     const clientId = input.clientId.trim();
-    const clientSecret = input.clientSecret.trim();
+    const clientSecret = (input.clientSecret ?? "").trim();
     if (!clientId) {
       throw new OAuthClientConfigError("invalid_input", "clientId is required.");
     }
@@ -131,7 +159,8 @@ export class OAuthClientConfigService {
       service,
       clientId,
       clientSecret,
-      requestedScopes: normalizeRequestedScopes(service, input.requestedScopes, auth.scopes),
+      requestedScopes: normalizeRequestedScopes(input.requestedScopes),
+      redirectUri: normalizeRedirectUri(input.redirectUri),
       extra: normalizeCredentialValues({
         fields: filterClientConfigFields(auth.clientConfigFields, "extra"),
         values: pickClientConfigFieldValues(auth.clientConfigFields, submittedExtra, "extra"),
@@ -156,9 +185,13 @@ export class OAuthClientConfigService {
     return { service, configured: false };
   }
 
-  expectedRedirectUri(service: string): string {
+  /**
+   * The redirect URI an authorization request and its code exchange carry: the
+   * config's override when it has one, else the runtime's own callback route.
+   */
+  expectedRedirectUri(service: string, config?: Pick<OAuthClientConfig, "redirectUri">): string {
     this.getOAuthDefinition(service);
-    return `${this.origin}${OAuthClientConfigService.callbackPath}`;
+    return config?.redirectUri ?? `${this.origin}${OAuthClientConfigService.callbackPath}`;
   }
 
   resolveEndpointUrl(service: string, endpointUrl: string, config: OAuthClientConfig): string {
@@ -191,7 +224,7 @@ export class OAuthClientConfigService {
   /** Resolve the scopes an authorization request should send. */
   getEffectiveScopes(service: string, config: OAuthClientConfig): string[] {
     const auth = this.getOAuthDefinition(service);
-    return filterDeclaredScopes(config.requestedScopes, auth.scopes) ?? [...auth.scopes];
+    return resolveRequestedOAuthScopes(auth, config.requestedScopes);
   }
 
   private listOAuthProviders(): Array<{ service: string; auth: OAuth2AuthDefinition }> {
@@ -211,7 +244,8 @@ export class OAuthClientConfigService {
       configured: config != null,
       customClientAvailable: this.isCustomClientConfigAvailable(service),
       clientId: config?.clientId ?? null,
-      expectedRedirectUri: this.expectedRedirectUri(service),
+      expectedRedirectUri: this.expectedRedirectUri(service, config),
+      redirectUri: config?.redirectUri ?? null,
       missingFields: oauthClientFields(auth)
         .filter((field) => {
           if (!field.required) return false;
@@ -225,7 +259,7 @@ export class OAuthClientConfigService {
         .map((field) => field.key),
       auth,
       requestedScopes: config?.requestedScopes ?? null,
-      effectiveScopes: filterDeclaredScopes(config?.requestedScopes, auth.scopes) ?? [...auth.scopes],
+      effectiveScopes: resolveRequestedOAuthScopes(auth, config?.requestedScopes),
       extra: config?.extra ?? {},
     };
   }
@@ -247,6 +281,7 @@ export function readOAuthClientConfigMetadata(
     clientId,
     clientSecret: optionalString(value?.clientSecret) ?? "",
     requestedScopes: optionalStringArray(value?.requestedScopes),
+    redirectUri: optionalString(value?.redirectUri),
     extra: readStringRecord(value?.extra),
     secretExtra: readStringRecord(value?.secretExtra),
   };
@@ -307,56 +342,62 @@ function normalizeStoredOAuthClientConfig(config: OAuthClientConfig | undefined)
   };
 }
 
-function normalizeRequestedScopes(
-  service: string,
-  requestedScopes: string[] | undefined,
-  providerScopes: string[],
-): string[] | undefined {
-  if (requestedScopes === undefined) {
-    return undefined;
-  }
+function normalizeRequestedScopes(requestedScopes: string[] | undefined): string[] | undefined {
+  if (requestedScopes === undefined) return undefined;
   if (!Array.isArray(requestedScopes) || requestedScopes.some((scope) => typeof scope !== "string")) {
     throw new OAuthClientConfigError("invalid_input", "requestedScopes must be an array of strings.");
   }
-
-  const normalized = [...new Set(requestedScopes.map((scope) => scope.trim()))];
-  if (normalized.length === 0) {
-    throw new OAuthClientConfigError("invalid_input", "requestedScopes must contain at least one scope.");
-  }
-  if (normalized.some((scope) => !scope)) {
-    throw new OAuthClientConfigError("invalid_input", "requestedScopes must not contain empty values.");
-  }
-
-  const declaredScopes = new Set(providerScopes);
-  const undeclaredScope = normalized.find((scope) => !declaredScopes.has(scope));
-  if (undeclaredScope) {
-    throw new OAuthClientConfigError(
-      "invalid_input",
-      `requestedScopes contains a scope not declared by ${service}: ${undeclaredScope}.`,
-    );
-  }
-
-  return normalized;
+  return [...new Set(requestedScopes.map((scope) => scope.trim()).filter(Boolean))];
 }
 
 /**
- * Resolve stored requested scopes against the currently declared provider
- * scopes. A provider can stop declaring a scope after configs were saved (for
- * example when the platform restricts who may request it); rejecting the stored
- * value would break the config listing and every re-authorization, so read
- * paths drop undeclared scopes and fall back to the provider defaults when none
- * survive. Writes stay strict via normalizeRequestedScopes.
+ * Schemes that can never be a redirection endpoint: they run script, embed a
+ * document, or read local resources in the browser that follows the redirect.
  */
-function filterDeclaredScopes(requestedScopes: string[] | undefined, providerScopes: string[]): string[] | undefined {
-  if (requestedScopes === undefined) {
+const forbiddenRedirectUriSchemes = new Set(["javascript:", "vbscript:", "data:", "file:", "blob:", "about:"]);
+
+/**
+ * Validate a redirect URI override. It must be an absolute URL; the scheme is
+ * free (a native app registers a custom scheme with the provider, RFC 8252 §7.1)
+ * except for schemes that can never be a redirection endpoint, and user info and
+ * a fragment are not part of any registered redirect (RFC 6749 §3.1.2). The
+ * trimmed input is kept verbatim: the provider compares it byte for byte with
+ * the value registered on the OAuth app, so it is never re-serialized. That is
+ * why the checks read the raw string: the URL parser drops an empty `#` or `@`
+ * and strips tabs and newlines, so the parsed value can differ from the stored
+ * one.
+ */
+function normalizeRedirectUri(value: string | undefined): string | undefined {
+  if (value === undefined) {
     return undefined;
   }
-
-  const declaredScopes = new Set(providerScopes);
-  const filtered = [...new Set(requestedScopes.map((scope) => scope.trim()))].filter((scope) =>
-    declaredScopes.has(scope),
-  );
-  return filtered.length > 0 ? filtered : undefined;
+  if (typeof value !== "string") {
+    throw new OAuthClientConfigError("invalid_input", "redirectUri must be a string.");
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    throw new OAuthClientConfigError("invalid_input", "redirectUri must be an absolute URL.");
+  }
+  // A URI never carries whitespace, control characters, or a backslash (RFC 3986 §2).
+  if (/[\s\p{Cc}\\]/u.test(trimmed)) {
+    throw new OAuthClientConfigError("invalid_input", "redirectUri must be an absolute URL.");
+  }
+  if (forbiddenRedirectUriSchemes.has(url.protocol)) {
+    throw new OAuthClientConfigError("invalid_input", "redirectUri scheme is not allowed.");
+  }
+  // The parser lowercases the scheme but keeps its length, so the raw authority
+  // starts right after it; an opaque path (no host) may legitimately contain `@`.
+  const authority = url.host ? /^\/*([^/?]*)/.exec(trimmed.slice(url.protocol.length))?.[1] : undefined;
+  if (trimmed.includes("#") || authority?.includes("@")) {
+    throw new OAuthClientConfigError("invalid_input", "redirectUri must not contain user info or a fragment.");
+  }
+  return trimmed;
 }
 
 function readStringRecord(value: unknown): Record<string, string> {
@@ -381,4 +422,10 @@ function assertOAuthEndpointUrl(value: string): void {
   if (url.protocol !== "https:") {
     throw new OAuthClientConfigError("invalid_input", "OAuth endpoint URL must use https.");
   }
+}
+
+/** Add connection prerequisites without rejecting unknown or reduced requested scopes. */
+export function resolveRequestedOAuthScopes(auth: OAuth2AuthDefinition, scopes?: string[]): string[] {
+  if (auth.authorizationRequestFields?.scope === false) return [];
+  return [...new Set([...(normalizeRequestedScopes(scopes) ?? auth.scopes), ...(auth.requiredScopes ?? [])])];
 }

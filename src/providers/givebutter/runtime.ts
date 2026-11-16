@@ -1,8 +1,9 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ApiKeyProviderContext, ProviderActionHandlers, ProviderActionSources } from "../provider-runtime.ts";
+import type { ApiKeyProviderContext, ProviderActionHandlers, ProviderActionSources } from "../provider-executors.ts";
 
 import { optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
-import { mapProviderActionSources, providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
+import { mapProviderActionSources } from "../provider-executors.ts";
+import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 
 export const givebutterApiBaseUrl = "https://api.givebutter.com/v1";
 const givebutterValidationPath = "/campaigns";
@@ -52,13 +53,10 @@ const givebutterActionSources: ProviderActionSources<"givebutter", GivebutterAct
 };
 
 export const givebutterActionHandlers: ProviderActionHandlers<"givebutter", GivebutterActionHandler> =
-  mapProviderActionSources(
-    "givebutter",
-    givebutterActionSources,
-    (_name, source): GivebutterActionHandler =>
-      source.kind === "list"
-        ? (input, context) => listGivebutterResource(input, context, source)
-        : (input, context) => getGivebutterResource(input, context, source),
+  mapProviderActionSources("givebutter", givebutterActionSources, (_name, source): GivebutterActionHandler =>
+    source.kind === "list"
+      ? (input, context) => listGivebutterResource(input, context, source)
+      : (input, context) => getGivebutterResource(input, context, source),
   );
 
 export async function validateGivebutterCredential(
@@ -82,7 +80,6 @@ export async function validateGivebutterCredential(
       accountId: "givebutter",
       displayName: "Givebutter API Key",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: givebutterApiBaseUrl,
       validationEndpoint: givebutterValidationPath,

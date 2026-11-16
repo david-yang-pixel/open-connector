@@ -1,14 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalString, requiredRecord, stringArray } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 
 const service = "currencyapi";
 const currencyapiApiBaseUrl = "https://api.currencyapi.com";
@@ -56,7 +52,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: String(accountId),
         displayName: "currencyapi API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: currencyapiApiBaseUrl,
         validationEndpoint: "/v3/status",
@@ -148,7 +143,7 @@ async function executeConvertCurrency(
 
 async function currencyapiRequest(
   input: { path: string; query?: Record<string, QueryValue> },
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
 ): Promise<Record<string, unknown>> {
   let response: Response;
   let payload: unknown;

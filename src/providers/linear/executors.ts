@@ -4,20 +4,27 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { IntegrationDefinition } from "../../triggers/common/integration.ts";
+import type { PollDefinition } from "../../triggers/common/poll.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean } from "../../core/cast.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
 import {
-  createProviderFetch,
   createProviderProxyUrl,
-  defineProviderExecutors,
   normalizeProviderProxyHeaders,
-  ProviderRequestError,
-  providerUserAgent,
   readProviderProxyErrorMessage,
   readProviderProxyResponse,
   toProviderProxyError,
+} from "../provider-proxy.ts";
+import {
+  createProviderFetch,
+  ProviderRequestError,
+  providerUserAgent,
+  withRetryAfterSeconds,
 } from "../provider-runtime.ts";
+import { linearIssueChanged } from "./trigger-on-issue-changed.ts";
+import { linearIssueEvent } from "./trigger-on-issue-event.ts";
 
 const linearApiBaseUrl = "https://api.linear.app";
 const linearGraphqlUrl = "https://api.linear.app/graphql";
@@ -931,8 +938,8 @@ export const linearActionHandlers: ProviderActionHandlers<"linear", LinearAction
     }>(
       context,
       `
-        query ListLinearIssues($after: String, $first: Int, $filter: IssueFilter) {
-          issues(after: $after, first: $first, includeArchived: false, filter: $filter) {
+        query ListLinearIssues($after: String, $first: Int, $filter: IssueFilter, $includeArchived: Boolean, $orderBy: PaginationOrderBy) {
+          issues(after: $after, first: $first, includeArchived: $includeArchived, filter: $filter, orderBy: $orderBy) {
             nodes {
               ${issueFields}
             }
@@ -945,7 +952,13 @@ export const linearActionHandlers: ProviderActionHandlers<"linear", LinearAction
       {
         after: getOptionalString(input.after),
         first: getOptionalNumber(input.first),
-        filter: buildIssuesFilter(getOptionalString(input.project_id), assigneeId),
+        filter: buildIssuesFilter(
+          getOptionalString(input.project_id),
+          assigneeId,
+          getOptionalString(input.updated_after),
+        ),
+        includeArchived: optionalBoolean(input.include_archived) ?? false,
+        orderBy: getOptionalString(input.order_by),
       },
     );
 
@@ -1364,7 +1377,11 @@ export const proxy: ProviderProxyExecutor = async (input, context) => {
     const response = await linearFetch(url, init);
     if (!response.ok) {
       const text = await readProviderProxyErrorMessage(response, "");
-      throw new ProviderRequestError(response.status, text || `linear request failed with HTTP ${response.status}`);
+      throw new ProviderRequestError(
+        response.status,
+        text || `linear request failed with HTTP ${response.status}`,
+        withRetryAfterSeconds(response),
+      );
     }
 
     return { ok: true, response: await readProviderProxyResponse(response) };
@@ -1378,7 +1395,6 @@ export const credentialValidators: CredentialValidators = {
     const viewer = await fetchLinearViewer(input.apiKey, fetcher);
     return {
       profile: mapLinearCredentialProfile(viewer),
-      grantedScopes: ["read", "write", "issues:create", "comments:create"],
       metadata: {
         viewer,
       },
@@ -1455,7 +1471,7 @@ async function linearGraphqlRequest<T>(
 
   const body = await readJson(response);
   if (!response.ok) {
-    throwLinearHttpError(response.status, body);
+    throwLinearHttpError(response.status, body, withRetryAfterSeconds(response));
   }
 
   return body as LinearGraphQLResponse<T>;
@@ -1931,10 +1947,15 @@ async function resolveAssigneeFilterId(context: LinearActionContext, assigneeId:
   return String(viewer.id);
 }
 
-function buildIssuesFilter(projectId: string | undefined, assigneeId: string | undefined) {
+function buildIssuesFilter(
+  projectId: string | undefined,
+  assigneeId: string | undefined,
+  updatedAfter: string | undefined,
+) {
   const filter = compactObject({
     project: projectId ? { id: { eq: projectId } } : undefined,
     assignee: assigneeId ? { id: { eq: assigneeId } } : undefined,
+    updatedAt: updatedAfter ? { gte: updatedAfter } : undefined,
   });
 
   return Object.keys(filter).length > 0 ? filter : undefined;
@@ -2342,7 +2363,7 @@ async function readJson(response: Response) {
   }
 }
 
-function throwLinearHttpError(status: number, body: Record<string, unknown>) {
+function throwLinearHttpError(status: number, body: Record<string, unknown>, details?: unknown) {
   const message = extractErrorMessage(body);
 
   if (status === 400) {
@@ -2352,7 +2373,7 @@ function throwLinearHttpError(status: number, body: Record<string, unknown>) {
     throw new ProviderRequestError(401, message);
   }
   if (status === 429) {
-    throw new ProviderRequestError(429, message);
+    throw new ProviderRequestError(429, message, details);
   }
 
   throw new ProviderRequestError(502, message, status >= 500 ? 500 : status);
@@ -2470,3 +2491,5 @@ function asOptionalObject(value: unknown) {
 
   return value as Record<string, unknown>;
 }
+
+export const triggers: readonly (IntegrationDefinition | PollDefinition)[] = [linearIssueChanged, linearIssueEvent];

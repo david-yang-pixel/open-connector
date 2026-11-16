@@ -1,14 +1,11 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderRequestContext } from "../provider-runtime.ts";
 
 import { compactObject, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 
 const service = "boxhero";
 const boxheroApiBaseUrl = "https://rest.boxhero-app.com";
@@ -94,7 +91,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: String(teamId),
         displayName: teamName,
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: boxheroApiBaseUrl,
         validationEndpoint: boxheroValidationPath,
@@ -109,7 +105,7 @@ async function requestBoxheroJson(input: {
   apiKey: string;
   path: string;
   query?: Record<string, unknown>;
-  context: Pick<ApiKeyProviderContext, "fetcher" | "signal">;
+  context: ProviderRequestContext;
   phase: BoxheroRequestPhase;
 }): Promise<unknown> {
   let response: Response;

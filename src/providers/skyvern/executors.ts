@@ -1,8 +1,9 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
-import { defineApiKeyProviderExecutors, defineProviderProxy } from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import { executeSkyvernAction, validateSkyvernCredential } from "./runtime.ts";
 
 const service = "skyvern";
@@ -23,7 +24,7 @@ export const executors: ProviderExecutors = defineApiKeyProviderExecutors(servic
 export const credentialValidators: CredentialValidators = {
   async apiKey(input, { fetcher }) {
     await validateSkyvernCredential(input.apiKey, fetcher);
-    return { profile: { displayName: "Skyvern API Key" }, grantedScopes: [], metadata: {} };
+    return { profile: { displayName: "Skyvern API Key" }, metadata: {} };
   },
 };
 

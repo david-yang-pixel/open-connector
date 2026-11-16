@@ -1,10 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ApiKeyProviderContext, ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ApiKeyProviderContext, ProviderActionHandlers } from "../provider-executors.ts";
 
 import { looseArray, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   providerInputError,
   ProviderRequestError,
   providerResponseError,
@@ -58,7 +58,6 @@ export const credentialValidators: CredentialValidators = {
     await request({ path: "/spaces", phase: "validate", apiKey: input.apiKey, fetcher, signal });
     return {
       profile: { displayName: "AITable API Token" },
-      grantedScopes: [],
       metadata: { apiBaseUrl: baseUrl, validationEndpoint: "/spaces" },
     };
   },

@@ -1,6 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
 import { providerUserAgent, ProviderRequestError, requiredInputString } from "../provider-runtime.ts";
@@ -13,7 +12,7 @@ type MailerliteActionHandler = (input: Record<string, unknown>, context: ApiKeyP
 
 interface MailerliteRequestOptions {
   path: string;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   mode: MailerliteMode;
   method?: string;
   query?: Record<string, string | number | undefined>;
@@ -196,7 +195,6 @@ export async function validateMailerliteCredential(
       accountId: "mailerlite",
       displayName: "MailerLite API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: mailerliteApiBaseUrl,
       validationEndpoint: validationPath,

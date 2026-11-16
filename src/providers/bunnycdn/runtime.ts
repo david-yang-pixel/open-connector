@@ -1,9 +1,16 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { compactObject, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
-import { isAbortLikeError, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
+import {
+  isAbortLikeError,
+  ProviderRequestError,
+  providerUserAgent,
+  providerInputError,
+  providerResponseError,
+} from "../provider-runtime.ts";
 
 export const bunnyApiBaseUrl = "https://api.bunny.net";
 const validationPath = "/pullzone";
@@ -60,7 +67,6 @@ export async function validateBunnycdnCredential(
       accountId: "bunnycdn:api_key",
       displayName: "Bunny API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       validationEndpoint: "/pullzone?page=1&perPage=1",
       firstPullZoneId: optionalInteger(firstPullZone?.Id),
@@ -235,7 +241,7 @@ function normalizePullZoneListPayload(payload: unknown): {
 function sanitizePullZone(value: unknown, message: string): Record<string, unknown> {
   const record = optionalRecord(value);
   if (!record) {
-    throw new ProviderRequestError(502, message);
+    throw providerResponseError(message);
   }
   return removeBunnyCertificateKeys(record) as Record<string, unknown>;
 }
@@ -267,7 +273,7 @@ function createBunnyError(response: Response, payload: unknown, phase: BunnyRequ
     `bunnycdn request failed with status ${response.status}`;
 
   if (phase === "validate" && (response.status === 400 || response.status === 401 || response.status === 403)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
 
   return new ProviderRequestError(response.status, message);

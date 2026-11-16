@@ -1,4 +1,4 @@
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 export const crossrefApiBaseUrl = "https://api.crossref.org/v1";
 const crossrefMaxResponseBytes = 4 * 1024 * 1024;
 const crossrefCursorPrefix = "crossref_cursor_v1.";
@@ -228,7 +228,7 @@ export const crossrefActionHandlers: ProviderActionHandlers<"crossref", Crossref
 export async function validateCrossrefCredential(
   input: Record<string, string>,
   fetcher: typeof fetch,
-): Promise<{ profile: { displayName: string }; grantedScopes: string[]; metadata: Record<string, unknown> }> {
+): Promise<{ profile: { displayName: string }; metadata: Record<string, unknown> }> {
   const apiKey = requiredString(input.apiKey, "apiKey", providerInputError);
   const { response } = await requestCrossrefJson({
     path: "/works",
@@ -244,7 +244,6 @@ export async function validateCrossrefCredential(
 
   return {
     profile: { displayName: "Crossref Metadata Plus" },
-    grantedScopes: [],
     metadata: compactObject({
       apiPool: apiPool ?? undefined,
       rateLimit: response.headers.get("x-rate-limit-limit") ?? undefined,
@@ -472,7 +471,7 @@ function createCrossrefError(status: number, payload: unknown, phase: "execute" 
     );
   }
   if (status === 401 && phase === "validate") {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (status === 401 && hasApiKey) {
     return new ProviderRequestError(401, message);
@@ -670,7 +669,7 @@ function normalizeDoi(value: string) {
 function readMessageObject(payload: Record<string, unknown>, message: string) {
   const record = optionalRecord(payload.message);
   if (!record) {
-    throw new ProviderRequestError(502, message);
+    throw providerResponseError(message);
   }
   return record;
 }
@@ -877,4 +876,5 @@ import {
   providerUserAgent,
   ProviderRequestError,
   runProviderRequest,
+  providerResponseError,
 } from "../provider-runtime.ts";

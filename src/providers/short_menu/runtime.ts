@@ -1,9 +1,9 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
-import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
+import { ProviderRequestError, providerUserAgent, providerInputError } from "../provider-runtime.ts";
 
 const shortMenuApiBaseUrl = "https://api.shortmenu.com";
 const shortMenuValidationPath = "/links";
@@ -63,9 +63,7 @@ export async function validateShortMenuCredential(
     profile: {
       accountId: "short-menu-api-key",
       displayName: "Short Menu API Key",
-      grantedScopes: [],
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: shortMenuApiBaseUrl,
       validationEndpoint: shortMenuValidationPath,
@@ -193,7 +191,7 @@ async function toShortMenuError(response: Response, phase: ShortMenuPhase, notFo
   }
 
   if (response.status === 404 && notFoundAsInvalidInput) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
 
   if (response.status === 400 && errorCode === "LINK_LIMIT_REACHED") {
@@ -201,7 +199,7 @@ async function toShortMenuError(response: Response, phase: ShortMenuPhase, notFo
   }
 
   if (response.status === 400) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
 
   return new ProviderRequestError(response.status || 502, message);

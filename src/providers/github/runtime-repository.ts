@@ -1,4 +1,4 @@
-import type { ProviderActionHandlerSubset } from "../provider-runtime.ts";
+import type { ProviderActionHandlerSubset } from "../provider-executors.ts";
 import type { GitHubActionHandler } from "./runtime-shared.ts";
 
 import { optionalBoolean, optionalInteger, optionalRawString, optionalString } from "../../core/cast.ts";
@@ -25,7 +25,10 @@ export const repositoryActionHandlers: ProviderActionHandlerSubset<"github", Git
     });
   },
 
-  list_my_repositories(input, { accessToken, fetcher }) {
+  list_my_repositories(input, { accessToken, fetcher, installation }) {
+    if (installation) {
+      return listInstallationRepositories(input, accessToken, fetcher);
+    }
     return listMyRepositories(input, accessToken, fetcher);
   },
 
@@ -350,6 +353,26 @@ async function listMyRepositories(input: Record<string, unknown>, accessToken: s
   });
 
   return { repositories };
+}
+
+async function listInstallationRepositories(
+  input: Record<string, unknown>,
+  accessToken: string,
+  fetcher: typeof fetch,
+) {
+  // `/installation/repositories` has no visibility or ordering parameters, so the user-listing fields are ignored.
+  // The page is not sorted locally: one sorted page would misrepresent the order across pages.
+  const page = await githubRequestJson<{ repositories?: Record<string, unknown>[] }>({
+    path: "/installation/repositories",
+    query: compactObject({
+      per_page: optionalInteger(input.perPage),
+      page: optionalInteger(input.page),
+    }),
+    accessToken,
+    fetcher,
+  });
+
+  return { repositories: page.repositories ?? [] };
 }
 
 async function deleteRepository(input: Record<string, unknown>, accessToken: string, fetcher: typeof fetch) {

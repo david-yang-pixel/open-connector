@@ -4,22 +4,22 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineProviderExecutors,
-  defineProviderProxy,
   isAbortLikeError,
   providerUserAgent,
   ProviderRequestError,
-  requireApiKeyCredential,
+  defaultProviderRequestTimeoutMs,
 } from "../provider-runtime.ts";
 
 const service = "push_by_techulus";
 const pushByTechulusApiBaseUrl = "https://push.techulus.com/api/v1";
-const pushByTechulusDefaultRequestTimeoutMs = 30_000;
 
 type PushByTechulusRequestPhase = "validate" | "execute";
 
@@ -75,7 +75,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "api_key",
         displayName: "Push by Techulus API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: pushByTechulusApiBaseUrl,
         validationMode: "local_non_empty_key",
@@ -120,7 +119,7 @@ async function requestPushByTechulusJson(input: {
   context: PushByTechulusActionContext;
   phase: PushByTechulusRequestPhase;
 }): Promise<unknown> {
-  const timeout = createProviderTimeout(input.context.signal, pushByTechulusDefaultRequestTimeoutMs);
+  const timeout = createProviderTimeout(input.context.signal);
   let response: Response;
   try {
     response = await input.context.fetcher(new URL(input.path, `${pushByTechulusApiBaseUrl}/`), {
@@ -138,7 +137,7 @@ async function requestPushByTechulusJson(input: {
     if (timeout.didTimeout()) {
       throw new ProviderRequestError(
         504,
-        `push_by_techulus request timed out after ${pushByTechulusDefaultRequestTimeoutMs}ms`,
+        `push_by_techulus request timed out after ${defaultProviderRequestTimeoutMs}ms`,
       );
     }
     if (isAbortLikeError(error)) {

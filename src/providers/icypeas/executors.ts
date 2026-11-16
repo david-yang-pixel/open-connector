@@ -4,29 +4,27 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { optionalRecord, optionalString } from "../../core/cast.ts";
 import { jsonObject } from "../../core/request.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   isAbortLikeError,
   providerUserAgent,
   ProviderRequestError,
   requiredInputString,
+  defaultProviderRequestTimeoutMs,
 } from "../provider-runtime.ts";
 
 const service = "icypeas";
 const icypeasApiBaseUrl = "https://app.icypeas.com/api";
-const icypeasRequestTimeoutMs = 30_000;
 const icypeasValidationPath = "/bulk-single-searchs/read";
 
 type IcypeasRequestMode = "validate" | "execute";
-type IcypeasActionContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
-type IcypeasActionHandler = (input: Record<string, unknown>, context: IcypeasActionContext) => Promise<unknown>;
+type IcypeasActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 
 export const icypeasActionHandlers: ProviderActionHandlers<"icypeas", IcypeasActionHandler> = {
   async get_subscription_information(input, context) {
@@ -167,7 +165,6 @@ async function validateIcypeasCredential(
       accountId: upstreamUserId ? `icypeas:${upstreamUserId}` : "icypeas-api-key",
       displayName: "Icypeas API Key",
     },
-    grantedScopes: [],
     metadata: jsonObject({
       apiBaseUrl: icypeasApiBaseUrl,
       validationEndpoint: icypeasValidationPath,
@@ -181,10 +178,10 @@ async function requestIcypeasJson(
     path: string;
     body: Record<string, unknown>;
   },
-  context: IcypeasActionContext,
+  context: ApiKeyProviderContext,
   mode: IcypeasRequestMode,
 ): Promise<unknown> {
-  const timeout = createProviderTimeout(context.signal, icypeasRequestTimeoutMs);
+  const timeout = createProviderTimeout(context.signal);
   try {
     const response = await context.fetcher(buildIcypeasUrl(input.path), {
       method: "POST",
@@ -211,7 +208,7 @@ async function requestIcypeasJson(
     if (timeout.didTimeout() || isAbortLikeError(error)) {
       throw new ProviderRequestError(
         504,
-        `Icypeas request timed out after ${Math.ceil(icypeasRequestTimeoutMs / 1000)} seconds`,
+        `Icypeas request timed out after ${Math.ceil(defaultProviderRequestTimeoutMs / 1000)} seconds`,
       );
     }
 

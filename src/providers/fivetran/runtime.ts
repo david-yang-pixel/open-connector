@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { Buffer } from "node:buffer";
@@ -109,7 +109,6 @@ export async function validateFivetranCredential(
       accountId,
       displayName: optionalString(data.account_name) ?? accountId,
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: fivetranApiBaseUrl,
       validationEndpoint: "/v1/account/info",

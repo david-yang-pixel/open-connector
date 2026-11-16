@@ -1,6 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -23,8 +22,7 @@ export const docsbotAiAdminBaseUrl = "https://docsbot.ai/api";
 export const docsbotAiApiBaseUrl = "https://api.docsbot.ai";
 
 type DocsbotAiPhase = "validate" | "execute";
-type DocsbotAiContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
-type DocsbotAiActionHandler = (input: Record<string, unknown>, context: DocsbotAiContext) => Promise<unknown>;
+type DocsbotAiActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 
 export const docsbotAiActionHandlers: ProviderActionHandlers<"docsbot_ai", DocsbotAiActionHandler> = {
   async list_teams(_input, context) {
@@ -137,7 +135,6 @@ export async function validateDocsbotAiCredential(
       accountId: firstTeam ? `team:${firstTeam.id}` : "api_key",
       displayName: firstTeam ? `DocsBot AI ${firstTeam.name}` : "DocsBot AI API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       adminBaseUrl: docsbotAiAdminBaseUrl,
       apiBaseUrl: docsbotAiApiBaseUrl,
@@ -153,7 +150,7 @@ async function requestDocsbotAiJson(input: {
   baseUrl: string;
   path: string;
   method: "GET" | "POST";
-  context: DocsbotAiContext;
+  context: ApiKeyProviderContext;
   body?: Record<string, unknown>;
   phase: DocsbotAiPhase;
 }): Promise<unknown> {

@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 import type { ProviderFetch } from "../provider-runtime.ts";
 
 import {
@@ -146,7 +146,6 @@ export async function validateWacheteCredential(
       accountId: `wachete:${userId}`,
       displayName: "Wachete Account",
     },
-    grantedScopes: [],
     metadata: { userId },
   };
 }

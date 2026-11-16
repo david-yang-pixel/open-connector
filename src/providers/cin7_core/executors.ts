@@ -4,22 +4,24 @@ import type {
   ProviderProxyExecutor,
   ProxyExecutionResult,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { compactObject, objectArray, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
 import {
-  createProviderFetch,
   createProviderProxyUrl,
-  defineProviderExecutors,
   normalizeProviderProxyHeaders,
-  ProviderRequestError,
-  providerUserAgent,
   readProviderProxyErrorMessage,
   readProviderProxyResponse,
-  requireApiKeyCredential,
-  runProviderRequest,
   toProviderProxyError,
+} from "../provider-proxy.ts";
+import {
+  createProviderFetch,
+  ProviderRequestError,
+  providerUserAgent,
+  runProviderRequest,
 } from "../provider-runtime.ts";
 
 const service = "cin7_core";
@@ -223,7 +225,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: context.accountId,
         displayName: company ?? "Cin7 Core Account",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: cin7CoreApiBaseUrl,
         validationEndpoint: cin7CoreValidationPath,

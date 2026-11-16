@@ -7,12 +7,10 @@ import type {
 import type { BigmlContext } from "./runtime.ts";
 
 import { optionalString } from "../../core/cast.ts";
-import {
-  defineProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  requireApiKeyCredential,
-} from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError } from "../provider-runtime.ts";
 import { bigmlActionHandlers, bigmlApiBaseUrl, validateBigmlCredential } from "./runtime.ts";
 
 const service = "bigml";

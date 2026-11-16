@@ -1,12 +1,9 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ApiKeyProviderContext, ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ApiKeyProviderContext, ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-executors.ts";
 
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 
 const service = "alt_text_generator_ai";
 const baseUrl = "https://alttextgeneratorai.com";
@@ -56,7 +53,6 @@ export const credentialValidators: CredentialValidators = {
     if (!input.apiKey.trim()) throw new ProviderRequestError(400, "Alt Text Generator AI API key is required");
     return {
       profile: { displayName: "Alt Text Generator AI API Key" },
-      grantedScopes: [],
       metadata: { apiBaseUrl: baseUrl, validationMode: "local_non_empty_key" },
     };
   },

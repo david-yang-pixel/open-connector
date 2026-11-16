@@ -1,6 +1,5 @@
 import type { CredentialValidationResult, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -10,13 +9,9 @@ import {
   optionalString,
   requiredString,
 } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-  requiredInputString,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent, requiredInputString } from "../provider-runtime.ts";
 
 const service = "rebrandly";
 const rebrandlyApiBaseUrl = "https://api.rebrandly.com/v1";
@@ -172,9 +167,7 @@ export async function validateRebrandlyCredential(
     profile: {
       accountId: accountId ?? "rebrandly-api-key",
       displayName: fullName ?? email ?? "Rebrandly API Key",
-      grantedScopes: [],
     },
-    grantedScopes: [],
     metadata: {
       validationEndpoint: validationPath,
       apiBaseUrl: rebrandlyApiBaseUrl,
@@ -195,7 +188,7 @@ export const credentialValidators = {
 };
 
 async function requestRebrandlyJson(input: {
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   path: string;
   mode: "validate" | "execute";
   method?: string;

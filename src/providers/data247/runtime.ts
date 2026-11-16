@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
 import {
@@ -118,7 +118,6 @@ export async function validateData247Credential(
       accountId: "api_key",
       displayName: "Data247 API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: data247ApiBaseUrl,
       validationApi: "B",

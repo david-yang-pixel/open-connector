@@ -1,7 +1,8 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
-import { defineApiKeyProviderExecutors, defineProviderProxy } from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import { reversecontactActionHandlers, reversecontactApiBaseUrl, validateReversecontactCredential } from "./runtime.ts";
 
 const handlers = {
@@ -25,6 +26,6 @@ export const proxy: ProviderProxyExecutor = defineProviderProxy({
 export const credentialValidators: CredentialValidators = {
   async apiKey(input, { fetcher }) {
     const result = await validateReversecontactCredential({ apiKey: input.apiKey }, fetcher);
-    return { profile: { displayName: result.accountLabel }, grantedScopes: [], metadata: result.providerMetadata };
+    return { profile: { displayName: result.accountLabel }, metadata: result.providerMetadata };
   },
 };

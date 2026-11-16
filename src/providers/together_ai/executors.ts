@@ -1,14 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "together_ai";
 const togetherAiApiBaseUrl = "https://api.together.ai/v1";
@@ -62,7 +58,6 @@ export const credentialValidators: CredentialValidators = {
       profile: {
         displayName: "Together AI API Key",
       },
-      grantedScopes: [],
       metadata: {
         validationEndpoint: "/v1/models",
         availableModels: payload.map((model) => model.id).filter((model): model is string => typeof model === "string"),
@@ -72,7 +67,7 @@ export const credentialValidators: CredentialValidators = {
 };
 
 async function togetherAiRequest(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   request: {
     method?: "GET" | "POST";
     path: string;

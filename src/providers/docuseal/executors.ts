@@ -8,13 +8,10 @@ import type { DocusealActionName } from "./actions.ts";
 
 import { compactObject, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
 import { encodePathSegment } from "../../core/request.ts";
-import {
-  defineProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-  requireApiKeyCredential,
-} from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "docuseal";
 const defaultBaseUrl = "https://api.docuseal.com";
@@ -73,7 +70,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "api_key",
         displayName: "DocuSeal API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl,
         region: apiBaseUrl === euBaseUrl ? "eu" : "com",

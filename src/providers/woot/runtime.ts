@@ -1,6 +1,7 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import {
   optionalBoolean,
@@ -18,6 +19,7 @@ import {
   providerUserAgent,
   ProviderRequestError,
   readProviderTextBody,
+  providerResponseError,
 } from "../provider-runtime.ts";
 
 export const wootApiBaseUrl = "https://developer.woot.com";
@@ -94,7 +96,6 @@ export async function validateWootCredential(
 
   return {
     profile: { accountId: "woot-api-key", displayName: "Woot API Key" },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: wootApiBaseUrl,
       validationEndpoint: "/feed/Featured?page=1",
@@ -144,9 +145,9 @@ async function readWootPayload(response: Response): Promise<unknown> {
 function createWootError(status: number, payload: unknown, phase: WootRequestPhase): ProviderRequestError {
   const message = extractWootErrorMessage(payload) ?? `Woot request failed with status ${status}`;
   if (status === 429) return new ProviderRequestError(429, message);
-  if (phase === "validate" && status >= 400 && status < 500) return new ProviderRequestError(400, message);
+  if (phase === "validate" && status >= 400 && status < 500) return providerInputError(message);
   if (status === 401 || status === 403) return new ProviderRequestError(status, message);
-  if (status === 400 || status === 404) return new ProviderRequestError(400, message);
+  if (status === 400 || status === 404) return providerInputError(message);
   return new ProviderRequestError(status >= 500 ? 502 : status, message);
 }
 
@@ -277,15 +278,15 @@ function normalizeNullablePriceRange(value: unknown): Record<string, unknown> | 
 
 function requireRecord(value: unknown, message: string): Record<string, unknown> {
   const record = optionalRecord(value);
-  if (!record) throw new ProviderRequestError(502, message);
+  if (!record) throw providerResponseError(message);
   return record;
 }
 
 function requireRecordArray(value: unknown, message: string): Array<Record<string, unknown>> {
-  if (!Array.isArray(value)) throw new ProviderRequestError(502, message);
+  if (!Array.isArray(value)) throw providerResponseError(message);
   return value.map((item) => {
     const record = optionalRecord(item);
-    if (!record) throw new ProviderRequestError(502, message);
+    if (!record) throw providerResponseError(message);
     return record;
   });
 }

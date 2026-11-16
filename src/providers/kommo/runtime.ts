@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -15,6 +15,7 @@ import {
   providerUserAgent,
   requiredResponseRecord,
   runProviderRequest,
+  providerInputError,
 } from "../provider-runtime.ts";
 
 const kommoCredentialHelpUrl = "https://developers.kommo.com/docs/long-lived-token";
@@ -208,7 +209,6 @@ export async function validateKommoCredential(
       accountId: accountId === undefined ? `kommo:${storedSubdomain}` : `kommo:${storedSubdomain}:account:${accountId}`,
       displayName: accountName || `Kommo ${storedSubdomain}`,
     },
-    grantedScopes: [],
     metadata: compactObject({
       subdomain: storedSubdomain,
       apiBaseUrl: buildKommoApiBaseUrl(storedSubdomain),
@@ -350,7 +350,7 @@ function createKommoError(status: number, payload: unknown, phase: KommoPhase): 
     return new ProviderRequestError(429, message);
   }
   if (phase === "validate" && status >= 400 && status < 500) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (phase === "execute" && (status === 401 || status === 403)) {
     return new ProviderRequestError(status, message);

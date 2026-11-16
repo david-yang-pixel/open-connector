@@ -275,6 +275,8 @@ export function AccessPage(props: AccessPageProps): ReactNode {
         blockedActions: token.blockedActions,
         allowedProxies: [],
         blockedProxies: [],
+        allowedTriggers: token.allowedTriggers ?? [],
+        blockedTriggers: [],
       }),
     );
     setEditConnections(connections);
@@ -766,12 +768,12 @@ function RuntimePolicyEditor(props: RuntimePolicyDialogProps): ReactNode {
 
 function PolicyRuleReadout(props: { rules: PolicyRules }): ReactNode {
   const t = useTranslate();
-  const fields: Array<[keyof PolicyRules, string]> = [
+  const fields = [
     ["allowedActions", t("access.policy.allowedActions")],
     ["blockedActions", t("access.policy.blockedActions")],
     ["allowedProxies", t("access.policy.allowedProxies")],
     ["blockedProxies", t("access.policy.blockedProxies")],
-  ];
+  ] as const;
   return (
     <div className="policy-rule-readout">
       {fields.map(([field, label]) => (
@@ -1166,7 +1168,7 @@ export function connectionPermissionsFromDraft(draft: ConnectionGrantDraft): Con
 }
 
 export function runtimeTokenPolicyBody(
-  rules: Pick<PolicyRules, "allowedActions" | "blockedActions" | "allowedProxies">,
+  rules: Pick<PolicyRules, "allowedActions" | "blockedActions" | "allowedProxies" | "allowedTriggers">,
   connections: ConnectionGrantDraft,
   options: ConnectionGrantOption[] = [],
 ): {
@@ -1175,6 +1177,7 @@ export function runtimeTokenPolicyBody(
   allowedProxies: string[];
   allowedConnections: string[];
   connectionPermissions: ConnectionPermissionGrant[];
+  allowedTriggers: string[];
 } {
   return {
     allowedActions: connectionScopedAllowedActions(rules.allowedActions, connections, options),
@@ -1182,6 +1185,7 @@ export function runtimeTokenPolicyBody(
     allowedProxies: connectionScopedAllowedProxies(rules.allowedProxies, connections, options),
     allowedConnections: allowedConnectionsFromDraft(connections),
     connectionPermissions: connectionPermissionsFromDraft(connections),
+    allowedTriggers: rules.allowedTriggers ?? [],
   };
 }
 

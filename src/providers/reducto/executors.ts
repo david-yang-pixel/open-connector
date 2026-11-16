@@ -1,15 +1,11 @@
 import type { CredentialValidationResult, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderRequestContext } from "../provider-runtime.ts";
 
 import { compactObject, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  isAbortLikeError,
-  providerUserAgent,
-  ProviderRequestError,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { isAbortLikeError, providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 
 const service = "reducto";
 const reductoApiBaseUrl = "https://platform.reducto.ai";
@@ -62,9 +58,7 @@ export const credentialValidators = {
       profile: {
         accountId: "reducto-api-key",
         displayName: "Reducto API Key",
-        grantedScopes: [],
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: reductoApiBaseUrl,
         validationEndpoint: "/jobs",
@@ -123,7 +117,7 @@ async function executeSplitDocument(input: Record<string, unknown>, context: Api
 
 async function reductoGetJson(
   path: string,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: ReductoPhase,
   params: Record<string, string> = {},
 ): Promise<unknown> {
@@ -166,7 +160,7 @@ async function reductoRequestJson(
   url: URL,
   init: RequestInit,
   phase: ReductoPhase,
-  context: Pick<ApiKeyProviderContext, "fetcher" | "signal">,
+  context: ProviderRequestContext,
 ): Promise<unknown> {
   const timeoutController = new AbortController();
   const timeout = setTimeout(() => timeoutController.abort(), reductoDefaultRequestTimeoutMs);

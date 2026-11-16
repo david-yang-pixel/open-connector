@@ -6,12 +6,9 @@ import type {
 } from "../../core/types.ts";
 import type { FreshteamActionContext } from "./runtime.ts";
 
-import {
-  credentialProviderProxyBaseUrl,
-  defineProviderExecutors,
-  defineProviderProxy,
-  requireApiKeyCredential,
-} from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { credentialProviderProxyBaseUrl, defineProviderProxy } from "../provider-proxy.ts";
 import { freshteamActionHandlers, resolveFreshteamBaseUrl, validateFreshteamCredential } from "./runtime.ts";
 
 const service = "freshteam";

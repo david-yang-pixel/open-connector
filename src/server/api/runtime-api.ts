@@ -1,14 +1,21 @@
+import type { CatalogLocale } from "../../catalog-localization/localization.ts";
 import type { RuntimeActionDefinition, RuntimeProviderDefinition } from "../../catalog-store.ts";
-import type { ConnectionError, ConnectionSummary, ManagedConnectionSummary } from "../../connection-service.ts";
+import type { ConnectionError } from "../../connection-error.ts";
+import type { ConnectionSummary, ManagedConnectionSummary } from "../../connection-service.ts";
+import type { ExecutionFailureKind } from "../../core/execution-error.ts";
 import type { ProviderAuthSetup } from "../../core/provider-setup.ts";
 import type { ExecutionResult, ProviderScenario } from "../../core/types.ts";
 import type { OAuthClientConfigSummary } from "../../oauth/oauth-client-config-service.ts";
+import type { TriggerPermission } from "../../triggers/metadata.ts";
+import type { ProxyRunFailure } from "../proxy/proxy-runner.ts";
 import type { Context } from "hono";
 
-import { optionalInteger, optionalRecord, requiredRecord } from "../../core/cast.ts";
+import { catalogSetupLabels } from "../../catalog-localization/localization.ts";
+import { optionalInteger, optionalString, optionalRecord, requiredRecord } from "../../core/cast.ts";
+import { connectionExecutionError } from "../../core/execution-error.ts";
 import { describeProviderAuth } from "../../core/provider-setup.ts";
 
-type RuntimeStatus = 400 | 401 | 402 | 403 | 404 | 409 | 413 | 429 | 500 | 501;
+export type RuntimeStatus = 400 | 401 | 402 | 403 | 404 | 409 | 413 | 429 | 500 | 501 | 502 | 503 | 504;
 
 export type RuntimeResponseMeta = Record<string, unknown>;
 
@@ -67,6 +74,7 @@ export interface RuntimeActionMetadata {
 
 export interface RuntimeConnectedApp {
   id: string;
+  providerAccountId: string;
   service: string;
   status: "active" | "disconnected";
   alias: string;
@@ -77,6 +85,7 @@ export interface RuntimeConnectedApp {
   scopes: string[];
   discoveredToolCount?: number;
   marketplace?: ConnectionSummary["marketplace"];
+  notion?: ConnectionSummary["notion"];
 }
 
 export interface RuntimeFailureInput {
@@ -90,6 +99,9 @@ export interface RuntimeFailureInput {
 export interface RuntimeActionResultInput {
   actionId: string;
   executionId: string;
+  remoteExecutionId?: string;
+  failureKind?: ExecutionFailureKind;
+  retryAfter?: string;
   auditPersisted: boolean;
   result: ExecutionResult;
 }
@@ -99,7 +111,9 @@ export type RuntimeActionHttpResult =
   | { status: 200; body: RuntimeSuccessEnvelope<unknown> }
   | { status: RuntimeStatus; body: RuntimeFailureEnvelope };
 
-export function serializeRuntimeProvider(provider: RuntimeProviderDefinition): RuntimeProviderMetadata {
+export function serializeRuntimeProvider(
+  provider: RuntimeProviderDefinition & { categoryDisplayNames?: Record<string, string> },
+): RuntimeProviderMetadata {
   return {
     service: provider.service,
     displayName: provider.displayName,
@@ -107,7 +121,7 @@ export function serializeRuntimeProvider(provider: RuntimeProviderDefinition): R
     homepageUrl: provider.homepageUrl ?? null,
     categories: provider.categories.map((category) => ({
       id: category,
-      displayName: category,
+      displayName: provider.categoryDisplayNames?.[category] ?? category,
     })),
     scenario: provider.scenario,
     authTypes: provider.authTypes,
@@ -140,6 +154,7 @@ export function serializeRuntimeAction(action: RuntimeActionDefinition): Runtime
 export function serializeRuntimeConnectedApp(connection: ConnectionSummary): RuntimeConnectedApp {
   return {
     id: connection.id,
+    providerAccountId: connection.profile.accountId,
     service: connection.service,
     status: connection.configured ? "active" : "disconnected",
     alias: connection.connectionName,
@@ -150,6 +165,7 @@ export function serializeRuntimeConnectedApp(connection: ConnectionSummary): Run
     scopes: connection.profile.grantedScopes,
     discoveredToolCount: connection.discoveredToolCount,
     marketplace: connection.marketplace,
+    notion: connection.notion,
   };
 }
 
@@ -203,7 +219,7 @@ export function serializeRuntimeFailure(input: RuntimeFailureInput): RuntimeActi
 /** Build the persistable HTTP response for a completed action execution. */
 export function serializeRuntimeActionResult(input: RuntimeActionResultInput): RuntimeActionHttpResult {
   const { actionId, executionId, auditPersisted, result } = input;
-  const meta = { executionId, actionId, auditPersisted };
+  const meta = { executionId, actionId, auditPersisted, remoteExecutionId: input.remoteExecutionId };
   if (result.ok) {
     return {
       status: 200,
@@ -217,10 +233,12 @@ export function serializeRuntimeActionResult(input: RuntimeActionResultInput): R
   }
 
   return serializeRuntimeFailure({
-    status: mapExecutionErrorStatus(result.error?.code, result.error?.details),
+    status: input.failureKind
+      ? executionFailureStatus(input.failureKind)
+      : mapExecutionErrorStatus(result.error?.code, result.error?.details),
     errorCode: result.error?.code ?? "provider_error",
     message: result.error?.message ?? "Action execution failed.",
-    data: result.error?.details ?? null,
+    data: input.retryAfter ? { details: { retryAfter: input.retryAfter } } : (result.error?.details ?? null),
     meta,
   });
 }
@@ -247,36 +265,42 @@ export function parseRuntimeActionHttpResult(value: unknown): RuntimeActionHttpR
   throw invalid("status and body envelope do not match");
 }
 
-/** Write a newly serialized or replayed action response. */
+/**
+ * Write a newly serialized or replayed action response; runtime failures,
+ * including proxy failures, go through here as well. A 429 whose provider
+ * details carry `retryAfterSeconds` also answers with the `Retry-After`
+ * header, so HTTP callers pace on the provider's own hint; the body keeps it,
+ * which is what an idempotent replay re-emits the header from.
+ */
 export function writeRuntimeActionHttpResult(context: Context, result: RuntimeActionHttpResult): Response {
+  const retryAfter = optionalString(optionalRecord(optionalRecord(result.body.data)?.details)?.retryAfter);
+  if (result.status === 429 && retryAfter && (/^\d+$/.test(retryAfter) || Number.isFinite(Date.parse(retryAfter))))
+    context.header("Retry-After", retryAfter);
+  const retryAfterSeconds = readRuntimeRetryAfterSeconds(result);
+  if (retryAfterSeconds !== undefined) {
+    context.header("Retry-After", String(retryAfterSeconds));
+  }
   return context.json(result.body, result.status);
 }
 
-export function mapConnectionErrorStatus(error: ConnectionError): 400 | 404 | 409 {
-  if (error.code === "unknown_service" || error.code === "connection_not_found") {
-    return 404;
+function readRuntimeRetryAfterSeconds(result: RuntimeActionHttpResult): number | undefined {
+  if (result.status !== 429) {
+    return undefined;
   }
-  if (error.code === "oauth_token_expired" || error.code === "oauth_refresh_unavailable") {
-    return 409;
-  }
-  return 400;
+  const seconds = optionalInteger(optionalRecord(optionalRecord(result.body.data)?.details)?.retryAfterSeconds);
+  // A safe integer is what keeps String() in plain delay-seconds digits: 1e21 would print as "1e+21".
+  return seconds !== undefined && Number.isSafeInteger(seconds) && seconds >= 0 ? seconds : undefined;
 }
 
-/**
- * The error codes a provider may put in `ProviderRequestError`'s `code`
- * argument. Every other code `mapExecutionErrorStatus` knows is raised by the
- * connection, policy or dispatch layer, and a provider that borrowed one would
- * answer with a status that has nothing to do with what its upstream said.
- */
-export const providerErrorCodes: readonly string[] = [
-  "authorization_failed",
-  "insufficient_credit",
-  "invalid_input",
-  "provider_error",
-  "rate_limited",
-];
+export function mapConnectionErrorStatus(error: ConnectionError): RuntimeStatus {
+  return executionFailureStatus(connectionExecutionError(error).kind);
+}
 
-function mapExecutionErrorStatus(code: string | undefined, details?: unknown): RuntimeStatus {
+function mapExecutionErrorStatus(
+  code: string | undefined,
+  details?: unknown,
+  operation: "action" | "proxy" = "action",
+): RuntimeStatus {
   const upstreamStatus = optionalInteger(optionalRecord(details)?.status);
   if (upstreamStatus === 413) {
     return 413;
@@ -290,10 +314,29 @@ function mapExecutionErrorStatus(code: string | undefined, details?: unknown): R
   if (code === "invalid_input" && upstreamStatus === 409) {
     return 409;
   }
+  // Proxy executor error envelopes historically use 400 for unclassified failures.
+  // Runtime failures carry an explicit kind and do not enter this mapping.
+  if (
+    operation === "proxy" &&
+    ![
+      "insufficient_credit",
+      "invalid_input",
+      "authorization_failed",
+      "connection_not_found",
+      "rate_limited",
+      "provider_error",
+    ].includes(code ?? "")
+  )
+    return 400;
   if (code === "internal_error" || code === "provider_error" || code === "executor_unavailable") {
     return 500;
   }
-  if (code === "oauth_token_expired" || code === "oauth_refresh_unavailable") {
+  if (
+    code === "oauth_token_expired" ||
+    code === "oauth_reauth_required" ||
+    code === "oauth_refresh_unavailable" ||
+    code === "oauth_token_refresh_failed"
+  ) {
     return 409;
   }
   if (code === "connection_not_found" || code === "unknown_service" || code === "unknown_action") {
@@ -323,6 +366,9 @@ function isRuntimeStatus(value: unknown): value is RuntimeStatus {
     value === 409 ||
     value === 413 ||
     value === 429 ||
+    value === 502 ||
+    value === 503 ||
+    value === 504 ||
     value === 500 ||
     value === 501
   );
@@ -371,17 +417,22 @@ export interface RuntimeProviderSetup {
 interface RuntimeOAuthClientSetup {
   configured: boolean;
   customClientAvailable: boolean;
+  /** Redirect URI to register with the provider: the configured override, else the runtime callback. */
   expectedRedirectUri: string;
   missingFields: string[];
 }
 
 export function serializeRuntimeProviderSetup(
   provider: RuntimeProviderDefinition,
-  oauth?: OAuthClientConfigSummary,
+  oauth?: Pick<
+    OAuthClientConfigSummary,
+    "configured" | "customClientAvailable" | "expectedRedirectUri" | "missingFields"
+  >,
+  locale: CatalogLocale = "en",
 ): RuntimeProviderSetup {
   return {
     service: provider.service,
-    auth: provider.auth.map(describeProviderAuth),
+    auth: provider.auth.map((auth) => describeProviderAuth(auth, catalogSetupLabels[locale])),
     oauthClient: oauth
       ? {
           configured: oauth.configured,
@@ -390,5 +441,45 @@ export function serializeRuntimeProviderSetup(
           missingFields: oauth.missingFields,
         }
       : undefined,
+  };
+}
+
+export function serializeRuntimeTriggerPermissions(
+  provider: RuntimeProviderDefinition,
+): (TriggerPermission & { requiredScopes: readonly string[] })[] {
+  return (provider.triggerPermissions ?? []).map((permission) => ({
+    ...permission,
+    requiredScopes: permission.providerPermissions,
+  }));
+}
+
+export function executionFailureStatus(kind: ExecutionFailureKind): RuntimeStatus {
+  const statuses: Record<ExecutionFailureKind, RuntimeStatus> = {
+    invalid_input: 400,
+    unauthorized: 401,
+    payment_required: 402,
+    forbidden: 403,
+    not_found: 404,
+    conflict: 409,
+    too_large: 413,
+    rate_limited: 429,
+    internal: 500,
+    unsupported: 501,
+    upstream: 502,
+    unavailable: 503,
+    timeout: 504,
+  };
+  return statuses[kind];
+}
+
+export function serializeProxyFailure(failure: ProxyRunFailure): RuntimeFailureInput {
+  return {
+    status: failure.kind
+      ? executionFailureStatus(failure.kind)
+      : mapExecutionErrorStatus(failure.errorCode, failure.data, "proxy"),
+    errorCode: failure.errorCode,
+    message: failure.message,
+    data: failure.data,
+    meta: failure.meta,
   };
 }

@@ -1,6 +1,8 @@
 import type { CredentialValidators, ExecutionContext, ProviderExecutors } from "../../core/types.ts";
 
-import { createProviderFetch, defineProviderExecutors, requireCustomCredential } from "../provider-runtime.ts";
+import { requireCustomCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { createProviderFetch } from "../provider-runtime.ts";
 import {
   createDingTalkMcpContext,
   dingTalkMcpActionHandlers,

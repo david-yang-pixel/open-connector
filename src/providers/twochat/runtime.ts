@@ -1,5 +1,6 @@
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { compactObject } from "../../core/cast.ts";
 import { createProviderTimeout, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
@@ -103,7 +104,6 @@ export async function validateTwochatCredential(
   profile: {
     accountId: string;
     displayName: string;
-    grantedScopes: string[];
   };
   metadata: Record<string, unknown>;
 }> {
@@ -113,7 +113,6 @@ export async function validateTwochatCredential(
     profile: {
       accountId: `twochat:account:${info.account.uuid}`,
       displayName: info.account.name,
-      grantedScopes: [],
     },
     metadata: compactObject({
       apiBaseUrl: twochatApiBaseUrl,

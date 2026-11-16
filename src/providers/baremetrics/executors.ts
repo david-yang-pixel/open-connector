@@ -1,6 +1,5 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -10,14 +9,10 @@ import {
   recordOrEmpty,
   requiredString,
 } from "../../core/cast.ts";
-import {
-  defineProviderExecutors,
-  defineProviderProxy,
-  providerInputError,
-  ProviderRequestError,
-  providerUserAgent,
-  requireApiKeyCredential,
-} from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerInputError, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "baremetrics";
 const baremetricsApiBaseUrl = "https://api.baremetrics.com";
@@ -110,7 +105,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: sourceId,
         displayName: provider ? `Baremetrics ${provider}` : "Baremetrics API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: baremetricsApiBaseUrl,
         validationEndpoint: "/v1/sources",
@@ -327,7 +321,7 @@ function normalizeSubscriptionPayload(payload: unknown): Record<string, unknown>
 async function baremetricsGetJson(
   path: string,
   query: Record<string, unknown>,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: BaremetricsPhase,
 ): Promise<unknown> {
   const url = new URL(path, baremetricsApiBaseUrl);
@@ -363,7 +357,7 @@ async function baremetricsSendJson(
 async function baremetricsRequestJson(
   url: URL,
   init: RequestInit,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: BaremetricsPhase,
 ): Promise<unknown> {
   let response: Response;

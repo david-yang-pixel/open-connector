@@ -2,12 +2,10 @@ import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } f
 import type { AdyntelContext } from "./runtime.ts";
 
 import { optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineProviderExecutors,
-  defineProviderProxy,
-  providerInputError,
-  requireApiKeyCredential,
-} from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerInputError } from "../provider-runtime.ts";
 import { adyntelActionHandlers, adyntelApiBaseUrl, requireAdyntelEmail, validateAdyntelCredential } from "./runtime.ts";
 
 const service = "adyntel";

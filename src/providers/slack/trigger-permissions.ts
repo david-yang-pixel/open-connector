@@ -1,0 +1,14 @@
+import type { TriggerPermission } from "../../triggers/metadata.ts";
+
+export const triggerPermissions: readonly TriggerPermission[] = [
+  {
+    id: "slack.on_message_posted",
+    name: "New Channel Message",
+    description:
+      "Reads conversation history to detect new messages in the selected channel. Does not send or modify messages.",
+    providerScopeAlternatives: ["channels:history", "groups:history", "im:history", "mpim:history"],
+    providerPermissions: [],
+    instructions:
+      "Requires the history scope for the selected conversation type: channels:history, groups:history, im:history or mpim:history. Private conversations also require membership.",
+  },
+];

@@ -1,6 +1,7 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ProviderFetch, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 import type { OnePasswordEventsActionName } from "./actions.ts";
 
 import { createHash } from "node:crypto";
@@ -232,7 +233,7 @@ function createOnePasswordEventsError(
     extractOnePasswordEventsErrorMessage(payload) ?? `1Password Events request failed with status ${status}`;
 
   if (phase === "validate" && (status === 401 || status === 403)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
 
   if (phase === "execute" && (status === 401 || status === 403)) {

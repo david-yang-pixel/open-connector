@@ -1,9 +1,14 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { optionalInteger, optionalString, recordOrEmpty } from "../../core/cast.ts";
-import { createProviderTimeout, providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
+import {
+  createProviderTimeout,
+  providerUserAgent,
+  ProviderRequestError,
+  providerInputError,
+} from "../provider-runtime.ts";
 
 export const permitIoApiBaseUrl = "https://api.permit.io";
 
@@ -162,7 +167,6 @@ export async function validatePermitIoCredential(
           ? `Permit.io project ${projectId}`
           : `Permit.io organization ${organizationId}`,
     },
-    grantedScopes: [],
     metadata: {
       organizationId,
       projectId,
@@ -273,7 +277,7 @@ function permitIoError(response: Response, payload: unknown, phase: "validate" |
     return new ProviderRequestError(phase === "validate" ? 400 : response.status, message);
   }
   if (response.status === 404 || response.status === 422) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (response.status === 429) {
     return new ProviderRequestError(429, message);

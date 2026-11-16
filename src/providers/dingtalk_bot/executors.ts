@@ -5,24 +5,26 @@ import type {
   ProviderProxyExecutor,
   ProxyExecutionResult,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { createHash, createHmac } from "node:crypto";
 import { compactObject, objectArray, optionalNumber, optionalString, requiredString } from "../../core/cast.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import {
+  createProviderProxyUrl,
+  normalizeProviderProxyHeaders,
+  readProviderProxyErrorMessage,
+  readProviderProxyResponse,
+  toProviderProxyError,
+} from "../provider-proxy.ts";
 import {
   createProviderFetch,
-  createProviderProxyUrl,
   createProviderTimeout,
-  defineProviderExecutors,
   isAbortLikeError,
-  normalizeProviderProxyHeaders,
   providerInputError,
   ProviderRequestError,
   providerUserAgent,
-  readProviderProxyErrorMessage,
-  readProviderProxyResponse,
-  requireApiKeyCredential,
-  toProviderProxyError,
 } from "../provider-runtime.ts";
 
 const service = "dingtalk_bot";
@@ -184,7 +186,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: buildProviderAccountId(accessToken),
         displayName: `DingTalk Bot ${accessToken.slice(-6) || "******"}`,
       },
-      grantedScopes: [],
       metadata: compactObject({
         webhookHost: new URL(buildWebhookUrl(accessToken)).host,
         validationMode: "invalid_msgtype_probe",
@@ -318,7 +319,7 @@ function normalizeDingtalkBotError(
     return new ProviderRequestError(phase === "validate" ? 400 : 401, message);
   }
   if (errcode === 310000 || errcode === 40035 || errcode === 400105) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   return new ProviderRequestError(result.status >= 400 ? result.status : 500, message);
 }

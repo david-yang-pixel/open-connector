@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -154,7 +154,6 @@ export async function validateAmaraCredential(
       accountId: "amara_api_key",
       displayName: "Amara API Key",
     },
-    grantedScopes: [],
     metadata: {
       validationEndpoint: "/languages/",
       languageCount: Object.keys(payload.languages ?? {}).length,

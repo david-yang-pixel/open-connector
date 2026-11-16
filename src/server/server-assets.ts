@@ -3,6 +3,7 @@ import type { ConnectorAssets } from "./connector-runtime.ts";
 import { access } from "node:fs/promises";
 import { join } from "node:path";
 import { catalogIndexFileName } from "../catalog-index.ts";
+import { isStandaloneExecutable } from "./connector-assets.ts";
 
 /**
  * Locations of the assets that are generated or built outside `src` and read
@@ -49,11 +50,6 @@ export async function resolveServerAssets(): Promise<ServerAssets> {
     staticRoot: await resolveStaticRoot(join(cwd, "dist/web")),
     embedded: false,
   };
-}
-
-/** Only Bun defines the `Bun` global; Node and workerd never do, so the read is safe everywhere. */
-export function isStandaloneExecutable(): boolean {
-  return (globalThis as { Bun?: { isStandaloneExecutable?: boolean } }).Bun?.isStandaloneExecutable === true;
 }
 
 async function resolveStaticRoot(root: string): Promise<string | undefined> {

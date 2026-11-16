@@ -4,8 +4,8 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderRequestContext } from "../provider-runtime.ts";
 
 import {
   compactObject,
@@ -16,9 +16,9 @@ import {
   optionalString,
   requiredRecord,
 } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   providerUserAgent,
   ProviderRequestError,
   readProviderJsonBody,
@@ -36,7 +36,7 @@ interface GptzeroJsonRequestOptions {
   apiKey: string;
   document: unknown;
   version?: unknown;
-  context: Pick<ApiKeyProviderContext, "fetcher" | "signal">;
+  context: ProviderRequestContext;
   phase: GptzeroRequestPhase;
 }
 
@@ -80,7 +80,6 @@ export const credentialValidators: CredentialValidators = {
       profile: {
         displayName: "GPTZero API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: gptzeroApiBaseUrl,
         validationEndpoint: gptzeroPredictTextPath,

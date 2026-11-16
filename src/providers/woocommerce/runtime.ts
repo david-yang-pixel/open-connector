@@ -1,6 +1,6 @@
 import type { CredentialValidationResult, TransitFileWriter } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
 import {
@@ -14,12 +14,12 @@ import {
   optionalString,
 } from "../../core/cast.ts";
 import { assertPublicHttpUrl, readBoundedResponseBytes } from "../../core/request.ts";
+import { readTransitFileInput } from "../provider-files.ts";
 import {
   providerFetch,
   providerInputError,
   providerUserAgent,
   ProviderRequestError,
-  readTransitFileInput,
   requiredInputString,
 } from "../provider-runtime.ts";
 
@@ -119,7 +119,6 @@ export async function validateWooCommerceCredential(
       accountId: context.storeUrl,
       displayName: new URL(context.storeUrl).host,
     },
-    grantedScopes: [],
     metadata: {
       storeUrl: context.storeUrl,
       apiBaseUrl: context.apiBaseUrl,
@@ -808,7 +807,7 @@ function mapWooCommerceError(status: number, data: unknown, phase: "validate" | 
   const payload = optionalRecord(data) ?? {};
   const message = optionalString(payload.message) ?? `WooCommerce API request failed with status ${status}`;
   if (phase === "validate" || status === 400 || status === 401 || status === 403 || status === 404) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (status === 429) return new ProviderRequestError(429, message);
   return new ProviderRequestError(status || 500, message);

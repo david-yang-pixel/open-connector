@@ -1,9 +1,9 @@
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 import type { DumplingaiActionName } from "./actions.ts";
 
 import { optionalRecord, optionalString } from "../../core/cast.ts";
-import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
+import { ProviderRequestError, providerUserAgent, providerInputError } from "../provider-runtime.ts";
 
 export const dumplingaiApiBaseUrl = "https://app.dumplingai.com";
 const balancePath = "/api/v2/balance";
@@ -46,9 +46,9 @@ export const dumplingaiActionHandlers: ProviderActionHandlers<
 export async function validateDumplingaiCredential(
   apiKey: string,
   fetcher: typeof fetch,
-): Promise<{ profile: { displayName: string }; grantedScopes: string[] }> {
+): Promise<{ profile: { displayName: string } }> {
   await requestJson("GET", balancePath, {}, apiKey, fetcher, "validate");
-  return { profile: { displayName: "DumplingAI API Key" }, grantedScopes: [] };
+  return { profile: { displayName: "DumplingAI API Key" } };
 }
 
 async function requestJson(
@@ -94,6 +94,6 @@ function mapError(status: number, payload: unknown, phase: Phase): ProviderReque
     `DumplingAI request failed with status ${status}`;
   if (status === 401 || status === 403) return new ProviderRequestError(phase === "validate" ? 400 : status, message);
   if (status === 429) return new ProviderRequestError(429, message);
-  if (status === 400 || status === 404 || status === 422) return new ProviderRequestError(400, message);
+  if (status === 400 || status === 404 || status === 422) return providerInputError(message);
   return new ProviderRequestError(status || 502, message);
 }

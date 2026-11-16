@@ -1,5 +1,5 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { isIP } from "node:net";
 import {
@@ -11,13 +11,9 @@ import {
   optionalString,
 } from "../../core/cast.ts";
 import { queryParams } from "../../core/request.ts";
-import {
-  defineBearerProviderExecutors,
-  defineProviderProxy,
-  providerInputError,
-  providerUserAgent,
-  ProviderRequestError,
-} from "../provider-runtime.ts";
+import { defineBearerProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerInputError, providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 
 const service = "convex";
 const apiBaseUrl = "https://api.convex.dev/v1";
@@ -31,22 +27,6 @@ export const proxy: ProviderProxyExecutor = defineProviderProxy({
     if (!headers.has("accept")) headers.set("accept", "application/json");
   },
 });
-const grantedScopes = [
-  "convex.token.read",
-  "convex.projects.read",
-  "convex.projects.write",
-  "convex.deployments.read",
-  "convex.deployments.write",
-  "convex.deploy_keys.read",
-  "convex.deploy_keys.write",
-  "convex.custom_domains.read",
-  "convex.custom_domains.write",
-  "convex.functions.execute",
-  "convex.http.query",
-  "convex.http.mutation",
-  "convex.http.action",
-  "convex.http.run",
-];
 
 interface ConvexContext {
   accessToken: string;
@@ -153,7 +133,6 @@ async function validateToken(accessToken: string, fetcher: typeof fetch, signal?
           ? `Convex Project ${projectId}`
           : `Convex Team ${teamId ?? "unknown"}`),
     },
-    grantedScopes,
     metadata: {
       tokenType: type,
       teamId,

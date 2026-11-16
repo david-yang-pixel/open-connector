@@ -1,12 +1,8 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
 
-import { defineBearerProviderExecutors, defineProviderProxy } from "../provider-runtime.ts";
-import {
-  supabaseActionHandlers,
-  supabaseApiBaseUrl,
-  validateSupabaseCredential,
-  validateSupabaseOAuthCredential,
-} from "./runtime.ts";
+import { defineBearerProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { supabaseActionHandlers, supabaseApiBaseUrl, validateSupabaseCredential } from "./runtime.ts";
 
 const service = "supabase";
 
@@ -27,6 +23,6 @@ export const credentialValidators: CredentialValidators = {
     return validateSupabaseCredential(input.apiKey, fetcher, signal);
   },
   async oauth2(input, { fetcher, signal }) {
-    return validateSupabaseOAuthCredential(input.accessToken, fetcher, signal);
+    return validateSupabaseCredential(input.accessToken, fetcher, signal);
   },
 };

@@ -5,17 +5,13 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { optionalInteger, optionalRecord, optionalString, requiredRecord, requiredString } from "../../core/cast.ts";
-import {
-  defineProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-  requireApiKeyCredential,
-  runProviderRequest,
-} from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent, runProviderRequest } from "../provider-runtime.ts";
 
 const service = "markettime";
 const markettimeApiBaseUrl = "https://publicapi.markettime.com";
@@ -107,7 +103,6 @@ export const credentialValidators: CredentialValidators = {
     });
     return {
       profile: { accountId, displayName: `MarketTime ${accountId}` },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: markettimeApiBaseUrl,
         accountId,

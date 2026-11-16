@@ -1,6 +1,7 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ProviderFetch, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import {
   compactObject,
@@ -176,9 +177,7 @@ export async function validateChatApiForWhatsappCredential(
     profile: {
       accountId: `chat_api_for_whatsapp:instance:${instanceId}`,
       displayName: `Chat API instance ${instanceId}`,
-      grantedScopes: [],
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: resolveChatApiForWhatsappBaseUrl(instanceId),
       validationEndpoint: "/status",

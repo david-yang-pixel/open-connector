@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
 import {
@@ -125,7 +125,6 @@ export async function validateXataCredential(
       accountId: firstOrganizationID ?? "xata:api_key",
       displayName: firstOrganizationName ?? "Xata API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: xataApiBaseUrl,
       validationEndpoint: xataValidationPath,

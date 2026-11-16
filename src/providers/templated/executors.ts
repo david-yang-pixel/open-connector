@@ -4,8 +4,8 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderRequestContext } from "../provider-runtime.ts";
 
 import {
   compactObject,
@@ -16,13 +16,14 @@ import {
   optionalString,
   requiredString,
 } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   providerUserAgent,
   ProviderRequestError,
   requiredInputString,
   requiredResponseRecord,
+  providerInputError,
 } from "../provider-runtime.ts";
 
 const service = "templated";
@@ -163,7 +164,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: optionalString(account.id) ?? optionalString(account.email) ?? "templated-account",
         displayName: optionalString(account.name) ?? optionalString(account.email) ?? "Templated",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: templatedApiBaseUrl,
         validationEndpoint: "/account",
@@ -178,7 +178,7 @@ export const credentialValidators: CredentialValidators = {
 async function requestTemplatedJson(input: {
   apiKey: string;
   path: string;
-  context: Pick<ApiKeyProviderContext, "fetcher" | "signal">;
+  context: ProviderRequestContext;
   phase: TemplatedRequestPhase;
   method?: "GET" | "POST";
   query?: Record<string, string | number | boolean | undefined>;
@@ -196,7 +196,7 @@ async function requestTemplatedJson(input: {
 async function requestTemplatedAck(input: {
   apiKey: string;
   path: string;
-  context: Pick<ApiKeyProviderContext, "fetcher" | "signal">;
+  context: ProviderRequestContext;
   phase: TemplatedRequestPhase;
   notFoundAsInvalidInput?: boolean;
 }): Promise<void> {
@@ -213,7 +213,7 @@ async function requestTemplatedAck(input: {
 async function templatedFetch(input: {
   apiKey: string;
   path: string;
-  context: Pick<ApiKeyProviderContext, "fetcher" | "signal">;
+  context: ProviderRequestContext;
   method?: "GET" | "POST" | "DELETE";
   query?: Record<string, string | number | boolean | undefined>;
   body?: Record<string, unknown>;
@@ -278,10 +278,10 @@ function createTemplatedError(
     return new ProviderRequestError(429, message);
   }
   if (phase === "validate" && response.status === 401) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (notFoundAsInvalidInput && response.status === 404) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   return new ProviderRequestError(response.status || 500, message);
 }

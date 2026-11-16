@@ -1,13 +1,12 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { createHash } from "node:crypto";
 import { optionalRecord, optionalString } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   isAbortLikeError,
   providerUserAgent,
   ProviderRequestError,
@@ -28,7 +27,7 @@ interface OncehubListInput {
 }
 
 interface OncehubRequestInput extends OncehubListInput {
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
 }
 
 interface OncehubCursors {
@@ -98,7 +97,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: `oncehub:api_key:${tokenHash}`,
         displayName: "OnceHub API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: oncehubApiBaseUrl,
         validationEndpoint: oncehubValidationPath,

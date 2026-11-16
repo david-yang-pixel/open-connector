@@ -1,5 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers, ProviderFetch } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { createHash } from "node:crypto";
 import { optionalRecord, optionalString } from "../../core/cast.ts";
@@ -75,7 +76,6 @@ export async function validateCredential(
   const balance = await request({ id: "balance", path: "balance.json" }, context, "validate");
   return {
     profile: { displayName: "Vincario API Credential" },
-    grantedScopes: [],
     metadata: { apiBaseUrl: vincarioApiBaseUrl, balance },
   };
 }

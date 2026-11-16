@@ -2,12 +2,10 @@ import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } f
 import type { AutotaskActionContext } from "./runtime.ts";
 
 import { optionalString, requiredString } from "../../core/cast.ts";
-import {
-  defineProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  requireApiKeyCredential,
-} from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError } from "../provider-runtime.ts";
 import { autotaskActionHandlers, resolveAutotaskApiBaseUrl, validateAutotaskCredential } from "./runtime.ts";
 
 const service = "autotask";

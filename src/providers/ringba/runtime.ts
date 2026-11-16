@@ -1,5 +1,5 @@
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ProviderRuntimeHandler } from "../provider-executors.ts";
 import type { RingbaActionName } from "./actions.ts";
 
 import { optionalObjectArray, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
@@ -37,7 +37,6 @@ export async function validateRingbaCredential(
   fetcher: typeof fetch,
 ): Promise<{
   profile: { accountId: string; displayName: string };
-  grantedScopes: string[];
   metadata: Record<string, unknown>;
 }> {
   const payload = optionalRecord(await requestJson(accountsPath, apiKey, fetcher, "validate"));
@@ -60,7 +59,6 @@ export async function validateRingbaCredential(
       accountId: normalizedRequestedAccountId ?? "ringba",
       displayName: optionalString(selectedAccount?.name) ?? "Ringba API Token",
     },
-    grantedScopes: [],
     metadata: {
       accountId: normalizedRequestedAccountId,
       accessibleAccountIds,

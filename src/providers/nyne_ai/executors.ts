@@ -5,19 +5,19 @@ import type {
   ProviderProxyExecutor,
   ResolvedCredential,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { compactObject, optionalNumber, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
 import { assertPublicHttpUrl } from "../../core/request.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineProviderExecutors,
-  defineProviderProxy,
   isAbortLikeError,
   ProviderRequestError,
   providerUserAgent,
-  requireApiKeyCredential,
 } from "../provider-runtime.ts";
 
 const service = "nyne_ai";
@@ -232,7 +232,6 @@ export const credentialValidators: CredentialValidators = {
         displayName:
           availableCredits === undefined ? "Nyne.ai API Key" : `Nyne.ai (${formatCredits(availableCredits)} credits)`,
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: nyneAiApiBaseUrl,
         validationEndpoint: "/usage",

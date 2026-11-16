@@ -4,8 +4,7 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -17,9 +16,9 @@ import {
   requiredRecord,
   requiredString,
 } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   providerInputError,
   providerResponseError,
   providerUserAgent,
@@ -210,7 +209,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "sender",
         displayName: "Sender API Access Token",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: senderApiBaseUrl,
         validationEndpoint: "/groups",
@@ -220,7 +218,7 @@ export const credentialValidators: CredentialValidators = {
 };
 
 async function senderRequest(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   path: string,
   options: SenderRequestOptions,
   phase: SenderPhase,

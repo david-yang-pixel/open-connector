@@ -4,8 +4,7 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -15,12 +14,9 @@ import {
   optionalString,
   requiredString,
 } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError, providerInputError } from "../provider-runtime.ts";
 
 const service = "otter_ai";
 const otterAiApiBaseUrl = "https://api.otter.ai";
@@ -138,9 +134,7 @@ export async function validateOtterAiApiKey(
     profile: {
       accountId: workspaceId ?? ownerEmail ?? "api_key",
       displayName,
-      grantedScopes: [],
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: otterAiApiBaseUrl,
       validationEndpoint: otterAiValidationPath,
@@ -183,11 +177,7 @@ function otterAiUrl(path: string, query?: Record<string, unknown>): URL {
   return url;
 }
 
-async function requestOtterAi(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
-  url: URL,
-  phase: OtterAiRequestPhase,
-): Promise<unknown> {
+async function requestOtterAi(context: ApiKeyProviderContext, url: URL, phase: OtterAiRequestPhase): Promise<unknown> {
   let response: Response;
   try {
     response = await context.fetcher(url, {
@@ -230,7 +220,7 @@ function otterAiError(status: number, message: string, phase: OtterAiRequestPhas
     return new ProviderRequestError(429, message);
   }
   if (phase === "validate" && (status === 401 || status === 403)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (status === 400 || status === 404 || status === 422) {
     return new ProviderRequestError(status, message);

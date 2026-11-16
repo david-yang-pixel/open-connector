@@ -1,14 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 
 const service = "writer";
 const writerApiBaseUrl = "https://api.writer.com";
@@ -73,7 +69,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "writer-api-key",
         displayName: "Writer API Key",
       },
-      grantedScopes: [],
       metadata: {
         validationEndpoint: "/v1/models",
         availableModels: models.map((model) => model.id).filter((model): model is string => typeof model === "string"),
@@ -82,10 +77,7 @@ export const credentialValidators: CredentialValidators = {
   },
 };
 
-async function writerRequest(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
-  input: WriterRequestInput,
-): Promise<unknown> {
+async function writerRequest(context: ApiKeyProviderContext, input: WriterRequestInput): Promise<unknown> {
   const apiKey = context.apiKey.trim();
   if (!apiKey) {
     throw new ProviderRequestError(400, "writer apiKey is required");

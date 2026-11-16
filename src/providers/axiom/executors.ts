@@ -1,15 +1,14 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString, requiredRecord, requiredString } from "../../core/cast.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineProviderExecutors,
-  defineProviderProxy,
   ProviderRequestError,
   providerResponseError,
   providerUserAgent,
-  requireApiKeyCredential,
   setSearchParams,
 } from "../provider-runtime.ts";
 
@@ -153,7 +152,6 @@ export const credentialValidators: CredentialValidators = {
       profile: {
         displayName: "Axiom API Token",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: axiomApiBaseUrl,
         validationEndpoint: "/v2/datasets",
@@ -166,7 +164,7 @@ export const credentialValidators: CredentialValidators = {
 };
 
 async function requestAxiomJson(input: {
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   path: string;
   phase: AxiomPhase;
   method?: AxiomMethod;

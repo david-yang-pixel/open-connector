@@ -4,7 +4,7 @@
 
 [English](../README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Русский](README.ru.md) | [Français](README.fr.md) | [Español](README.es.md)
 
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](../LICENSE.txt)
+[![License: Modified Apache-2.0](https://img.shields.io/badge/License-Modified%20Apache--2.0-blue.svg)](../LICENSE.txt)
 [![npm](https://img.shields.io/npm/v/@oomol-lab/open-connector.svg)](https://www.npmjs.com/package/@oomol-lab/open-connector)
 ![Node.js 22+](https://img.shields.io/badge/Node.js-22%2B-339933)
 ![Cloudflare compatible](https://img.shields.io/badge/Cloudflare-compatible-F38020)
@@ -29,7 +29,7 @@ Agent 和应用。
   <tr>
     <td width="33.33%" valign="top">托管 OAuth 和 runtime，开箱即用。无需部署或配置 OAuth 应用。</td>
     <td width="33.33%" valign="top">使用 Docker 或 Node.js 在本地或自己的基础设施中运行。存储和 OAuth 应用由你负责管理。</td>
-    <td width="33.33%" valign="top"><strong>Cloudflare</strong>、<strong>Fly.io</strong>、<strong>RepoCloud</strong>、<strong>nibrun</strong> 等。</td>
+    <td width="33.33%" valign="top"><strong>Cloudflare</strong>、<strong>Fly.io</strong>、<strong>RepoCloud</strong>、<strong>nibrun</strong>、<strong>NEXUS AI</strong>、<strong>Pethost</strong>、<strong>ZopDay</strong> 等。</td>
   </tr>
   <tr>
     <td width="33.33%" align="center">🚀 <a href="https://oomol.com/docs/connector-saas/"><strong>OOMOL 托管</strong></a></td>
@@ -185,22 +185,17 @@ release 用 `latest`，生产环境固定具体的 release 版本号，想用最
 
 镜像标签、拉取和运行的说明见 [docker-ghcr.zh-CN.md](docker-ghcr.zh-CN.md)。
 
-## 用 Wanta 构建你的桌面 Agent
+## 开箱即用的 AI Bot：Leina
 
-OpenConnector 与 [Wanta](https://github.com/oomol-lab/wanta) 是 OOMOL 开源生态中面向 AI Agent
-的两个项目。OpenConnector 负责把 Gmail、Slack、Notion 等外部服务接入 Agent；Wanta 则提供一套基于 OpenCode
-运行的完整桌面 Agent 应用，并通过 OpenConnector 使用已连接的 SaaS 服务。
+如果想使用开箱即用的 AI Bot，可以试试 [Leina](https://leina.ai/)。Leina 可连接 1500 多款 SaaS 应用，让你自由组合应用连接、技能和知识库，定制适合团队工作流程的 AI Agent。
 
-- **本地运行：** 使用自己的 OpenAI 兼容模型，无需注册 Wanta 账号。
-- **二次开发：** Fork Wanta，自定义提示词、工具、界面、模型和品牌，构建自己的桌面 Agent。
-- **托管服务：** 可选的[托管服务](https://wanta.ai/)提供托管模型、OAuth 连接和团队工作区。
-
-欢迎通过 Issue 和 Pull Request 参与贡献。
+它支持 Slack、Microsoft Teams、Discord、Telegram，以及钉钉、企业微信、飞书和个人微信。你可以直接在聊天中，让它通过你授权的应用查找信息、汇总周报、整理客户反馈或准备销售跟进内容。
 
 ## 文档
 
 - [快速开始](quickstart.md)
 - [开发者工具](sdk-cli.md)
+- [客户端接入：MCP、CLI 和 SDK](client-onboarding.zh-CN.md)
 - [Gmail OAuth 和 SDK 接入教程](gmail-oauth-sdk.zh-CN.md)
 - [Runtime API 和 MCP](runtime-api.md)
 - [部署方案](deployment-options/README.zh-CN.md)
@@ -239,10 +234,14 @@ Provider 代码位于 `src/providers/<service>`。Provider 贡献规则见
 
 ## 许可证范围
 
-除非另有说明，本仓库中的源代码、脚本、生成的项目脚手架、测试和文档均基于 Apache License, Version
-2.0 授权。见 [LICENSE.txt](../LICENSE.txt)。
+除非另有说明，本仓库中的源代码、脚本、生成的项目脚手架、测试和文档均基于 OpenConnector License
+授权，它是在 Apache License 2.0 基础上加了附加条件的修改版。见 [LICENSE.txt](../LICENSE.txt)。
 
-本仓库的 Apache-2.0 许可证不授予任何第三方产品、provider、app、API、商标、服务标识、商号、logo、
+你可以出于任何目的使用、修改和自托管 OpenConnector，包括商业使用和嵌入到你自己的产品中。唯一的附加条件是：
+把 OpenConnector 作为托管的连接器服务提供给第三方，需要获得 OOMOL 的商业授权。
+v1.9.4 及之前的版本仍以未修改的 Apache License 2.0 授权。详见 [NOTICE.md](../NOTICE.md)。
+
+本仓库的许可证不授予任何第三方产品、provider、app、API、商标、服务标识、商号、logo、
 icon、品牌资产、文档、截图或其它归属于相应权利人的版权材料的使用权。
 
 Provider 和 app 名称、metadata、链接、scope、permission 以及可选 logo/icon 仅用于识别服务和实现互操作。

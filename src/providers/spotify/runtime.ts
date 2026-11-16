@@ -1,8 +1,8 @@
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { OAuthProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { OAuthProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean, optionalInteger, optionalString } from "../../core/cast.ts";
-import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
+import { providerInputError, providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 
 export const spotifyApiBaseUrl: string = "https://api.spotify.com/v1/";
 
@@ -147,9 +147,7 @@ export const spotifyActionHandlers: ProviderActionHandlers<"spotify", SpotifyAct
       query: {
         market: optionalString(input.market),
         limit: stringifyOptionalInteger(input.limit),
-        seed_artists: joinStringArray(input.seedArtists),
-        seed_tracks: joinStringArray(input.seedTracks),
-        seed_genres: joinStringArray(input.seedGenres),
+        ...buildRecommendationSeedQuery(input),
       },
     });
   },
@@ -794,6 +792,26 @@ function buildPagingQuery(input: Record<string, unknown>, extraQuery?: Record<st
     offset: stringifyOptionalInteger(input.offset),
     ...(extraQuery ?? {}),
   };
+}
+
+// Spotify takes 1 to 5 seed values in any combination of seed_artists, seed_tracks, and seed_genres.
+function buildRecommendationSeedQuery(input: Record<string, unknown>) {
+  const query = {
+    seed_artists: joinStringArray(input.seedArtists),
+    seed_tracks: joinStringArray(input.seedTracks),
+    seed_genres: joinStringArray(input.seedGenres),
+  };
+  const seedCount = [input.seedArtists, input.seedTracks, input.seedGenres].reduce<number>(
+    (count, seeds) => count + (Array.isArray(seeds) ? seeds.length : 0),
+    0,
+  );
+  if (seedCount < 1 || seedCount > 5) {
+    throw providerInputError(
+      `get_recommendations needs 1 to 5 seeds across seedArtists, seedTracks, and seedGenres; received ${seedCount}`,
+    );
+  }
+
+  return query;
 }
 
 function buildPlaybackQuery(input: Record<string, unknown>) {

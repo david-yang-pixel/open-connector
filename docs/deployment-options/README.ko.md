@@ -102,5 +102,62 @@ platform에서는 OAuth app을 직접 등록해야 합니다. 관리형 OAuth가
         <a href="https://app.nibrun.com/deploy?name=open-connector&amp;binary=https%3A%2F%2Fgithub.com%2Foomol-lab%2Fopen-connector%2Freleases%2Flatest%2Fdownload%2Fopen-connector-linux-x64&amp;port=3000&amp;env=HOST%3D0.0.0.0&amp;env=OOMOL_CONNECT_DATA_DIR%3D%24%7BNIBRUN_DATA_DIR%7D&amp;env=OOMOL_CONNECT_ORIGIN%3Dhttps%3A%2F%2F%24%7BNIBRUN_HOSTNAME%7D&amp;env=OOMOL_CONNECT_CATALOG_LAZY_SCHEMAS%3Dtrue&amp;env=OOMOL_CONNECT_ENCRYPTION_KEY&amp;env=OOMOL_CONNECT_ADMIN_TOKEN&amp;env=OOMOL_CONNECT_RUNTIME_TOKEN"><strong>원클릭 배포</strong></a>
       </td>
     </tr>
+    <tr>
+      <td valign="middle" align="center">
+        <a href="https://nexusai.run/"><img src="../../assets/deployment-options/nexus-ai.svg" alt="NEXUS AI" width="140"></a>
+      </td>
+      <td valign="top">
+        저장소의 <code>docker/Dockerfile</code>을 빌드해 자체 HTTPS URL이 있는 컨테이너로 실행합니다.
+        배포 링크는 <code>OOMOL_CONNECT_ORIGIN</code>을 그 URL로 설정하고, 폼에서 admin token을 입력받고,
+        encryption key와 runtime token을 생성하므로 Web Console과 모든 API가 처음 시작할 때부터 인증을
+        요구합니다. secret은 폼에 입력하거나 서버에서 생성되며 링크에는 절대 포함되지 않습니다.
+        <br><br>
+        <strong>장점:</strong> 소스에서 원클릭 배포, 하나의 대시보드에서 로그와 재배포 관리, 유료 플랜의 커스텀
+        도메인. SQLite 데이터베이스는 컨테이너 안에 있어 재시작 후에는 유지되지만 재빌드 후에는 유지되지
+        않습니다. 오래 보관할 데이터는 <code>OOMOL_CONNECT_DATABASE_URL</code>을 PostgreSQL로 설정하고, 첫 시작 전과
+        새 마이그레이션이 포함된 재배포 전에 <a href="../configuration.md#runtime-database">PostgreSQL 마이그레이션</a>을
+        실행하세요. 저장된 자격 증명은 <code>OOMOL_CONNECT_ENCRYPTION_KEY</code>로 암호화되므로 이 값을 바꾸지 마세요.
+        <br><br>
+        <strong>가격:</strong> Free 플랜은 공개 HTTPS URL이 있는 활성 배포 1개를 포함하며 신용카드가 필요
+        없지만 테스트와 평가 용도로만 쓸 수 있고, 테스트 배포는 자동으로 만료됩니다. Starter는 월 $29로 활성 배포
+        2개와 커스텀 도메인, Pro는 월 $149로 5개입니다. 각 앱은 512 MB RAM을 사용합니다.
+        <a href="https://nexusai.run/pricing">NEXUS AI 가격</a>을 참고하세요.
+      </td>
+      <td valign="middle" align="center">
+        <a href="https://nexusai.run/deploy?repo=https%3A%2F%2Fgithub.com%2Foomol-lab%2Fopen-connector&amp;dockerfile=docker%2FDockerfile&amp;env=OOMOL_CONNECT_ORIGIN%3D%7Burl%7D&amp;require=OOMOL_CONNECT_ADMIN_TOKEN&amp;generate=OOMOL_CONNECT_ENCRYPTION_KEY&amp;generate=OOMOL_CONNECT_RUNTIME_TOKEN&amp;template=open-connector"><strong>원클릭 배포</strong></a>
+      </td>
+    </tr>
+    <tr>
+      <td valign="middle" align="center">
+        <a href="https://pethost.dev/"><img src="../../assets/deployment-options/pethost.svg" alt="Pethost" width="140"></a>
+      </td>
+      <td valign="top">
+        게시된 <code>ghcr.io/oomol-lab/open-connector</code> 이미지를 전용 HTTPS 주소로 실행하는 원클릭 템플릿입니다. <code>OOMOL_CONNECT_ORIGIN</code>을 그 주소로 설정하고, admin token을 입력받고, 암호화 키와 runtime token을 생성하므로 Web Console과 모든 API는 첫 시작부터 인증이 필요합니다. SQLite 데이터베이스가 있는 데이터 디렉터리는 볼륨에 있어 재시작과 재배포 후에도 유지됩니다.
+        <br><br>
+        <strong>장점:</strong> 서버 전체에 월 고정 요금이며, OpenConnector를 다른 앱, 데이터베이스와 같은 서버에서 실행할 수 있습니다. 사용량 과금이 없고 절전 모드도 없습니다. 야간 백업, 로그, 모든 HTTP 요청을 하나의 패널에서 볼 수 있고, MCP 서버로 에이전트가 배포하고 관리할 수 있습니다.
+        <br><br>
+        <strong>가격:</strong> 2 vCPU, 3 GB 메모리, 30 GB SSD에 월 €9.99부터, 4 vCPU, 6 GB, 60 GB에 월 €17.99이며, 프로젝트는 들어가는 만큼 둘 수 있습니다. OpenConnector는 유휴 상태에서 약 230 MB의 메모리를 사용합니다. <a href="https://pethost.dev/#pricing">Pethost 가격</a>을 참고하세요.
+      </td>
+      <td valign="middle" align="center">
+        <a href="https://pethost.dev/templates/open-connector/"><strong>원클릭 배포</strong></a>
+      </td>
+    </tr>
+    <tr>
+      <td valign="middle" align="center">
+        <a href="https://zop.dev/"><img src="../../assets/deployment-options/zopday.svg" alt="ZopDay" width="140"></a>
+      </td>
+      <td valign="top">
+        게시된 <code>ghcr.io/oomol-lab/open-connector</code> 이미지를 HTTPS 및 관리 대시보드와 함께 실행합니다.
+        최초 시작 전에 공개 URL, 인증 토큰, 암호화 키 및 영구 스토리지를 설정해야 합니다. OAuth 앱 등록은 직접 수행합니다.
+        <br><br>
+        <strong>장점:</strong> 컨테이너 관리 대시보드와 자체 클라우드에서의 Helm 배포.
+        <br><br>
+        <strong>가격:</strong>
+        <a href="https://zop.dev/zopday#pricing">ZopDay 가격</a>을 참고하세요.
+      </td>
+      <td valign="middle" align="center">
+        <a href="../zopday.md"><strong>배포 가이드 (영어)</strong></a>
+      </td>
+    </tr>
   </tbody>
 </table>

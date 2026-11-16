@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
 import { optionalBoolean, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
@@ -59,7 +59,6 @@ export async function validateReferralRockCredential(context: Context): Promise<
   await request("/api/programs", { offset: "0", count: "0" }, context, "validate");
   return {
     profile: { displayName: "Referral Rock API Key" },
-    grantedScopes: [],
     metadata: { apiBaseUrl: referralRockApiBaseUrl },
   };
 }

@@ -1,14 +1,13 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { isIP } from "node:net";
 import { compactObject, optionalBoolean, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
 import { assertPublicHttpUrl } from "../../core/request.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   isAbortLikeError,
   providerInputError,
   providerUserAgent,
@@ -39,7 +38,7 @@ interface ApiVoidQuota {
 interface ApiVoidRequestInput {
   path: string;
   body?: Record<string, unknown>;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   phase: ApiVoidRequestPhase;
 }
 
@@ -129,7 +128,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "api_key",
         displayName: "APIVoid API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: apiVoidApiBaseUrl,
         validationEndpoint: "/v2/account-info",

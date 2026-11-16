@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { sourceScanTimeout } from "./provider-source-guards.support.ts";
 
 const sourceDir = fileURLToPath(new URL("..", import.meta.url));
 const repoDir = fileURLToPath(new URL("../..", import.meta.url));
@@ -246,9 +247,11 @@ function findNonLatin1RegexCharacters(path: string, source: string): string[] {
   return offenders;
 }
 
-describe("provider regex charset guard", () => {
+const sourceFiles = listSourceFiles(sourceDir);
+
+describe("provider regex charset guard", { timeout: sourceScanTimeout(sourceFiles.length) }, () => {
   it("keeps every regex literal inside Latin-1", () => {
-    const files = listSourceFiles(sourceDir);
+    const files = sourceFiles;
     const offenders: string[] = [];
     let literals = 0;
     for (const path of files) {

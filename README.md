@@ -4,7 +4,7 @@
 
 [English](README.md) | [简体中文](docs/README.zh-CN.md) | [繁體中文](docs/README.zh-TW.md) | [日本語](docs/README.ja.md) | [한국어](docs/README.ko.md) | [Русский](docs/README.ru.md) | [Français](docs/README.fr.md) | [Español](docs/README.es.md)
 
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE.txt)
+[![License: Modified Apache-2.0](https://img.shields.io/badge/License-Modified%20Apache--2.0-blue.svg)](LICENSE.txt)
 [![npm](https://img.shields.io/npm/v/@oomol-lab/open-connector.svg)](https://www.npmjs.com/package/@oomol-lab/open-connector)
 ![Node.js 22+](https://img.shields.io/badge/Node.js-22%2B-339933)
 ![Cloudflare compatible](https://img.shields.io/badge/Cloudflare-compatible-F38020)
@@ -29,7 +29,7 @@ prebuilt Actions to agents and applications.
   <tr>
     <td width="33.33%" valign="top">Managed OAuth and hosted runtime, ready to use. No deployment or OAuth app setup.</td>
     <td width="33.33%" valign="top">Run locally or on your own infrastructure with Docker or Node.js. You manage storage and OAuth apps.</td>
-    <td width="33.33%" valign="top"><strong>Cloudflare</strong>, <strong>Fly.io</strong>, <strong>RepoCloud</strong>, <strong>nibrun</strong>, and more.</td>
+    <td width="33.33%" valign="top"><strong>Cloudflare</strong>, <strong>Fly.io</strong>, <strong>RepoCloud</strong>, <strong>nibrun</strong>, <strong>NEXUS AI</strong>, <strong>Pethost</strong>, <strong>ZopDay</strong>, and more.</td>
   </tr>
   <tr>
     <td width="33.33%" align="center">🚀 <a href="https://oomol.com/docs/connector-saas/"><strong>OOMOL Hosted</strong></a></td>
@@ -52,6 +52,8 @@ HTTP/OpenAPI from custom clients, and the Web Console for administration and deb
 - A working connector catalog across products such as GitHub, Gmail, Notion, BigQuery, Google
   Analytics, Supabase, Airtable, Slack, and more.
 - Credential handling for API keys, OAuth2, custom credentials, and no-auth providers.
+- Built-in OAuth 2.1 authorization server so remote MCP clients and other agents can authenticate
+  with dynamically registered clients, PKCE S256, and revocable, policy-scoped access tokens.
 - Inspectable Action contracts: request/response schemas, required scopes, and lazy-loaded executor
   source.
 - Runtime controls for connection identity, scopes, runtime tokens, action allow/block policies,
@@ -184,6 +186,18 @@ curl -s -X POST http://localhost:3000/v1/actions/github.get_current_user \
   -d '{"input":{}}'
 ```
 
+A GitHub App installation works the same way with no token to paste: store the App ID, the
+installation id and the App's private key, and the runtime mints one-hour installation tokens on
+demand. The connection profile identifies the installation's account; `get_current_user` requires
+a personal access token or OAuth user credential. Installation repository listing supports
+pagination only; omit `visibility`, `sort` and `direction`.
+
+```bash
+curl -s -X PUT http://localhost:3000/api/connections/github \
+  -H 'content-type: application/json' \
+  -d "{\"authType\":\"custom_credential\",\"values\":{\"appId\":\"1234567\",\"installationId\":\"87654321\",\"privateKey\":\"$(awk 'BEGIN{ORS="\\n"}1' app.private-key.pem)\"}}"
+```
+
 For OAuth2 apps, named connections, credential encryption, token refresh, and action policies, see
 [docs/credentials.md](docs/credentials.md) and [docs/configuration.md](docs/configuration.md).
 
@@ -215,25 +229,18 @@ Run OpenConnector from a prebuilt image on GitHub Packages (GHCR): `ghcr.io/oomo
 
 See [docs/docker-ghcr.md](docs/docker-ghcr.md) for tags, pulling, and running.
 
-## Build a Desktop Agent with Wanta
+## A Ready-to-Use AI Bot with Leina
 
-OpenConnector and [Wanta](https://github.com/oomol-lab/wanta) are two open-source projects for AI
-Agents in the OOMOL ecosystem. OpenConnector connects Agents to external services such as Gmail,
-Slack, and Notion. Wanta provides a complete desktop Agent application powered by OpenCode and uses
-OpenConnector to work with connected SaaS services.
+If you want an AI bot you can use out of the box, try [Leina](https://leina.ai/). Leina connects to over 1,500 SaaS apps and lets you customize your own AI agent by choosing its app connections, skills, and knowledge base to fit your team’s workflows.
 
-- **Run locally:** Use your own OpenAI-compatible model without creating a Wanta account.
-- **Build your own:** Fork Wanta and customize its prompts, tools, interface, models, and branding.
-- **Use hosted services:** The optional [hosted experience](https://wanta.ai/) provides managed
-  models, OAuth connections, and team workspaces.
-
-Issues and pull requests are welcome.
+Use it in Slack, Microsoft Teams, Discord, or Telegram to find information, compile weekly reports, organize customer feedback, and prepare sales follow-ups through the apps you authorize.
 
 ## Documentation
 
 - [Quickstart](docs/quickstart.md)
 - [Developer tools](docs/sdk-cli.md)
 - [Programmatic connection management](docs/programmatic-connections.md)
+- [Connect your clients: MCP, CLI, and SDK](docs/client-onboarding.md)
 - [Gmail OAuth and SDK tutorial](docs/gmail-oauth-sdk.md)
 - [Instagram OAuth and Actions](docs/instagram-oauth.md)
 - [Runtime API and MCP](docs/runtime-api.md)
@@ -253,7 +260,8 @@ Issues and pull requests are welcome.
 
 ## Development
 
-Use Node.js 22 or newer:
+Use Node.js 22.23.4+, 24.22.1+, or 26.12.1+ within those release lines. See the
+[runtime security baseline](SECURITY.md#runtime-security-baseline) before deploying:
 
 ```bash
 npm install
@@ -276,10 +284,15 @@ Provider code lives under `src/providers/<service>`. See
 ## License Scope
 
 Unless otherwise noted, the source code, scripts, generated project scaffolding, tests, and
-documentation authored for this repository are licensed under the Apache License, Version 2.0. See
-[LICENSE.txt](LICENSE.txt).
+documentation authored for this repository are licensed under the OpenConnector License, a modified
+Apache License 2.0. See [LICENSE.txt](LICENSE.txt).
 
-The Apache-2.0 license for this repository does not grant rights to third-party products,
+You may use, modify, and self-host OpenConnector for any purpose, including commercial use and
+embedding it in your own products. The one added condition is that providing OpenConnector to third
+parties as a hosted connector service requires a commercial license from OOMOL. Releases up to and
+including v1.9.4 remain under the unmodified Apache License 2.0. See [NOTICE.md](NOTICE.md).
+
+The license for this repository does not grant rights to third-party products,
 providers, apps, APIs, trademarks, service marks, trade names, logos, icons, brand assets,
 documentation, screenshots, or other copyrighted materials owned by their respective holders.
 

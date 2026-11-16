@@ -1,15 +1,16 @@
 import type { CredentialValidationResult, ProviderExecutors, TransitFileWriter } from "../../core/types.ts";
-import type { ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, requiredString } from "../../core/cast.ts";
 import { encodePathSegment } from "../../core/request.ts";
+import { defineApiKeyProviderExecutors, mapProviderActionSources } from "../provider-executors.ts";
+import { readTransitFileInput } from "../provider-files.ts";
 import {
-  defineApiKeyProviderExecutors,
-  mapProviderActionSources,
   providerUserAgent,
   ProviderRequestError,
-  readTransitFileInput,
+  providerInputError,
+  providerResponseError,
 } from "../provider-runtime.ts";
 
 export const qianfanApiOrigin: string = "https://qianfan.baidubce.com";
@@ -20,10 +21,6 @@ interface ApiKeyProviderActionInput {
   apiKey: string;
   input: Record<string, unknown>;
   transitFiles?: TransitFileWriter;
-}
-
-function qianfanError(_code: string, message: string, status = 502): ProviderRequestError {
-  return new ProviderRequestError(status, message);
 }
 
 function requireApiKey(input: Record<string, string>): string {
@@ -149,7 +146,7 @@ export async function validateQianfanCredential(
     .map((model) => model.id)
     .filter((model): model is string => typeof model === "string" && model.length > 0);
   return {
-    profile: { accountId: "qianfan-api-key", displayName: "Baidu Qianfan API Key", grantedScopes: [] },
+    profile: { accountId: "qianfan-api-key", displayName: "Baidu Qianfan API Key" },
     metadata: { validationEndpoint: "/v2/models", availableModels },
   };
 }
@@ -501,10 +498,7 @@ async function qianfanRequest(apiKey: string, input: QianfanRequestInput, fetche
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown network error";
-    throw qianfanError(
-      "provider_error",
-      `qianfan ${method} ${input.path} failed before receiving response: ${message}`,
-    );
+    throw providerResponseError(`qianfan ${method} ${input.path} failed before receiving response: ${message}`);
   }
 
   await assertQianfanResponse(response, input.mode ?? "execute");
@@ -527,10 +521,7 @@ async function qianfanMultipartRequest(
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown network error";
-    throw qianfanError(
-      "provider_error",
-      `qianfan ${method} ${input.path} failed before receiving response: ${message}`,
-    );
+    throw providerResponseError(`qianfan ${method} ${input.path} failed before receiving response: ${message}`);
   }
 
   await assertQianfanResponse(response, input.mode ?? "execute");
@@ -547,10 +538,7 @@ async function qianfanTextRequest(apiKey: string, input: QianfanRequestInput, fe
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown network error";
-    throw qianfanError(
-      "provider_error",
-      `qianfan ${method} ${input.path} failed before receiving response: ${message}`,
-    );
+    throw providerResponseError(`qianfan ${method} ${input.path} failed before receiving response: ${message}`);
   }
 
   await assertQianfanResponse(response, input.mode ?? "execute");
@@ -559,12 +547,11 @@ async function qianfanTextRequest(apiKey: string, input: QianfanRequestInput, fe
   try {
     text = await response.text();
   } catch (error) {
-    throw qianfanError(
-      "provider_error",
+    throw new ProviderRequestError(
+      response.status,
       error instanceof Error
         ? `failed to read qianfan response body: ${error.message}`
         : "failed to read qianfan response body",
-      response.status,
     );
   }
 
@@ -585,7 +572,7 @@ function qianfanHeaders(apiKey: string, includeJsonContentType = true) {
 
 function assertStreamingDisabled(input: Record<string, unknown>) {
   if (input.stream === true) {
-    throw qianfanError("invalid_input", "stream=true is not supported by connector actions", 400);
+    throw providerInputError("stream=true is not supported by connector actions");
   }
 }
 
@@ -600,7 +587,7 @@ function requireStringField(input: Record<string, unknown>, field: string) {
     return value;
   }
 
-  throw qianfanError("invalid_input", `${field} must be a non-empty string`, 400);
+  throw providerInputError(`${field} must be a non-empty string`);
 }
 
 function withQianfanQuery(path: string, query: Record<string, unknown>) {
@@ -632,19 +619,19 @@ async function assertQianfanResponse(response: Response, mode: "validate" | "exe
 
   const error = await readQianfanError(response);
   if (response.status === 429) {
-    throw qianfanError("rate_limited", error.message, 429);
+    throw new ProviderRequestError(429, error.message);
   }
   if (mode === "validate" && (response.status === 401 || response.status === 403)) {
-    throw qianfanError("invalid_input", error.message, 400);
+    throw providerInputError(error.message);
   }
   if (mode === "execute" && response.status === 401) {
-    throw qianfanError("credential_expired", error.message);
+    throw providerResponseError(error.message);
   }
   if (response.status === 400 || response.status === 422) {
-    throw qianfanError("invalid_input", error.message, 400);
+    throw providerInputError(error.message);
   }
 
-  throw qianfanError("provider_error", error.message, response.status);
+  throw new ProviderRequestError(response.status, error.message);
 }
 
 async function readQianfanJson(response: Response) {
@@ -652,12 +639,11 @@ async function readQianfanJson(response: Response) {
   try {
     text = await response.text();
   } catch (error) {
-    throw qianfanError(
-      "provider_error",
+    throw new ProviderRequestError(
+      response.status,
       error instanceof Error
         ? `failed to read qianfan response body: ${error.message}`
         : "failed to read qianfan response body",
-      response.status,
     );
   }
   if (response.status === 204 || text.trim() === "") {
@@ -667,10 +653,9 @@ async function readQianfanJson(response: Response) {
   try {
     return JSON.parse(text) as unknown;
   } catch {
-    throw qianfanError(
-      "provider_error",
-      `qianfan returned invalid JSON with ${response.status}: ${text.slice(0, 200)}`,
+    throw new ProviderRequestError(
       response.status,
+      `qianfan returned invalid JSON with ${response.status}: ${text.slice(0, 200)}`,
     );
   }
 }

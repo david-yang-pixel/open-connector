@@ -1,14 +1,11 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { randomUUID } from "node:crypto";
 import { optionalRawString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "zotero";
 const baseUrl = "https://api.zotero.org";
@@ -175,7 +172,6 @@ export const credentialValidators: CredentialValidators = {
     const username = optionalRawString(identity.username);
     return {
       profile: { accountId: String(userId), displayName: username ?? `Zotero user ${userId}` },
-      grantedScopes: [],
       metadata: { apiBaseUrl: baseUrl, apiVersion, userId, username, access: identity.access },
     };
   },
@@ -190,7 +186,7 @@ interface RequestOptions {
 async function request(
   path: string,
   options: RequestOptions,
-  context: Pick<Context, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
 ): Promise<{ response: Response; payload: unknown }> {
   const url = new URL(path, baseUrl);
   for (const [name, value] of Object.entries(options.query ?? {}))

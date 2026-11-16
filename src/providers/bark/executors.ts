@@ -4,23 +4,26 @@ import type {
   ProviderProxyExecutor,
   ProxyExecutionResult,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { createHash } from "node:crypto";
 import { compactObject, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
 import { assertPublicHttpUrl, isPrivateNetworkAccessAllowed } from "../../core/request.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
 import {
-  createProviderFetch,
   createProviderProxyUrl,
-  defineProviderExecutors,
   normalizeProviderProxyHeaders,
-  ProviderRequestError,
-  providerUserAgent,
   readProviderProxyErrorMessage,
   readProviderProxyResponse,
-  requireApiKeyCredential,
   toProviderProxyError,
+} from "../provider-proxy.ts";
+import {
+  createProviderFetch,
+  ProviderRequestError,
+  providerUserAgent,
+  providerInputError,
 } from "../provider-runtime.ts";
 
 const service = "bark";
@@ -130,7 +133,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: `bark:${deviceKeyHash.slice(0, 16)}`,
         displayName: "Bark Device",
       },
-      grantedScopes: [],
       metadata: {
         baseUrl: credential.baseUrl,
         deviceKeyHash,
@@ -306,7 +308,7 @@ function parseBarkPushUrl(value: string, allowPrivateNetwork: boolean): BarkCred
     url = assertPublicHttpUrl(value, {
       fieldName: "Bark push URL",
       allowPrivateNetwork,
-      createError: (message) => new ProviderRequestError(400, message),
+      createError: providerInputError,
     });
   } catch (error) {
     if (error instanceof ProviderRequestError) {
@@ -340,7 +342,7 @@ function normalizeBarkBaseUrl(value?: string, allowPrivateNetwork: boolean = isP
   const url = assertPublicHttpUrl(candidate, {
     fieldName: "Bark baseUrl",
     allowPrivateNetwork,
-    createError: (message) => new ProviderRequestError(400, message),
+    createError: providerInputError,
   });
 
   if (url.protocol !== "https:" && !allowPrivateNetwork) {
@@ -452,10 +454,10 @@ function readBarkErrorMessage(payload: Record<string, unknown>): string {
 
 function mapBarkHttpError(status: number, message: string, phase: BarkRequestPhase): ProviderRequestError {
   if (status === 401 || status === 403 || (phase === "validate" && status === 404)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (status === 400 || status === 404 || status === 422) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (status === 429) {
     return new ProviderRequestError(429, message);

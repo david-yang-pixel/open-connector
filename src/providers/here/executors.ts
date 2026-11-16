@@ -1,16 +1,11 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
 import { jsonObject } from "../../core/request.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-  requiredInputString,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent, requiredInputString } from "../provider-runtime.ts";
 
 const service = "here";
 const hereGeocodeBaseUrl = "https://geocode.search.hereapi.com/v1";
@@ -21,8 +16,7 @@ const hereAutocompleteBaseUrl = "https://autocomplete.search.hereapi.com/v1";
 const hereLookupBaseUrl = "https://lookup.search.hereapi.com/v1";
 
 type HereRequestPhase = "validate" | "execute";
-type HereActionContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
-type HereActionHandler = (input: Record<string, unknown>, context: HereActionContext) => Promise<unknown>;
+type HereActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 
 export const hereActionHandlers: ProviderActionHandlers<"here", HereActionHandler> = {
   geocode(input, context) {
@@ -137,7 +131,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "here-api-key",
         displayName: "HERE API Key",
       },
-      grantedScopes: [],
       metadata: jsonObject({
         apiBaseUrl: hereGeocodeBaseUrl,
         validationEndpoint: "/geocode",
@@ -164,7 +157,7 @@ function buildHereUrl(
   return url;
 }
 
-async function hereGetJson(url: URL, context: HereActionContext, phase: HereRequestPhase): Promise<unknown> {
+async function hereGetJson(url: URL, context: ApiKeyProviderContext, phase: HereRequestPhase): Promise<unknown> {
   let response: Response;
   let payload: unknown;
   try {

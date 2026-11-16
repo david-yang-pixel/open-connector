@@ -1,10 +1,15 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { optionalInteger, optionalRecord, optionalString, requiredRecord, requiredString } from "../../core/cast.ts";
 import { assertPublicHttpUrl } from "../../core/request.ts";
-import { providerInputError, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
+import {
+  providerInputError,
+  ProviderRequestError,
+  providerUserAgent,
+  providerResponseError,
+} from "../provider-runtime.ts";
 
 export interface CloudinaryContext {
   apiKey: string;
@@ -62,7 +67,6 @@ export async function validateCloudinaryCredential(
       accountId: `cloudinary:${credential.cloudName}`,
       displayName: `Cloudinary ${credential.cloudName}`,
     },
-    grantedScopes: [],
     metadata: {
       cloudName: credential.cloudName,
       apiBaseUrl: cloudinaryApiBaseUrl,
@@ -259,7 +263,7 @@ function createCloudinaryError(
     return new ProviderRequestError(429, message);
   }
   if (phase === "validate" && (status === 400 || status === 401 || status === 403)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (phase === "execute" && (status === 400 || status === 404 || status === 409)) {
     return new ProviderRequestError(status === 409 ? 409 : 400, message);
@@ -314,7 +318,7 @@ function normalizeCloudinaryAsset(payload: unknown): Record<string, unknown> {
 
 function readCloudinaryRecord(payload: unknown, label: string): Record<string, unknown> {
   try {
-    return requiredRecord(payload, label, (message) => new ProviderRequestError(502, message));
+    return requiredRecord(payload, label, providerResponseError);
   } catch {
     throw new ProviderRequestError(502, `${label} is not an object`);
   }
@@ -341,7 +345,7 @@ function readCloudinaryUploadSource(input: Record<string, unknown>): string {
   if (fileUrl) {
     return assertPublicHttpUrl(fileUrl, {
       fieldName: "fileUrl",
-      createError: (message) => new ProviderRequestError(400, message),
+      createError: providerInputError,
     }).toString();
   }
   return fileDataUri!;

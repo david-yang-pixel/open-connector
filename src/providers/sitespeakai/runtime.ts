@@ -1,9 +1,13 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
-import { providerUserAgent, ProviderRequestError, requiredResponseRecord } from "../provider-runtime.ts";
+import {
+  providerUserAgent,
+  ProviderRequestError,
+  requiredResponseRecord,
+  providerInputError,
+} from "../provider-runtime.ts";
 
 export const sitespeakaiApiBaseUrl = "https://api.sitespeak.ai";
 export const sitespeakaiApiVersion = "v1";
@@ -137,7 +141,6 @@ export async function validateSitespeakaiCredential(
       accountId: userId ?? email ?? "sitespeakai",
       displayName: email ?? name ?? "SiteSpeakAI API Token",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: `${sitespeakaiApiBaseUrl}/${sitespeakaiApiVersion}`,
       validationEndpoint: "/me",
@@ -183,7 +186,7 @@ async function requestSitespeakai(
     method: "GET" | "POST" | "DELETE";
     body?: Record<string, unknown>;
   },
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: SitespeakaiRequestPhase,
 ): Promise<unknown> {
   const url =
@@ -246,13 +249,13 @@ function createSitespeakaiError(
     return new ProviderRequestError(429, message);
   }
   if (phase === "validate" && (response.status === 401 || response.status === 403)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (phase === "execute" && (response.status === 401 || response.status === 403)) {
     return new ProviderRequestError(401, message);
   }
   if (response.status === 400 || response.status === 404 || response.status === 422) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
 
   return new ProviderRequestError(response.status || 500, message);

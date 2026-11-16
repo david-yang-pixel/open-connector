@@ -1,12 +1,11 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   isAbortLikeError,
   providerUserAgent,
   ProviderRequestError,
@@ -16,10 +15,9 @@ const service = "ipgeolocation_io";
 const ipgeolocationIoApiBaseUrl = "https://api.ipgeolocation.io";
 
 type IpgeolocationIoPhase = "validate" | "execute";
-type IpgeolocationIoActionContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
 type IpgeolocationIoActionHandler = (
   input: Record<string, unknown>,
-  context: IpgeolocationIoActionContext,
+  context: ApiKeyProviderContext,
 ) => Promise<unknown>;
 
 export const ipgeolocationIoActionHandlers: ProviderActionHandlers<"ipgeolocation_io", IpgeolocationIoActionHandler> = {
@@ -116,7 +114,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "api_key",
         displayName: "IPGeolocation.io API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: ipgeolocationIoApiBaseUrl,
         validationEndpoint: "/v3/ipgeo",
@@ -132,7 +129,7 @@ async function requestIpgeolocationIoJson(
     params: Record<string, string | undefined>;
     phase: IpgeolocationIoPhase;
   },
-  context: IpgeolocationIoActionContext,
+  context: ApiKeyProviderContext,
 ): Promise<Record<string, unknown>> {
   const timeout = createProviderTimeout(context.signal);
   try {

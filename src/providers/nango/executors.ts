@@ -1,6 +1,5 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -10,9 +9,9 @@ import {
   optionalString,
   requiredRecord,
 } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   providerInputError,
   providerUserAgent,
   ProviderRequestError,
@@ -149,7 +148,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "nango",
         displayName: "Nango API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: nangoApiBaseUrl,
         validationEndpoint: "/providers",
@@ -162,7 +160,7 @@ export const credentialValidators: CredentialValidators = {
 async function requestNangoJson(input: {
   method: NangoMethod;
   path: string;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   query?: Record<string, QueryValue>;
   body?: Record<string, unknown>;
 }): Promise<Record<string, unknown>> {

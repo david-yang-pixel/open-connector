@@ -1,13 +1,11 @@
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
 import { compactObject, optionalBoolean, optionalRecord, optionalString } from "../../core/cast.ts";
-import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
-import { netlifyConnectorScopes } from "./actions.ts";
+import { ProviderRequestError, providerUserAgent, defaultProviderRequestTimeoutMs } from "../provider-runtime.ts";
 
 export const netlifyApiBaseUrl = "https://api.netlify.com/api/v1";
 const netlifyValidationPath = "/user";
-const sourceFetchTimeoutMs = 30_000;
 const maxSourceBytes = 100 * 1024 * 1024;
 
 type NetlifyRequestPhase = "validate" | "execute";
@@ -327,7 +325,6 @@ export async function validateNetlifyCredential(
     accountId: string;
     displayName: string;
   };
-  grantedScopes: string[];
   metadata: Record<string, unknown>;
 }> {
   const user = objectPayload(
@@ -348,7 +345,6 @@ export async function validateNetlifyCredential(
       accountId: userId ?? "netlify-user",
       displayName: fullName ?? email ?? userId ?? "Netlify User",
     },
-    grantedScopes: [...netlifyConnectorScopes],
     metadata: compactObject({
       apiBaseUrl: netlifyApiBaseUrl,
       validationEndpoint: netlifyValidationPath,
@@ -585,7 +581,7 @@ async function downloadSourceFile(
 }> {
   const url = validateSourceUrl(sourceUrl, fieldName);
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), sourceFetchTimeoutMs);
+  const timeout = setTimeout(() => controller.abort(), defaultProviderRequestTimeoutMs);
 
   try {
     const response = await fetcher(url, {

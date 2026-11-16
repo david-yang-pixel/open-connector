@@ -4,22 +4,24 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { compactObject, optionalInteger, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
+import { requireCustomCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import {
+  createProviderProxyUrl,
+  normalizeProviderProxyHeaders,
+  readProviderProxyErrorMessage,
+  readProviderProxyResponse,
+  toProviderProxyError,
+} from "../provider-proxy.ts";
 import {
   createProviderFetch,
-  createProviderProxyUrl,
-  defineProviderExecutors,
-  normalizeProviderProxyHeaders,
   providerInputError,
   ProviderRequestError,
   providerUserAgent,
-  readProviderProxyErrorMessage,
-  readProviderProxyResponse,
-  requireCustomCredential,
   requiredInputString,
-  toProviderProxyError,
 } from "../provider-runtime.ts";
 
 const service = "one_page_crm";
@@ -167,7 +169,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: credential.userId,
         displayName: readAccountLabel(user, credential.userId),
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: onePageCrmApiBaseUrl,
         userId: credential.userId,

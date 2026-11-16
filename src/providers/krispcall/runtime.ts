@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -222,7 +222,6 @@ export async function validateKrispCallCredential(
       accountId: workspace.id ? `krispcall:${workspace.id}` : `krispcall:${credential.clientId}`,
       displayName: accountLabel,
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: krispcallApiBaseUrl,
       tokenEndpoint: krispcallTokenUrl,

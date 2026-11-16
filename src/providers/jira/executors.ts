@@ -4,24 +4,27 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { IntegrationDefinition } from "../../triggers/common/integration.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import {
   compactObject,
   optionalBoolean,
   optionalInteger as asOptionalInteger,
+  optionalRawString,
   optionalRecord as asOptionalObject,
   optionalString as asOptionalString,
-  optionalStringArray,
 } from "../../core/cast.ts";
 import { assertPublicHttpUrl, isPrivateNetworkAccessAllowed } from "../../core/request.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderFetch,
   ProviderRequestError,
-  defineProviderExecutors,
-  defineProviderProxy,
   providerUserAgent,
+  providerInputError,
 } from "../provider-runtime.ts";
+import { jiraIssueEvents } from "./trigger-on-issue-event.ts";
 
 type JiraAccessibleResource = {
   id?: unknown;
@@ -118,7 +121,7 @@ async function fetchJiraCurrentAccount(
     accountId: string;
     displayName: string;
   };
-  grantedScopes: string[];
+  grantedScopes?: string[];
   metadata: Record<string, unknown>;
 }> {
   const accessibleResourcesResponse = await fetcher(jiraAccessibleResourcesUrl, {
@@ -138,7 +141,6 @@ async function fetchJiraCurrentAccount(
         accountId: "jira",
         displayName: "Jira Cloud",
       },
-      grantedScopes: [],
       metadata: {
         resourceCount: resources.length,
         validationEndpoint: "/oauth/token/accessible-resources",
@@ -157,7 +159,7 @@ async function fetchJiraCurrentAccount(
       accountId: `jira:${cloudId}`,
       displayName: siteName,
     },
-    grantedScopes: mapJiraGrantedScopes(resourceScopes),
+    grantedScopes: resourceScopes,
     metadata: compactObject({
       cloudId,
       siteUrl,
@@ -181,7 +183,7 @@ async function fetchJiraServerCurrentAccount(
     accountId: string;
     displayName: string;
   };
-  grantedScopes: string[];
+  grantedScopes?: string[];
   metadata: Record<string, unknown>;
 }> {
   const currentUser = await jiraJsonRequest<JiraCurrentUserPayload>({
@@ -204,7 +206,6 @@ async function fetchJiraServerCurrentAccount(
       accountId: buildJiraServerAccountId(apiBaseUrl, accountKey),
       displayName,
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl,
       validationEndpoint: jiraCurrentUserPath,
@@ -214,21 +215,6 @@ async function fetchJiraServerCurrentAccount(
       timeZone: asOptionalString(currentUser.timeZone),
     }),
   };
-}
-
-function mapJiraGrantedScopes(providerScopes: string[]): string[] {
-  const scopes: string[] = [];
-
-  if (providerScopes.includes("write:jira-work")) {
-    scopes.push("read:jira-work", "read:jira-user", "write:jira-work");
-    return scopes;
-  }
-
-  if (providerScopes.includes("read:jira-work")) {
-    scopes.push("read:jira-work", "read:jira-user");
-  }
-
-  return scopes;
 }
 
 export const executors: ProviderExecutors = defineProviderExecutors<JiraActionContext>({
@@ -637,7 +623,7 @@ export function normalizeJiraServerApiBaseUrl(
   }
   const url = assertPublicHttpUrl(instanceUrl, {
     fieldName: "baseUrl",
-    createError: (message) => new ProviderRequestError(400, message),
+    createError: providerInputError,
     allowPrivateNetwork,
   });
   if (url.username || url.password) {
@@ -683,9 +669,6 @@ function readAccessibleResources(payload: unknown) {
     }
     requireNonEmptyString(record.id, "jira accessible resource id");
     requireNonEmptyString(record.url, "jira accessible resource URL");
-    if (!optionalStringArray(record.scopes)) {
-      throw new ProviderRequestError(502, "jira accessible resource scopes must be an array of strings");
-    }
     return record as JiraAccessibleResource;
   });
 }
@@ -694,10 +677,6 @@ function pickPrimaryResource(resources: JiraAccessibleResource[]) {
   const candidates: JiraAccessibleResource[] = [];
 
   for (const resource of resources) {
-    const scopes = readScopeArray(resource.scopes);
-    if (!scopes.includes("read:jira-work") && !scopes.includes("write:jira-work")) {
-      continue;
-    }
     if (!asOptionalString(resource.id) || !asOptionalString(resource.url)) {
       continue;
     }
@@ -959,7 +938,8 @@ function appendAdfText(value: unknown, parts: string[]): void {
 
   const type = asOptionalString(record.type);
   if (type === "text") {
-    const text = asOptionalString(record.text);
+    // Keep edge whitespace: adjacent text nodes split where marks change, so trimming them joins words.
+    const text = optionalRawString(record.text);
     if (text) {
       parts.push(text);
     }
@@ -1045,7 +1025,7 @@ function mapJiraResponseError(
   const message = readJiraErrorMessage(payload);
 
   if (status === 400) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (status === 401) {
     return new ProviderRequestError(phase === "auth" ? 400 : 401, message);
@@ -1057,7 +1037,7 @@ function mapJiraResponseError(
     return new ProviderRequestError(502, message, 403);
   }
   if (status === 404 && notFoundAsInvalidInput) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (status === 429) {
     return new ProviderRequestError(429, message);
@@ -1179,3 +1159,5 @@ function trimLeadingSlash(value: string) {
   }
   return value.slice(index);
 }
+
+export const triggers: readonly IntegrationDefinition[] = [jiraIssueEvents];

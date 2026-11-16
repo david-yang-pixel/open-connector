@@ -4,17 +4,17 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { optionalNumber, optionalRawString, optionalRecord, optionalString, requiredRecord } from "../../core/cast.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineProviderExecutors,
-  defineProviderProxy,
   isAbortLikeError,
   providerUserAgent,
   ProviderRequestError,
-  requireApiKeyCredential,
 } from "../provider-runtime.ts";
 
 const service = "serply";
@@ -119,7 +119,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "serply",
         displayName: "Serply API Key",
       },
-      grantedScopes: [],
       metadata: compactDefined({
         validationEndpoint: "/v1/search/{query}",
         validationQuery: "q=serply",

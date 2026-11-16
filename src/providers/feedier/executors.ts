@@ -4,15 +4,12 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { compactObject, optionalNumber, optionalRecord, optionalString, requiredRecord } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "feedier";
 const feedierApiBaseUrl = "https://api.bx.feedier.com";
@@ -36,7 +33,7 @@ interface FeedierRequestInput {
 export const feedierActionHandlers: Record<string, FeedierHandler> = {
   async list_reports(input, context) {
     const payload = await requestFeedierJson({
-      ...requestContext(context),
+      ...context,
       path: "/v3/reports",
       query: {
         page: optionalNumber(input.page),
@@ -58,7 +55,7 @@ export const feedierActionHandlers: Record<string, FeedierHandler> = {
     return {
       report: requireProviderObject(
         await requestFeedierJson({
-          ...requestContext(context),
+          ...context,
           path: "/v3/reports",
           method: "POST",
           body: reportMutationBody(input, ["team_id", "master_id", "format"]),
@@ -74,7 +71,7 @@ export const feedierActionHandlers: Record<string, FeedierHandler> = {
     return {
       report: requireProviderObject(
         await requestFeedierJson({
-          ...requestContext(context),
+          ...context,
           path: `/v3/reports/${reportId}`,
           phase: "execute",
         }),
@@ -87,7 +84,7 @@ export const feedierActionHandlers: Record<string, FeedierHandler> = {
     return {
       report: requireProviderObject(
         await requestFeedierJson({
-          ...requestContext(context),
+          ...context,
           path: `/v3/reports/${reportId}`,
           method: "PUT",
           body: reportMutationBody(input),
@@ -100,7 +97,7 @@ export const feedierActionHandlers: Record<string, FeedierHandler> = {
   },
   async delete_report(input, context) {
     await requestFeedierJson({
-      ...requestContext(context),
+      ...context,
       path: `/v3/reports/${requireReportId(input)}`,
       method: "DELETE",
       phase: "execute",
@@ -109,7 +106,7 @@ export const feedierActionHandlers: Record<string, FeedierHandler> = {
   },
   async create_report_share_link(input, context) {
     const payload = await requestFeedierJson({
-      ...requestContext(context),
+      ...context,
       path: `/v3/reports/${requireReportId(input)}/share`,
       method: "POST",
       body: { expiration: optionalString(input.expiration) },
@@ -140,15 +137,10 @@ export const credentialValidators: CredentialValidators = {
     });
     return {
       profile: { accountId: "feedier-api-key", displayName: "Feedier API Key" },
-      grantedScopes: [],
       metadata: { apiBaseUrl: feedierApiBaseUrl, validationEndpoint: "/v3/reports" },
     };
   },
 };
-
-function requestContext(context: ApiKeyProviderContext): Pick<FeedierRequestInput, "apiKey" | "fetcher" | "signal"> {
-  return { apiKey: context.apiKey, fetcher: context.fetcher, signal: context.signal };
-}
 
 async function requestFeedierJson(input: FeedierRequestInput): Promise<unknown> {
   const url = new URL(input.path, feedierApiBaseUrl);

@@ -4,17 +4,17 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
 import { compactObject, nullableString, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineProviderExecutors,
-  defineProviderProxy,
   providerInputError,
   providerUserAgent,
   ProviderRequestError,
-  requireApiKeyCredential,
   requiredInputString,
 } from "../provider-runtime.ts";
 
@@ -115,7 +115,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: user.email,
         displayName: user.fullName || user.email || "ConfigCat Public API",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: configcatApiBaseUrl,
         validationEndpoint: configcatValidationPath,

@@ -1,14 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 
 const service = "imgix";
 const imgixApiBaseUrl = "https://api.imgix.com/api/v1/";
@@ -17,8 +13,7 @@ const purgesPath = "purges";
 
 type ImgixRequestPhase = "validate" | "execute";
 type ImgixMethod = "GET" | "PATCH" | "POST";
-type ImgixActionContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
-type ImgixActionHandler = (input: Record<string, unknown>, context: ImgixActionContext) => Promise<unknown>;
+type ImgixActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 
 interface ImgixRequestInput {
   path: string;
@@ -76,7 +71,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "api_key",
         displayName: "Imgix API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: imgixApiBaseUrl,
         validationEndpoint: `/${sourcesPath}`,
@@ -86,7 +80,7 @@ export const credentialValidators: CredentialValidators = {
   },
 };
 
-async function executeListSources(input: Record<string, unknown>, context: ImgixActionContext): Promise<unknown> {
+async function executeListSources(input: Record<string, unknown>, context: ApiKeyProviderContext): Promise<unknown> {
   const payload = await imgixRequestJson(
     {
       path: sourcesPath,
@@ -108,7 +102,7 @@ async function executeListSources(input: Record<string, unknown>, context: Imgix
   };
 }
 
-async function executeGetSource(input: Record<string, unknown>, context: ImgixActionContext): Promise<unknown> {
+async function executeGetSource(input: Record<string, unknown>, context: ApiKeyProviderContext): Promise<unknown> {
   const sourceId = readRequiredString(input.sourceId, "sourceId");
   const payload = await imgixRequestJson(
     {
@@ -123,7 +117,7 @@ async function executeGetSource(input: Record<string, unknown>, context: ImgixAc
   return normalizeSourceResponse(payload, "get source");
 }
 
-async function executeUpdateSource(input: Record<string, unknown>, context: ImgixActionContext): Promise<unknown> {
+async function executeUpdateSource(input: Record<string, unknown>, context: ApiKeyProviderContext): Promise<unknown> {
   const sourceId = readRequiredString(input.sourceId, "sourceId");
   const attributes = optionalRecord(input.attributes);
   if (!attributes) {
@@ -148,7 +142,7 @@ async function executeUpdateSource(input: Record<string, unknown>, context: Imgi
   return normalizeSourceResponse(payload, "update source");
 }
 
-async function executePurgeAsset(input: Record<string, unknown>, context: ImgixActionContext): Promise<unknown> {
+async function executePurgeAsset(input: Record<string, unknown>, context: ApiKeyProviderContext): Promise<unknown> {
   const payload = await imgixRequestJson(
     {
       path: purgesPath,
@@ -200,7 +194,7 @@ function buildListSourcesQuery(input: Record<string, unknown>): Record<string, s
   });
 }
 
-async function imgixRequestJson(input: ImgixRequestInput, context: ImgixActionContext): Promise<unknown> {
+async function imgixRequestJson(input: ImgixRequestInput, context: ApiKeyProviderContext): Promise<unknown> {
   const url = new URL(input.path, imgixApiBaseUrl);
   for (const [key, value] of Object.entries(input.query ?? {})) {
     if (value !== undefined) {

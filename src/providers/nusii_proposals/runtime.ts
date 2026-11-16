@@ -1,6 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
 import {
@@ -10,14 +9,14 @@ import {
   ProviderRequestError,
   readProviderTextBody,
   requiredResponseRecord,
+  providerInputError,
 } from "../provider-runtime.ts";
 
 export const nusiiProposalsApiBaseUrl = "https://app.nusii.com/api/v2/";
 
 type NusiiProposalsRequestPhase = "validate" | "execute";
 type NusiiProposalsMethod = "GET" | "POST" | "PUT";
-type NusiiProposalsContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
-type NusiiProposalsActionHandler = (input: Record<string, unknown>, context: NusiiProposalsContext) => Promise<unknown>;
+type NusiiProposalsActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 
 const clientWriteFields = [
   "email",
@@ -230,7 +229,6 @@ export async function validateNusiiProposalsCredential(
       accountId: readStringLike(data.id) ?? "api_key",
       displayName: name ?? email ?? subdomain ?? "Nusii API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: nusiiProposalsApiBaseUrl,
       validationEndpoint: "/account/me",
@@ -350,7 +348,7 @@ function createNusiiError(status: number, payload: unknown, phase: NusiiProposal
     return new ProviderRequestError(429, message);
   }
   if (phase === "validate" && (status === 401 || status === 403)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (phase === "execute" && status === 401) {
     return new ProviderRequestError(401, message);

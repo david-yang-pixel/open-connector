@@ -4,17 +4,12 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { optionalBoolean, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-  requiredInputString,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError, requiredInputString } from "../provider-runtime.ts";
 
 const service = "laravel_cloud";
 const laravelCloudApiBaseUrl = "https://cloud.laravel.com/api";
@@ -169,9 +164,7 @@ export const credentialValidators: CredentialValidators = {
   },
 };
 
-async function validateLaravelCloudCredential(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
-): Promise<CredentialValidationResult> {
+async function validateLaravelCloudCredential(context: ApiKeyProviderContext): Promise<CredentialValidationResult> {
   const payload = await requestLaravelCloud({ path: "/meta/organization" }, context);
   const organization = normalizeOrganization(readObject(payload.data));
   const label = organization.name ?? organization.slug ?? "Laravel Cloud Account";
@@ -181,7 +174,6 @@ async function validateLaravelCloudCredential(
       accountId: `laravel_cloud:organization:${organization.id}`,
       displayName: label,
     },
-    grantedScopes: [],
     metadata: {
       validationEndpoint: "/meta/organization",
       organizationId: organization.id,
@@ -191,10 +183,7 @@ async function validateLaravelCloudCredential(
   };
 }
 
-async function requestLaravelCloud(
-  request: LaravelCloudRequest,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
-): Promise<JsonObject> {
+async function requestLaravelCloud(request: LaravelCloudRequest, context: ApiKeyProviderContext): Promise<JsonObject> {
   const url = new URL(`${laravelCloudApiBaseUrl}${request.path}`);
   if (request.search) {
     for (const [key, value] of request.search) {

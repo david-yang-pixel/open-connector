@@ -1,6 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -146,7 +145,6 @@ export async function validateTheDogApiCredential(
   const breed = normalizeBreed(arrayPayload(payload, "The Dog API validation response")[0]);
   return {
     profile: { accountId: "the_dog_api:api-key", displayName: "The Dog API Key" },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: "https://api.thedogapi.com/v1",
       validationEndpoint: "/breeds",
@@ -190,7 +188,7 @@ function buildAccountRecordQuery(input: Record<string, unknown>): Record<string,
 async function requestTheDogApiJson(input: {
   method: TheDogApiMethod;
   path: string;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   query?: Record<string, string | undefined>;
   body?: Record<string, unknown>;
   phase?: "validate" | "execute";

@@ -1,6 +1,5 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -10,10 +9,10 @@ import {
   optionalString,
   requiredString,
 } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   providerUserAgent,
   ProviderRequestError,
   readProviderJsonBody,
@@ -160,7 +159,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: domainId ?? "api_key",
         displayName: domainName ?? "Daily API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: dailyApiBaseUrl,
         validationEndpoint: "/",
@@ -178,7 +176,7 @@ async function dailyRequestObject(
     query?: Record<string, string | number | boolean | undefined>;
     body?: Record<string, unknown>;
   },
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: DailyRequestPhase,
 ): Promise<Record<string, unknown>> {
   const url = buildDailyUrl(request.path);

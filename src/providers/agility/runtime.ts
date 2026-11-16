@@ -1,11 +1,10 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { booleanString, compactObject, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
-import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
+import { providerUserAgent, ProviderRequestError, defaultProviderRequestTimeoutMs } from "../provider-runtime.ts";
 
 export const agilityApiBaseUrl = "https://api.aglty.io";
-const agilityDefaultRequestTimeoutMs = 30_000;
 
 type AgilityPhase = "validate" | "execute";
 
@@ -190,7 +189,6 @@ export async function validateAgilityCredential(
         accountId: "agility_api_key",
         displayName: "Agility CMS API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: agilityApiBaseUrl,
         validationSkipped: true,
@@ -215,7 +213,6 @@ export async function validateAgilityCredential(
       accountId: guid,
       displayName: "Agility CMS API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: agilityApiBaseUrl,
       validationEndpoint: `/${guid}/fetch/contentmodels`,
@@ -233,7 +230,7 @@ async function requestAgilityJson(input: {
   signal?: AbortSignal;
   phase: AgilityPhase;
 }): Promise<unknown> {
-  const timeoutSignal = AbortSignal.timeout(agilityDefaultRequestTimeoutMs);
+  const timeoutSignal = AbortSignal.timeout(defaultProviderRequestTimeoutMs);
   const signal = input.signal ? AbortSignal.any([input.signal, timeoutSignal]) : timeoutSignal;
 
   try {

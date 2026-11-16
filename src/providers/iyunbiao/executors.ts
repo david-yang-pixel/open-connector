@@ -6,7 +6,8 @@ import type {
 } from "../../core/types.ts";
 
 import { optionalString } from "../../core/cast.ts";
-import { defineProviderExecutors, requireCustomCredential } from "../provider-runtime.ts";
+import { requireCustomCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
 import { iyunbiaoActions } from "./actions.ts";
 import { executeIyunbiaoAction, loginIyunbiao } from "./runtime.ts";
 
@@ -45,7 +46,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: `${session.credentials.baseUrl}:${session.credentials.account}`,
         displayName: optionalString(profile.user) ?? session.credentials.account,
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: session.credentials.baseUrl,
         serverVersion: optionalString(profile.serverVersion),

@@ -4,16 +4,12 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 
 const service = "detect_language";
 const detectLanguageApiBaseUrl = "https://ws.detectlanguage.com/v3";
@@ -22,7 +18,7 @@ const validationPath = "/account/status";
 interface DetectLanguageRequestInput {
   path: string;
   method: "GET" | "POST";
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   phase: "validate" | "execute";
   body?: Record<string, unknown>;
 }
@@ -114,7 +110,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "detect-language-api-key",
         displayName: status.plan ? `Detect Language ${status.plan}` : "Detect Language API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: detectLanguageApiBaseUrl,
         validationEndpoint: validationPath,

@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import {
   compactObject,
@@ -16,12 +16,12 @@ import {
   isAbortLikeError,
   providerUserAgent,
   ProviderRequestError,
+  providerInputError,
 } from "../provider-runtime.ts";
 
 type ScraperapiPhase = "validate" | "execute";
 type ScraperapiQueryValue = string | number | boolean | undefined;
-type ScraperapiActionContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
-type ScraperapiActionHandler = ProviderRuntimeHandler<ScraperapiActionContext>;
+type ScraperapiActionHandler = ProviderRuntimeHandler<ApiKeyProviderContext>;
 
 export const scraperapiApiBaseUrl = "https://api.scraperapi.com/";
 
@@ -86,7 +86,6 @@ export async function validateScraperapiCredential(
       accountId: "scraperapi",
       displayName: "ScraperAPI API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       validationEndpoint: "/account",
       apiBaseUrl: "https://api.scraperapi.com",
@@ -124,7 +123,7 @@ async function requestScraperapiAccount(
 async function requestScraperapiRaw(
   query: Record<string, ScraperapiQueryValue>,
   init: RequestInit,
-  context: ScraperapiActionContext,
+  context: ApiKeyProviderContext,
   phase: ScraperapiPhase,
 ): Promise<Response> {
   return requestScraperapiUrl(scraperapiApiBaseUrl, query, init, context, phase);
@@ -134,7 +133,7 @@ async function requestScraperapiUrl(
   url: string,
   query: Record<string, ScraperapiQueryValue>,
   init: RequestInit,
-  context: ScraperapiActionContext,
+  context: ApiKeyProviderContext,
   phase: ScraperapiPhase,
 ): Promise<Response> {
   const timeout = createProviderTimeout(context.signal, scraperapiRequestTimeoutMs);
@@ -175,7 +174,7 @@ async function requestScraperapiUrl(
 function buildScraperapiUrl(url: string, query: Record<string, ScraperapiQueryValue>, apiKey: string): URL {
   const requestUrl = assertPublicHttpUrl(url, {
     fieldName: "url",
-    createError: (message) => new ProviderRequestError(400, message),
+    createError: providerInputError,
   });
   requestUrl.searchParams.set("api_key", apiKey);
   for (const [key, value] of Object.entries(query)) {
@@ -272,13 +271,13 @@ function createScraperapiError(status: number, body: string, phase: ScraperapiPh
     return new ProviderRequestError(429, message);
   }
   if (phase === "validate" && status >= 400 && status < 500) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (phase === "execute" && status === 401) {
     return new ProviderRequestError(401, message);
   }
   if (phase === "execute" && status === 400) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   return new ProviderRequestError(status || 500, message);
 }

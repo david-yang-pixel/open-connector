@@ -9,19 +9,20 @@ import type {
   ProviderActionHandlers,
   ProviderActionName,
   ProviderActionSources,
-} from "../provider-runtime.ts";
+} from "../provider-executors.ts";
+import type { ProviderRequestContext } from "../provider-runtime.ts";
 
 import { base64Bytes, compactObject, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
-import { assertPublicHttpUrl, compactJson, readBoundedResponseBytes } from "../../core/request.ts";
 import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  mapProviderActionSources,
-  providerInputError,
-  ProviderRequestError,
-  providerUserAgent,
-  readTransitFileInput,
-} from "../provider-runtime.ts";
+  assertPublicHttpUrl,
+  compactJson,
+  readBoundedResponseBytes,
+  storeResponseInTransit,
+} from "../../core/request.ts";
+import { defineApiKeyProviderExecutors, mapProviderActionSources } from "../provider-executors.ts";
+import { readTransitFileInput } from "../provider-files.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerInputError, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "mistral_ai";
 const mistralApiBaseUrl = "https://api.mistral.ai";
@@ -41,7 +42,7 @@ interface MistralActionSpec {
 }
 
 interface UploadSource {
-  bytes: Uint8Array;
+  file: Blob;
   fileName: string;
   mimeType: string;
 }
@@ -214,7 +215,6 @@ export const credentialValidators: CredentialValidators = {
       profile: {
         displayName: "Mistral AI API Key",
       },
-      grantedScopes: [],
       metadata: {
         validationEndpoint: "/v1/models",
         availableModels: (payload.data ?? [])
@@ -251,7 +251,7 @@ async function executeMistralAction(
 async function executeJsonMistralAction(
   input: Record<string, unknown>,
   spec: MistralActionSpec,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
 ): Promise<unknown> {
   const { url, remainingInput } = buildMistralUrl(spec, input);
   const requestInit: RequestInit = {
@@ -284,10 +284,7 @@ async function executeMultipartMistralAction(
   const { url, remainingInput } = buildMistralUrl(spec, input);
   const uploadSource = await resolveUploadSource(remainingInput, context);
   const formData = new FormData();
-  formData.set(
-    "file",
-    new File([Uint8Array.from(uploadSource.bytes)], uploadSource.fileName, { type: uploadSource.mimeType }),
-  );
+  formData.set("file", new File([uploadSource.file], uploadSource.fileName, { type: uploadSource.mimeType }));
 
   for (const [key, value] of Object.entries(remainingInput)) {
     if (key !== "file") {
@@ -321,10 +318,7 @@ async function executeAudioTranscriptionAction(
     formData.set("file_url", readPublicFileUrl(source.fileUrl, "file.url").toString());
   } else {
     const uploadSource = await resolveUploadSource(remainingInput, context);
-    formData.set(
-      "file",
-      new File([Uint8Array.from(uploadSource.bytes)], uploadSource.fileName, { type: uploadSource.mimeType }),
-    );
+    formData.set("file", new File([uploadSource.file], uploadSource.fileName, { type: uploadSource.mimeType }));
   }
 
   for (const [key, value] of Object.entries(remainingInput)) {
@@ -367,12 +361,13 @@ async function downloadMistralFile(input: Record<string, unknown>, context: ApiK
   const fileName = optionalString(metadata?.filename) ?? `${fileId}.bin`;
   const mimeType =
     optionalString(metadata?.mimetype) ?? response.headers.get("content-type") ?? "application/octet-stream";
-  const bytes = await readBoundedResponseBytes(response, {
-    maxBytes: context.transitFiles.maxBytes,
+  const stored = await storeResponseInTransit(response, context.transitFiles, {
+    name: fileName,
+    mimeType,
     fieldName: fileName,
     createError: (message) => new ProviderRequestError(413, message),
+    signal: context.signal,
   });
-  const stored = await context.transitFiles.create(new File([Uint8Array.from(bytes)], fileName, { type: mimeType }));
 
   return {
     content: {
@@ -484,7 +479,7 @@ async function resolveUploadSource(
   }
   if (contentBase64) {
     return {
-      bytes: base64Bytes(contentBase64, "file.content_base64", providerInputError),
+      file: new Blob([base64Bytes(contentBase64, "file.content_base64", providerInputError)]),
       fileName,
       mimeType: mimeType ?? "application/octet-stream",
     };
@@ -499,7 +494,7 @@ async function readTransitUploadSource(
 ): Promise<UploadSource> {
   const stored = await readTransitFileInput(file, { transitFiles });
   return {
-    bytes: new Uint8Array(await stored.file.arrayBuffer()),
+    file: stored.file,
     fileName: stored.name,
     mimeType: stored.mimeType,
   };
@@ -509,7 +504,7 @@ async function readRemoteUploadSource(
   fileUrl: string,
   fileName: string,
   mimeType: string | undefined,
-  context: Pick<ApiKeyProviderContext, "fetcher" | "signal">,
+  context: ProviderRequestContext,
 ): Promise<UploadSource> {
   const url = readPublicFileUrl(fileUrl, "file.url");
   const response = await context.fetcher(url, {
@@ -527,11 +522,13 @@ async function readRemoteUploadSource(
   }
 
   return {
-    bytes: await readBoundedResponseBytes(response, {
-      maxBytes: maxRemoteUploadBytes,
-      fieldName: "file.url",
-      createError: (message) => new ProviderRequestError(413, message),
-    }),
+    file: new Blob([
+      await readBoundedResponseBytes(response, {
+        maxBytes: maxRemoteUploadBytes,
+        fieldName: "file.url",
+        createError: (message) => new ProviderRequestError(413, message),
+      }),
+    ]),
     fileName,
     mimeType: mimeType ?? response.headers.get("content-type") ?? "application/octet-stream",
   };

@@ -3,16 +3,18 @@ import type { ProviderDefinition } from "./model";
 import type { ReactNode } from "react";
 
 import { useTranslate } from "@embra/i18n/react";
-import { Loader2, Store } from "lucide-react";
+import { ChevronRight, Loader2, Store } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { Button } from "./components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./components/ui/dialog";
 import { loadDefaultMarketplaceCatalog } from "./default-marketplace-discovery";
 import { Badge, EmptyState, ProviderIcon } from "./shared-ui";
 
 interface DefaultMarketplaceCatalogProps {
   providers: ProviderDefinition[];
-  discoveryUrl: string;
+  connected?: boolean;
+  embedded?: boolean;
 }
 
 // Default promotions apply only to the named models, never to custom marketplaces.
@@ -23,17 +25,22 @@ const promotedModels: Record<string, string[]> = {
 };
 const promotedServices = Object.keys(promotedModels);
 
-export function DefaultMarketplaceCatalog({ providers, discoveryUrl }: DefaultMarketplaceCatalogProps): ReactNode {
+export function DefaultMarketplaceCatalog({
+  providers,
+  connected,
+  embedded,
+}: DefaultMarketplaceCatalogProps): ReactNode {
   const t = useTranslate();
   const [catalog, setCatalog] = useState<DefaultMarketplaceDiscovery>();
   const [failure, setFailure] = useState<Error>();
   const [attempt, setAttempt] = useState(0);
+  const [selectedProvider, setSelectedProvider] = useState<ProviderDefinition>();
 
   useEffect(() => {
     let active = true;
     setFailure(undefined);
     const controller = new AbortController();
-    void loadDefaultMarketplaceCatalog(discoveryUrl, controller.signal).then(
+    void loadDefaultMarketplaceCatalog(controller.signal).then(
       (value) => {
         if (active) setCatalog(value);
       },
@@ -47,7 +54,7 @@ export function DefaultMarketplaceCatalog({ providers, discoveryUrl }: DefaultMa
       active = false;
       controller.abort();
     };
-  }, [attempt, discoveryUrl]);
+  }, [attempt]);
 
   const available = new Set(catalog?.actions);
   const rows = providers
@@ -62,10 +69,17 @@ export function DefaultMarketplaceCatalog({ providers, discoveryUrl }: DefaultMa
     });
 
   return (
-    <section className="marketplace-panel">
+    <section
+      className={
+        embedded
+          ? "marketplace-panel marketplace-preview-panel marketplace-preview-embedded"
+          : "marketplace-panel marketplace-preview-panel"
+      }
+      id={embedded ? "onekey-supported-features" : undefined}
+    >
       <header className="marketplace-panel-header">
         <div>
-          <h2>{t("marketplace.default.title")}</h2>
+          {embedded ? null : <h2>{t("marketplace.default.title")}</h2>}
           <p>{t("marketplace.default.description")}</p>
         </div>
         {catalog ? <Badge>{t("marketplace.providers.count", { count: rows.length })}</Badge> : null}
@@ -91,46 +105,86 @@ export function DefaultMarketplaceCatalog({ providers, discoveryUrl }: DefaultMa
           density="compact"
         />
       ) : (
-        <div className="marketplace-provider-list">
+        <div className="marketplace-default-grid">
           {rows.map((provider) => {
             const promoted = promotedServices.includes(provider.service);
-            const path = `/providers/${encodeURIComponent(provider.service)}`;
+            const actions = provider.actions.filter((action) => available.has(action.id));
             return (
-              <div className="marketplace-provider-row marketplace-default-row" key={provider.service}>
+              <Button
+                type="button"
+                variant="ghost"
+                className="marketplace-service-card"
+                key={provider.service}
+                onClick={() => setSelectedProvider(provider)}
+              >
                 <ProviderIcon provider={provider} />
-                <div className="marketplace-default-copy">
-                  <Link className="marketplace-provider-copy" to={path}>
-                    <strong>{provider.displayName}</strong>
-                    <span>
-                      {promoted
-                        ? t(`marketplace.default.descriptions.${provider.service}`)
-                        : provider.description || t("marketplace.default.browseDescription")}
-                    </span>
-                  </Link>
-                  {promoted ? (
-                    <div className="marketplace-default-tags">
-                      {promotedModels[provider.service].map((model) => (
-                        <span className="marketplace-model-tag" key={model}>
-                          {model}
+                <span className="marketplace-default-copy">
+                  <span className="marketplace-service-heading">
+                    <span className="marketplace-service-title">
+                      <strong>{provider.displayName}</strong>
+                      {promoted ? (
+                        <span title={promotedModels[provider.service].join(" · ")}>
+                          <Badge tone="success">{t(`marketplace.default.offers.${provider.service}`)}</Badge>
                         </span>
-                      ))}
-                      <Badge tone="success">{t(`marketplace.default.offers.${provider.service}`)}</Badge>
-                    </div>
-                  ) : null}
-                </div>
-                <Button asChild variant="outline" size="sm">
-                  <Link to={path}>{t("marketplace.default.view")}</Link>
-                </Button>
-              </div>
+                      ) : null}
+                    </span>
+                    <ChevronRight size={15} aria-hidden="true" />
+                  </span>
+                  <span className="marketplace-service-count">
+                    {t("marketplace.default.supportedActions", { count: actions.length })}
+                  </span>
+                </span>
+              </Button>
             );
           })}
         </div>
       )}
       {catalog ? (
         <footer className="marketplace-catalog-footer">
-          {catalog.name} · {t("marketplace.default.disconnected")}
+          {catalog.name} · {t(connected ? "marketplace.default.connected" : "marketplace.default.disconnected")}
         </footer>
       ) : null}
+      <Dialog
+        open={selectedProvider != null}
+        onOpenChange={(open) => {
+          if (!open) setSelectedProvider(undefined);
+        }}
+      >
+        <DialogContent className="onekey-operations-panel">
+          <DialogHeader>
+            <DialogTitle>{selectedProvider?.displayName}</DialogTitle>
+            <DialogDescription>{t("marketplace.default.description")}</DialogDescription>
+          </DialogHeader>
+          {selectedProvider ? (
+            <>
+              {promotedModels[selectedProvider.service] ? (
+                <div className="marketplace-operation-offer">
+                  <Badge tone="success">{t(`marketplace.default.offers.${selectedProvider.service}`)}</Badge>
+                  <span>{promotedModels[selectedProvider.service].join(" · ")}</span>
+                </div>
+              ) : null}
+              <ul className="marketplace-operation-list">
+                {selectedProvider.actions
+                  .filter((action) => available.has(action.id))
+                  .map((action) => (
+                    <li key={action.id}>
+                      <Link to={`/actions/${encodeURIComponent(action.id)}`}>
+                        <strong>{action.name}</strong>
+                        <span>{action.description}</span>
+                        <ChevronRight size={15} aria-hidden="true" />
+                      </Link>
+                    </li>
+                  ))}
+              </ul>
+              <Button asChild variant="outline">
+                <Link to={`/providers/${encodeURIComponent(selectedProvider.service)}`}>
+                  {t("marketplace.default.providerDetails")}
+                </Link>
+              </Button>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }

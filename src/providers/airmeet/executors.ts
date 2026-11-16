@@ -1,14 +1,14 @@
 import type { CredentialValidators, ProviderExecutors } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { optionalRecord, optionalString, recordOrEmpty, requiredString } from "../../core/cast.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
 import {
-  defineProviderExecutors,
   providerInputError,
   ProviderRequestError,
   providerResponseError,
   providerUserAgent,
-  requireApiKeyCredential,
   requiredInputString,
   requiredResponseRecord,
   runProviderRequest,
@@ -70,7 +70,6 @@ export const credentialValidators: CredentialValidators = {
     );
     return {
       profile: { displayName: auth.label ?? "Airmeet API Key" },
-      grantedScopes: [],
       metadata: { apiBaseUrl: baseUrls[region], region },
     };
   },

@@ -7,13 +7,10 @@ import type {
 import type { AppStoreConnectContext } from "./runtime.ts";
 
 import { optionalString } from "../../core/cast.ts";
-import {
-  defineProviderExecutors,
-  defineProviderProxy,
-  providerProxyEndpointPrefixes,
-  requireCustomCredential,
-  requiredInputString,
-} from "../provider-runtime.ts";
+import { requireCustomCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy, providerProxyEndpointPrefixes } from "../provider-proxy.ts";
+import { requiredInputString } from "../provider-runtime.ts";
 import { createAppStoreConnectAuthorization } from "./jwt.ts";
 import {
   appStoreConnectActionHandlers,
@@ -58,7 +55,6 @@ export const credentialValidators: CredentialValidators = {
       },
       // App Store Connect exposes no endpoint that reports the roles a key
       // holds, so there is nothing to derive granted scopes from.
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: appStoreConnectApiOrigin,
         validationEndpoint: "/v1/apps",

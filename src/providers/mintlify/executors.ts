@@ -1,8 +1,9 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
-import { defineApiKeyProviderExecutors, defineProviderProxy } from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import { executeMintlifyAction, validateMintlifyCredential } from "./runtime.ts";
 
 const service = "mintlify";
@@ -26,7 +27,7 @@ export const credentialValidators: CredentialValidators = {
   async apiKey(input, { fetcher }) {
     const projectId = input.values.projectId ?? "";
     await validateMintlifyCredential(input.apiKey, projectId, fetcher);
-    return { profile: { displayName: `Mintlify ${projectId}` }, grantedScopes: [], metadata: { projectId } };
+    return { profile: { displayName: `Mintlify ${projectId}` }, metadata: { projectId } };
   },
 };
 

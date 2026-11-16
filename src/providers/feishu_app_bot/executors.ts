@@ -5,12 +5,14 @@ import type {
   ProviderProxyExecutor,
   TransitFileWriter,
 } from "../../core/types.ts";
+import type { IntegrationDefinition } from "../../triggers/common/integration.ts";
+import type { PollDefinition } from "../../triggers/common/poll.ts";
 import type { FeishuActionRuntimeContext } from "../feishu/shared/client.ts";
-import type { ProviderActionHandlerSubset } from "../provider-runtime.ts";
+import type { ProviderActionHandlerSubset } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
 import { compactObject, optionalBoolean, optionalRecord, optionalString } from "../../core/cast.ts";
-import { assertPublicHttpUrl, readBoundedResponseBytes } from "../../core/request.ts";
+import { assertPublicHttpUrl, storeResponseInTransit } from "../../core/request.ts";
 import { createFeishuApplicationActionHandlers } from "../feishu/shared/application-runtime.ts";
 import { createFeishuBaseAdvancedActionHandlers } from "../feishu/shared/base-advanced-runtime.ts";
 import { createFeishuBaseActionHandlers } from "../feishu/shared/base-runtime.ts";
@@ -28,6 +30,7 @@ import { createFeishuMailActionHandlers } from "../feishu/shared/mail-runtime.ts
 import { createFeishuMarkdownRuntimeContext } from "../feishu/shared/markdown-feishu-runtime.ts";
 import { createFeishuMarkdownActionHandlers } from "../feishu/shared/markdown-runtime.ts";
 import { createFeishuOkrActionHandlers } from "../feishu/shared/okr-runtime.ts";
+import { FeishuPagination } from "../feishu/shared/pagination.ts";
 import { createFeishuSheetsAdvancedActionHandlers } from "../feishu/shared/sheets-advanced-runtime.ts";
 import { createFeishuSheetsActionHandlers } from "../feishu/shared/sheets-runtime.ts";
 import { createFeishuSlidesActionHandlers } from "../feishu/shared/slides-runtime.ts";
@@ -35,26 +38,27 @@ import { createFeishuTaskActionHandlers } from "../feishu/shared/task-runtime.ts
 import { createFeishuVcActionHandlers } from "../feishu/shared/vc-runtime.ts";
 import { createFeishuWhiteboardActionHandlers } from "../feishu/shared/whiteboard-runtime.ts";
 import { createFeishuWikiActionHandlers } from "../feishu/shared/wiki-runtime.ts";
+import { requireCustomCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors, getProviderActionHandler, mapProviderActionHandlers } from "../provider-executors.ts";
 import {
   createProviderProxyUrl,
-  defineProviderExecutors,
-  getProviderActionHandler,
-  mapProviderActionHandlers,
   normalizeProviderProxyHeaders,
+  readProviderProxyErrorMessage,
+  readProviderProxyResponse,
+  toProviderProxyError,
+} from "../provider-proxy.ts";
+import {
   providerFetch,
   ProviderRequestError,
   providerUserAgent,
-  readProviderProxyErrorMessage,
-  readProviderProxyResponse,
-  requireCustomCredential,
   requiredInputString,
-  toProviderProxyError,
+  defaultProviderRequestTimeoutMs,
 } from "../provider-runtime.ts";
-import { feishuAppBotActions, feishuAppBotProviderScopes } from "./actions.ts";
+import { feishuAppBotActions } from "./actions.ts";
+import { feishuEvents } from "./trigger-on-event.ts";
 
 const service = "feishu_app_bot";
 const feishuOpenBaseUrl = "https://open.feishu.cn/open-apis";
-const feishuRequestTimeoutMs = 30_000;
 const feishuTenantAccessTokenRefreshSkewMs = 60_000;
 const feishuMaxImageUploadSourceBytes = 10 * 1024 * 1024;
 const feishuMaxFileUploadSourceBytes = 30 * 1024 * 1024;
@@ -62,7 +66,7 @@ const feishuImageUploadType = "message";
 const feishuRateLimitedErrorCodes = new Set([11232, 11233, 11247, 230020, 230047, 99991400, 1000004, 1000005]);
 const feishuCredentialExpiredErrorCodes = new Set([
   4001, 10005, 10012, 10013, 10014, 10015, 20002, 20005, 20013, 20014, 99991543, 99991661, 99991663, 99991664, 99991665,
-  99991671, 99991673,
+  99991668, 99991671, 99991677,
 ]);
 const feishuScopeMissingErrorCodes = new Set([10023, 11223, 11229, 11241, 99991672, 99991676, 99991679]);
 
@@ -219,6 +223,7 @@ async function createFeishuAppBotSharedHandlers(
 ): Promise<Record<string, (input: Record<string, unknown>) => Promise<unknown>>> {
   const accessToken = await fetchTenantAccessToken(context, context.fetcher, "execute", context.signal);
   const runtimeContext: FeishuActionRuntimeContext = {
+    openBaseUrl: feishuOpenBaseUrl,
     identity: "tenant",
     accessToken,
     fetcher: context.fetcher,
@@ -238,6 +243,7 @@ async function createFeishuAppBotSharedHandlers(
     ...createFeishuDriveActionHandlers(request),
     ...createFeishuDriveAdvancedActionHandlers({
       request,
+      openBaseUrl: feishuOpenBaseUrl,
       accessToken,
       fetcher: context.fetcher,
       transitFiles: context.transitFiles,
@@ -252,6 +258,7 @@ async function createFeishuAppBotSharedHandlers(
     ...createFeishuOkrActionHandlers(request),
     ...createFeishuFileActionHandlers({
       request,
+      openBaseUrl: feishuOpenBaseUrl,
       accessToken,
       fetcher: context.fetcher,
       transitFiles: context.transitFiles,
@@ -262,6 +269,7 @@ async function createFeishuAppBotSharedHandlers(
     ...createFeishuMarkdownActionHandlers(createFeishuMarkdownRuntimeContext({ request, context: runtimeContext })),
     ...createFeishuDomainMediaActionHandlers({
       request,
+      openBaseUrl: feishuOpenBaseUrl,
       accessToken,
       fetcher: context.fetcher,
       transitFiles: context.transitFiles,
@@ -340,14 +348,22 @@ export const credentialValidators: CredentialValidators = {
   async customCredential(input, { fetcher, signal }) {
     const credential = readFeishuAppBotCredential(input.values);
     const accessToken = await fetchTenantAccessToken(credential, fetcher, "validate", signal);
-    const [appProbe, publishedVersionProbe] = await Promise.all([
+    const [app, publishedVersion, authorization] = await Promise.all([
       fetchOptionalAppMetadata(() => fetchFeishuAppInfo(credential.appId, accessToken, fetcher, "validate", signal)),
       fetchOptionalAppMetadata(() =>
         fetchFeishuPublishedAppVersion(credential.appId, accessToken, fetcher, "validate", signal),
       ),
+      fetchOptionalAppMetadata(() =>
+        feishuRequest({
+          method: "GET",
+          path: "/application/v6/scopes",
+          accessToken,
+          fetcher,
+          phase: "validate",
+          signal,
+        }),
+      ),
     ]);
-    const app = appProbe.value;
-    const publishedVersion = publishedVersionProbe.value;
     const accountLabel =
       optionalString(app.app_name) ?? optionalString(app.name) ?? optionalString(app.app_id) ?? credential.appId;
 
@@ -356,9 +372,7 @@ export const credentialValidators: CredentialValidators = {
         accountId: credential.appId,
         displayName: accountLabel,
       },
-      grantedScopes: publishedVersionProbe.available
-        ? readPublishedTenantScopes(publishedVersion)
-        : feishuAppBotProviderScopes,
+      grantedScopes: readGrantedTenantScopes(authorization),
       metadata: compactObject({
         appId: credential.appId,
         appName: accountLabel,
@@ -379,17 +393,11 @@ function readFeishuAppBotCredential(input: Record<string, string>): FeishuAppBot
 
 async function fetchOptionalAppMetadata(
   fetchMetadata: () => Promise<Record<string, unknown>>,
-): Promise<{ available: boolean; value: Record<string, unknown> }> {
+): Promise<Record<string, unknown>> {
   try {
-    return {
-      available: true,
-      value: await fetchMetadata(),
-    };
+    return await fetchMetadata();
   } catch {
-    return {
-      available: false,
-      value: {},
-    };
+    return {};
   }
 }
 
@@ -444,27 +452,51 @@ async function fetchFeishuPublishedAppVersion(
   phase: FeishuRequestPhase,
   signal?: AbortSignal,
 ): Promise<Record<string, unknown>> {
-  const result = await feishuRequest({
-    method: "GET",
-    path: `/application/v6/applications/${encodeURIComponent(appId)}/app_versions`,
-    query: [
+  let pageToken: string | undefined;
+  const pagination = new FeishuPagination("app versions");
+  while (true) {
+    const query: Array<[string, string]> = [
       ["lang", "zh_cn"],
       ["page_size", "20"],
-    ],
-    accessToken,
-    fetcher,
-    phase,
-    signal,
-  });
-  const data = optionalRecord(result.data);
-  const items = Array.isArray(data?.items) ? data.items : [];
-  for (const value of items) {
+      ["order", "0"],
+    ];
+    if (pageToken) query.push(["page_token", pageToken]);
+    const result = await feishuRequest({
+      method: "GET",
+      path: `/application/v6/applications/${encodeURIComponent(appId)}/app_versions`,
+      query,
+      accessToken,
+      fetcher,
+      phase,
+      signal,
+    });
+    const data = optionalRecord(result.data);
+    const items = Array.isArray(data?.items) ? data.items : [];
+    const published = items
+      .map((item) => optionalRecord(item))
+      .find((item) => item && item.status === 1 && item.publish_time != null && item.publish_time !== "");
+    if (published) return published;
+    pageToken = pagination.next(data?.has_more, data?.page_token);
+    if (!pageToken) return {};
+  }
+}
+
+function readGrantedTenantScopes(payload: Record<string, unknown>): string[] {
+  const data = optionalRecord(payload.data);
+  const scopes = Array.isArray(data?.scopes) ? data.scopes : [];
+  const granted: string[] = [];
+
+  for (const value of scopes) {
     const item = optionalRecord(value);
-    if (item && item.status === 1 && item.publish_time != null && item.publish_time !== "") {
-      return item;
+    const name = optionalString(item?.scope_name);
+    if (!name || item?.grant_status !== 1) continue;
+
+    if (item.scope_type === undefined || item.scope_type === "tenant") {
+      granted.push(name);
     }
   }
-  return {};
+
+  return granted;
 }
 
 function readPublishedTenantScopes(version: Record<string, unknown>): string[] {
@@ -482,15 +514,20 @@ function readPublishedTenantScopes(version: Record<string, unknown>): string[] {
 }
 
 function readPublishedEvents(version: Record<string, unknown>): string[] {
-  const events = Array.isArray(version.event_infos) ? version.event_infos : [];
-  const output: string[] = [];
-  for (const value of events) {
-    const event = optionalString(optionalRecord(value)?.event_type);
-    if (event) {
-      output.push(event);
-    }
-  }
-  return output;
+  const events = Array.isArray(version.events) ? version.events : [];
+  const details = Array.isArray(version.event_infos) ? version.event_infos : [];
+  return [
+    ...new Set([
+      ...events.flatMap((value) => {
+        const event = optionalString(value);
+        return event ? [event] : [];
+      }),
+      ...details.flatMap((value) => {
+        const event = optionalString(optionalRecord(value)?.event_type);
+        return event ? [event] : [];
+      }),
+    ]),
+  ];
 }
 
 async function uploadImage(
@@ -1115,7 +1152,7 @@ function normalizeFeishuError(input: {
   if (input.phase === "validate") {
     return new ProviderRequestError(input.status >= 500 ? 502 : 400, taggedMessage, input.envelope);
   }
-  if (input.status === 401 || (code !== null && feishuCredentialExpiredErrorCodes.has(code))) {
+  if (code !== null && feishuCredentialExpiredErrorCodes.has(code)) {
     return new ProviderRequestError(401, taggedMessage, input.envelope);
   }
   if (code !== null && feishuScopeMissingErrorCodes.has(code)) {
@@ -1125,9 +1162,9 @@ function normalizeFeishuError(input: {
     return new ProviderRequestError(400, message, input.envelope);
   }
   if (input.status >= 400 && input.status < 500) {
-    return new ProviderRequestError(input.status, taggedMessage, input.envelope);
+    return new ProviderRequestError(input.status, taggedMessage, input.envelope, "provider_error");
   }
-  return new ProviderRequestError(502, taggedMessage, input.envelope);
+  return new ProviderRequestError(502, taggedMessage, input.envelope, "provider_error");
 }
 
 async function uploadFeishuMediaTransitFile(input: {
@@ -1146,14 +1183,13 @@ async function uploadFeishuMediaTransitFile(input: {
 
     const mimeType = normalizeMimeType(response.headers.get("content-type")) ?? "application/octet-stream";
     const fileName = input.preferredFileName ?? buildFeishuTransitFileName(input.idValue, mimeType);
-    const bytes = await readBoundedResponseBytes(response, {
-      maxBytes: input.context.transitFiles.maxBytes,
+    const upload = await storeResponseInTransit(response, input.context.transitFiles, {
+      name: fileName,
+      mimeType,
       fieldName: `Feishu ${input.actionName} output`,
       createError: (message) => new ProviderRequestError(413, message),
+      signal: input.context.signal,
     });
-    const upload = await input.context.transitFiles.create(
-      new File([Uint8Array.from(bytes)], fileName, { type: mimeType }),
-    );
 
     return {
       [input.idKey]: input.idValue,
@@ -1399,7 +1435,7 @@ function normalizeMimeType(value: string | null | undefined): string | undefined
 
 function createFeishuRequestSignal(parent?: AbortSignal): FeishuRequestSignal {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), feishuRequestTimeoutMs);
+  const timeout = setTimeout(() => controller.abort(), defaultProviderRequestTimeoutMs);
   const abortFromParent = (): void => controller.abort(parent?.reason);
   if (parent?.aborted) {
     controller.abort(parent.reason);
@@ -1419,3 +1455,5 @@ function createFeishuRequestSignal(parent?: AbortSignal): FeishuRequestSignal {
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError");
 }
+
+export const triggers: readonly (IntegrationDefinition | PollDefinition)[] = [...feishuEvents];

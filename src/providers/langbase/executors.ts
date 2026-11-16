@@ -4,16 +4,12 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 
 const service = "langbase";
 const langbaseApiBaseUrl = "https://api.langbase.com";
@@ -60,9 +56,7 @@ export const credentialValidators: CredentialValidators = {
   },
 };
 
-async function validateLangbaseCredential(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
-): Promise<CredentialValidationResult> {
+async function validateLangbaseCredential(context: ApiKeyProviderContext): Promise<CredentialValidationResult> {
   const payload = await requestLangbaseJson({
     path: langbaseMemoryPath,
     context,
@@ -75,7 +69,6 @@ async function validateLangbaseCredential(
       accountId: "api_key",
       displayName: "Langbase API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: langbaseApiBaseUrl,
       validationEndpoint: langbaseMemoryPath,
@@ -157,7 +150,7 @@ async function retrieveLangbaseMemory(
 
 async function requestLangbaseJson(input: {
   path: string;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   phase: LangbaseRequestPhase;
   method?: "GET" | "POST" | "DELETE";
   body?: Record<string, unknown>;

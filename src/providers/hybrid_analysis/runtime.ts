@@ -1,5 +1,4 @@
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
 import { ProviderRequestError } from "../provider-runtime.ts";
@@ -55,7 +54,6 @@ export async function validateHybridAnalysisCredential(
   signal?: AbortSignal,
 ): Promise<{
   profile: { accountId: string; displayName: string };
-  grantedScopes: string[];
   metadata: Record<string, unknown>;
 }> {
   const key = requireObject(
@@ -68,14 +66,13 @@ export async function validateHybridAnalysisCredential(
       accountId: `hybrid-analysis:${apiKey.slice(-8)}`,
       displayName: levelName ? `Hybrid Analysis ${levelName}` : "Hybrid Analysis API Key",
     },
-    grantedScopes: [],
     metadata: { authLevel: optionalInteger(key.auth_level), authLevelName: levelName },
   };
 }
 
 async function request(
   path: string,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   query?: Record<string, string>,
   validating = false,
 ): Promise<unknown> {

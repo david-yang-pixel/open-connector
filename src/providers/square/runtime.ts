@@ -1,10 +1,10 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { compactObject, optionalRecord, optionalString, requiredRecord, requiredString } from "../../core/cast.ts";
 import { encodePathSegment } from "../../core/request.ts";
-import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
+import { providerUserAgent, ProviderRequestError, providerInputError } from "../provider-runtime.ts";
 
 export const squareApiBaseUrl = "https://connect.squareup.com";
 export const squareApiVersion = "2026-05-20";
@@ -15,7 +15,7 @@ type SquareActionHandler = (input: Record<string, unknown>, context: ApiKeyProvi
 interface SquareRequestInput {
   path: string;
   method: "GET" | "POST" | "PUT";
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   phase: SquareRequestPhase;
   query?: Record<string, unknown>;
   body?: Record<string, unknown>;
@@ -117,7 +117,6 @@ export async function validateSquareCredential(
       accountId: merchantId ?? firstLocationId,
       displayName: businessName ?? firstLocationName ?? firstLocationId ?? "Square Access Token",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: squareApiBaseUrl,
       validationEndpoint: "/v2/locations",
@@ -194,7 +193,7 @@ function createSquareError(status: number, payload: unknown, phase: SquareReques
     return new ProviderRequestError(429, message);
   }
   if (phase === "validate" && (status === 401 || status === 403)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (phase === "execute" && (status === 401 || status === 403)) {
     return new ProviderRequestError(status, message);
@@ -228,7 +227,7 @@ function normalizeCustomerPage(payload: unknown): Record<string, unknown> {
 }
 
 function customerRequestBody(input: Record<string, unknown>): Record<string, unknown> {
-  const customer = requiredRecord(input.customer, "customer", (message) => new ProviderRequestError(400, message));
+  const customer = requiredRecord(input.customer, "customer", providerInputError);
   return compactObject({
     ...customer,
     idempotency_key: input.idempotency_key,
@@ -240,7 +239,7 @@ function pickQuery(input: Record<string, unknown>, keys: string[]): Record<strin
 }
 
 function requiredInputString(input: Record<string, unknown>, fieldName: string): string {
-  return requiredString(input[fieldName], fieldName, (message) => new ProviderRequestError(400, message));
+  return requiredString(input[fieldName], fieldName, providerInputError);
 }
 
 function requireResponseObject(payload: unknown, fieldName: string, label: string): Record<string, unknown> {

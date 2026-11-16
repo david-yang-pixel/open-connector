@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import {
   optionalNumber,
@@ -9,7 +9,12 @@ import {
   optionalInteger,
   optionalBoolean,
 } from "../../core/cast.ts";
-import { createProviderTimeout, providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
+import {
+  createProviderTimeout,
+  providerUserAgent,
+  ProviderRequestError,
+  providerInputError,
+} from "../provider-runtime.ts";
 
 export const datascopeApiBaseUrl = "https://www.mydatascope.com/api/external/";
 
@@ -204,7 +209,6 @@ export async function validateDatascopeCredential(
       accountId: "datascope",
       displayName: "DataScope API Key",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: "https://www.mydatascope.com/api/external",
       validationEndpoint: "/locations",
@@ -290,7 +294,7 @@ function createDatascopeHttpError(status: number, payload: unknown, phase: Datas
   }
 
   if (status === 400 || status === 422) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
 
   if (status === 429) {

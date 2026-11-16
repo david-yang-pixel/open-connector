@@ -104,6 +104,141 @@ Other MCP clients that register dynamically can do the same once their callback 
 Admin endpoints under `/api/*`, `/docs`, and the Web Console use `OOMOL_CONNECT_ADMIN_TOKEN` when it
 is configured.
 
+## Provider Display Languages
+
+Provider lists, details and credential setup support `?locale=en` and `?locale=zh-CN`:
+
+- `GET /api/providers`
+- `GET /api/providers/{service}`
+- `GET /v1/providers`
+- `GET /v1/providers/{service}/setup`
+
+An explicit `locale` takes precedence over `Accept-Language`. Without it, the server selects a supported language from the header's weighted preferences. Simplified Chinese variants such as `zh-Hans` resolve to `zh-CN`; traditional Chinese does not resolve to simplified Chinese. Unsupported languages use English. `Content-Language` identifies the selected language, and missing translations fall back to the original text field by field.
+
+```bash
+curl 'http://localhost:3000/api/providers/tencent_meeting_mcp?locale=zh-CN'
+curl 'http://localhost:3000/v1/providers/tencent_meeting_mcp/setup' \
+  -H 'Accept-Language: zh-CN, en;q=0.5'
+```
+
+Only display text is localized: provider names and descriptions, credential labels, placeholders and help, OAuth option labels and registration steps. Service IDs, credential keys, category IDs, scopes, URLs, default values, action schemas and execution contracts are unchanged. `/api/providers` and its detail endpoint keep `categories` as stable strings and add `categoryDisplayNames` to translated responses. `/v1/providers` retains category objects with stable `id` and translated `displayName`.
+
+The console requests its selected language explicitly and reloads provider metadata when the language changes. Catalog ETags represent the localized content. Header-negotiated console catalog responses use `Vary: Accept-Language` and disable CDN caching; explicit-locale URLs retain the existing catalog CDN policy. Runtime `/v1` endpoints remain `no-store`.
+
+Chinese coverage currently includes shared generated credential labels, existing catalog categories, and provider-specific text for Tencent Meeting MCP, OpenAI, GitHub, Slack, Gmail, Google Drive, Google Calendar, Feishu, Feishu App Bot, Box, Dokploy, Airtable, Notion and Football Charts. GitHub authentication help, all Slack authorization-option labels and descriptions, and the three Google services' service-account setup text have been translated individually against their provider definitions. Brand names without a Chinese display-name translation and literal credential examples retain their original form. Another individually reviewed batch covers DeepSeek, Qwen, Baidu Qianfan, MiniMax, DingTalk Bot, DingTalk MCP, WeCom Bot, WeCom MCP, Feishu Custom Bot, Tencent Docs, Gitee and AMap. Provider-specific coverage is incremental; untranslated fields remain in their original language. Action documentation and schemas are not translated.
+
+Each Chinese provider translation lives in `src/catalog-localization/zh-CN/<service>.ts`. The `src/catalog-localization/zh-CN.ts` catalog owns shared labels and categories and explicitly registers these translations. To add a provider translation, create its file with a typed `translation` export and register it in that catalog. `npm run generate:catalog` checks translation references against the provider definitions. Run `node scripts/check-catalog-translations.ts` to list providers without provider-specific Chinese entries. This list measures entry coverage, not whether every field of an entry has been translated.
+
+## Provider Triggers
+
+Provider Triggers run through registered server operations:
+
+- `GET /v1/providers/:service/trigger-permissions` returns provider-native permission guidance.
+- `POST /v1/providers/:service/triggers/:triggerId/execute` runs `options`, `read`, `reconcile`, `receive`, or `resource`, as supported by the Trigger.
+
+Select a connection with `x-oo-connector-app-id: <stable-connection-id>`. Actions and public proxy also accept this header. If an alias is supplied as well, both selectors must identify the same connection. An unknown ID never falls back to the default account.
+
+Trigger policy is independent of Action and public proxy policy. Deployment and Runtime `allowedTriggers` / `blockedTriggers` accept exact Trigger IDs, `<service>.*`, and `*`. Each nonempty allowlist must match, and any block rule wins. A persistent runtime token additionally needs an explicit `allowedTriggers` grant. Its default is `[]`, including for existing tokens after migration.
+
+A token that can only run one Trigger can be created with:
+
+```bash
+curl -s -X POST http://localhost:3001/api/runtime-tokens \
+  -H "authorization: Bearer $OOMOL_CONNECT_ADMIN_TOKEN" \
+  -H 'content-type: application/json' \
+  -d '{"name":"repository-trigger","allowedActions":[],"blockedActions":["*"],"allowedProxies":[],"allowedTriggers":["github.on_repo_event"],"allowedConnections":["<connection-id>"]}'
+```
+
+Trigger-only tokens can perform the provider API calls required by their registered operations without a public proxy grant. Those calls still use the provider's authenticated, SSRF-guarded transport. `allowedConnections` narrows the selected account as it does for Actions.
+
+For Poll Triggers, send `{ "operation": "read", "config": {}, "checkpoint": null }` initially, then pass the returned business checkpoint on later reads. Use `{ "operation": "options", "config": {}, "field": "teamId" }` to read Linear configuration options. Unknown fields, caller-supplied access grants, oversized checkpoints and malformed operations are rejected.
+
+Poll pages contain at most 100 events. Provider page sizes are capped at this limit even when a configured maximum is larger. When `hasMore` is true, continue with the returned checkpoint to drain the next page; sync tokens and high-water marks advance only after the remaining pages are consumed.
+
+Webhook reconciliation uses:
+
+```json
+{
+  "operation": "reconcile",
+  "config": { "owner": "octocat", "repo": "repository", "events": ["issues"] },
+  "requestKey": "flow-binding-1",
+  "endpointUrl": "https://flow.example/events/callback",
+  "active": true
+}
+```
+
+The response contains an opaque `subscription.id`; remote hook IDs, callback secrets and provider state stay on the server. A request key belongs to one runtime token, connection, provider account and Trigger. Its active configuration and HTTPS callback are immutable. Pass that ID with the same request key, configuration and callback for later reconciliation; `active: false` cancels it. After cancellation the same key can be rebuilt with a fresh callback nonce and secret. An abandoned key requires a new binding key.
+
+`receive` requires `subscriptionId`, HTTP `method`, string `headers` and `query`, base64 `rawBody`, and boolean `admit` / `current`. Header names are normalized. The callback's `connector_subscription` nonce must match, and the provider implementation verifies its own signature or secret. Raw bodies are limited to 64 KiB; the enclosing JSON request is limited to 160 KiB. Open Flow owns public ingress, event scheduling, business checkpoints and deduplication. Feishu shared event ingress stays in Open Flow; its Connector `resource` operation only manages native resource subscriptions and reference counts.
+
+Shared event Source Triggers keep their provider configuration and secrets in Connector through the `sourceReference` operation: `feishu_app_bot.on_event`, `fireflies.on_meeting_ready`, `intercom.on_conversation_event`, `jira.on_issue_event`, `microsoft_teams_bot.on_activity`, `sentry.on_issue_alert`, `slackbot.on_event` and `zoom.on_recording_ready`. `create` takes a `deploymentId`, a caller-chosen `requestKey` and the provider `input`. It returns `source.reference` (`applicationId`, `sourceId`) for later `get`, `update`, `prepare`, `receive`, `resource` and `delete` calls. Repeating `create` with the same key and input returns the same Source, while different input under that key is refused with a conflict. Connector adds `kind`, `version`, `name`, `connectionId` and `teamId` itself and rejects them in `input`. Invalid input answers `invalid_input` and names each failing field. Sentry, Slack, Microsoft Teams, Intercom and Zoom deliveries arrive for a whole application, so the host passes them to `route` with the reference's `applicationId` first. `route` returns the references that accept the delivery, and the host then calls `receive` for each one. `route` needs no connection selector, but the Sources of one application can belong to different connections, and `receive` answers `trigger_not_found` for a reference the selected connection does not own. Keep each reference's connection from `create` and select that connection with `x-oo-connector-app-id` for its `receive`.
+
+For `slackbot.on_event`, select a Slack Bot OAuth connection with `x-oo-connector-app-id` and send this `create` request:
+
+```json
+{
+  "operation": "sourceReference",
+  "request": {
+    "action": "create",
+    "deploymentId": "deployment-1",
+    "requestKey": "workspace-T0123ABCD",
+    "input": {
+      "appId": "A0123ABCD",
+      "workspaceId": "T0123ABCD",
+      "signingSecret": "<Slack app Signing Secret>",
+      "eventTypes": ["app_mention", "message.im", "block_actions", "view_submission"]
+    }
+  }
+}
+```
+
+`appId` is the Slack App ID (`A…`), `workspaceId` is the installed workspace ID (`T…`) and `signingSecret` is the app's Signing Secret. `eventTypes` lists one to five of `app_mention`, `message.im`, `block_actions`, `view_submission` and `view_closed`. No Slack Web API call is made: the bot user ID comes from the connection. Every Source of one Slack app shares one application and must use the same Signing Secret. `update` takes `reference`, `expectedRevision` and `input` with `eventTypes` and an optional replacement `signingSecret`. Replacing the secret clears readiness until the next `url_verification`.
+
+The `slackbot.on_event` shared application Source serves both the Slack app's Events API Request URL and its Interactivity Request URL. Point both settings at the same callback, or at two host routes that forward to the same Source `route` and `receive` operations, and enable Interactivity in the Slack app. Interactivity requests are form bodies whose `payload` field holds JSON. They are verified with the same Signing Secret and 300-second window over the raw form bytes, then normalized as `block_actions`, `view_submission` or `view_closed` events:
+
+- `deliveryId` is Slack's `trigger_id`. `view_closed` has none, so its `deliveryId` is `view_closed:<view id>`. Use `deliveryId` as the deduplication key.
+- Interaction outputs add `responseUrl`, `actions` (`actionId`, `blockId`, `type`, `value`, `selectedOption`, `actionTs`) and `view` (`id`, `callbackId`, `privateMetadata`, `state`, `isCleared`). `channel`, `text`, `ts` and `threadTs` come from the message that held the component and are `null` for interactions in modals or App Home. Message event payloads are unchanged and do not include the three new fields. `body` is the interaction payload without Slack's legacy verification `token`, the workflow `bot_access_token` and every interactor `secret`, whether in the top-level `interactivity` or in an interactivity value among `function_data.inputs`.
+- The new event types are opt-in: list them in the Source `eventTypes` and in each consumer's `eventTypes`. Existing consumers keep receiving only the types they listed.
+- When `route` returns references, answer Slack with an empty 200 response within three seconds; for `view_submission` that closes the submitted view. Interactions that no Source accepts, other interaction types and other form posts are answered by `route` with that empty 200.
+- The `url_verification` challenge comes only from the Events API Request URL, and a Source becomes ready only after it has answered one.
+- Interactions carry no bot authorization list and are not filtered for Slack Connect, so authorize the acting `user` before applying a decision.
+- A Source belongs to one workspace. Organization-wide installations, whose interaction payloads carry `team: null`, match no Source and are acknowledged without an event.
+
+`microsoft_teams_bot.on_activity` receives Microsoft Teams activities through a shared event Source that belongs to one Teams Bot connection. Select the connection with `x-oo-connector-app-id` and create the Source with `{ "operation": "sourceReference", "request": { "action": "create", "deploymentId": "...", "requestKey": "...", "input": { "eventTypes": ["message"] } } }`:
+
+- `eventTypes` lists one to four of `message`, `conversationUpdate`, `messageReaction` and `invoke`. The bot's Application ID comes from the connection, and no secret is stored.
+- Optional `tenantId`, a Microsoft Entra tenant ID, limits the Source to one organization. Use it when one multi-tenant bot serves several organizations, each with its own connection and Source on the same Application ID. The Source then acknowledges, without an event, every activity whose `conversation.tenantId` (or `channelData.tenant.id`) differs or is missing. The Source view shows the tenant, and a Source without one accepts every tenant. The connection's `tenantId` credential field cannot fill this in: it is the token authority, which is `botframework.com` for a multi-tenant bot, so pass the organization's tenant explicitly.
+- Every Source of one bot shares one application, derived from the bot's Application ID, because an Azure Bot has a single messaging endpoint. Set that endpoint to the application's callback URL. Forward each activity request's raw body and headers, including its own `Authorization`, to the `route` operation with the Source reference's `applicationId`. Then call `receive` for each reference it returns, selecting the connection that created that Source. With one connection per organization, each reference belongs to a different connection. When `route` returns no reference it returns the acknowledgement for Bot Framework, including for activity types no Source subscribes to. Deleting a Source that was never confirmed, by `requestKey` alone, also needs the bot's `appId`.
+- Every activity is verified with its Bot Framework token, using the same rules as `POST /v1/providers/microsoft_teams_bot/events/verify`. A token for another bot or an unverifiable token answers 401. Unreachable signing keys answer as a temporary provider failure, so the host can let Bot Framework retry.
+- The Source is ready as soon as it exists. Its `verifiedAt` records the first verified activity.
+- Other activity types, activities from other channels such as Web Chat, and types the Source does not subscribe to are acknowledged with 200 and no event. Answer Bot Framework with 200 for delivered events too. An `invoke` that expects a response body, such as an Adaptive Card action, needs that body from the host.
+- Consumers filter by `eventTypes`, optional `conversationIds` and optional `tenantId`. A channel ID also matches the channel's threads, whose conversation IDs add `;messageid=<root message>`.
+- Outputs:
+  - `event` is the activity type, and `deliveryId` is the JSON array `[conversation.id, activityId]`. Bot Framework retries keep both, so `deliveryId` is the deduplication key.
+  - `text` removes the bot's own `<at>` mention and unwraps the other mentions, while `rawText` keeps the original.
+  - `mentions` lists `id`, `name` and `isBot` for each mention entity.
+  - `from`, `conversation` (`id`, `conversationType`, `tenantId`), `channelData`, `replyToId`, `serviceUrl` and `timestamp` come from the activity, and `body` is the whole activity.
+  - `name` and `value` are the activity's own fields: `name` is set on an invoke such as `adaptiveCard/action`, and `value` holds the object an Adaptive Card action submits, on an invoke or on an `Action.Submit` message. Each is `null` when the activity has none, and `value` is also `null` when it is not an object; `body` keeps the original.
+- To answer in the same thread, call `microsoft_teams_bot.reply_to_message` with `serviceUrl`, `conversationId` set to `conversation.id` and `activityId`.
+- Cards:
+  - `send_message`, `reply_to_message` and `update_message` take `attachments`, cards such as `{ "contentType": "application/vnd.microsoft.card.adaptive", "content": <card JSON> }`, and `attachmentLayout` (`list` or `carousel`).
+  - Teams splits a message with both text and cards into separate messages and returns an ID for only one, so put any text inside a card that will be updated.
+  - A click on `Action.Execute` arrives as an `invoke` activity named `adaptiveCard/action`, and the host answers it with an invoke response. A click on `Action.Submit` arrives as a `message` activity whose `value` holds the card data. `Action.OpenUrl` opens the link and sends the bot nothing.
+  - `update_message` replaces the whole message, so a card with buttons can be swapped for one without, using the delivered `conversation.id` and the card's activity ID.
+- `microsoft_teams_bot.list_team_channels` lists a team's channels for a channel picker. Learn the team ID from `channelData.team.id`, for example on the `conversationUpdate` Teams sends when the bot is added to a team: the Bot Connector cannot list the teams a bot is in.
+
+The Trigger runner reaches the provider through the connection's proxy, which targets the connection's default service URL. Source operations make no Bot Connector call.
+
+Stateful `reconcile`, `receive`, and `resource` operations require a persistent runtime token. Bootstrap environment tokens, JWT verification and unauthenticated development mode can use policy-permitted `options` / `read`; they do not provide a durable subscription owner. Triggers currently require native local connections. SaaS and Marketplace connections return `trigger_source_not_supported` without attempting a local fallback.
+
+Administrators can inspect `/api/trigger-subscriptions`, cancel with `POST /api/trigger-subscriptions/:id/cancel`, or explicitly stop automatic cleanup with `POST /api/trigger-subscriptions/:id/abandon`. Subscription IDs must be URL-encoded. Abandonment retains the original ownership and uncleaned remote-resource record; it does not claim the provider resource was deleted. Clean the remote resource manually if automatic deletion cannot recover.
+
+Node maintenance runs in the runtime and stops on `close()`. Workers invoke bounded maintenance batches from the configured scheduled handler. Maintenance checks current token, deployment and Runtime grants, and retries deletion after revocation; normal active subscription reconciliation remains the Open Flow scheduler's responsibility. SQLite, PostgreSQL and D1 share encrypted subscription state and SQL leases. A stale lease cannot commit state. Apply PostgreSQL migrations before starting the runtime.
+
+Disconnecting or replacing a connection with active or deleting subscriptions is rejected. Verified same-provider-account reauthorization can restore credentials for cleanup; changing to a different or unverified account cannot take over the old resources. OAuth refresh continues through the existing refresh path. After cleanup or explicit abandonment, the connection can be disconnected.
+
+For token rotation, first disable and publish affected Open Flow Triggers while the old token is still valid, wait for subscription and Feishu resource cleanup, and inspect subscription status. Then switch the token and explicitly rebuild bindings while preserving business checkpoints. Old subscription IDs belong to the old token. Clear Feishu resource readiness through its normal demand release and cleanup before switching. Event delivery may have a gap during rotation.
+
 ## MCP
 
 Point MCP-capable clients at:
@@ -115,6 +250,15 @@ http://localhost:3000/mcp
 The local MCP endpoint supports stateless `POST` JSON-RPC requests with JSON responses. It does not
 keep `GET` SSE streams open.
 
+When the Node MCP OAuth 2.1 authorization server is enabled
+(`OOMOL_CONNECT_OAUTH_ENABLED=true`) **and** the auth mode accepts OAuth tokens
+(`OOMOL_CONNECT_OAUTH_AUTH_MODE=oauth` or `mixed`; the default `runtime_token` rejects
+them), `/v1/*` and `/mcp` accept OAuth 2.1 access tokens issued by the built-in
+authorization server (`mixed` keeps accepting runtime tokens alongside them). Clients can discover the
+endpoints through `/.well-known/oauth-protected-resource` and
+`/.well-known/oauth-authorization-server`; see [Configuration](configuration.md) for the
+`OOMOL_CONNECT_OAUTH_*` settings.
+
 The MCP server exposes a small discovery-oriented tool set:
 
 - `list_apps`
@@ -123,13 +267,48 @@ The MCP server exposes a small discovery-oriented tool set:
 - `get_action_guide`
 - `execute_action`
 
-`search_actions` returns at most 200 actions per page. Pass its opaque `page.nextCursor` back as `cursor` until
-`page.hasMore` is false. The cursor retains the original query and service, so a service with hundreds of actions can
-be enumerated without depending on keyword ranking. The HTTP `/v1/actions/search` endpoint returns the same pagination
-facts in its `meta` object. The legacy `/api/actions/search` array body is unchanged; its pagination values are in the
-`x-openconnector-total`, `x-openconnector-has-more`, and `x-openconnector-next-cursor` response headers.
+Start with `search_actions({ "query": "create issue", "service": "github" })`.
+The query must be nonempty (up to 256 characters). Search returns at most 5 compact
+summaries by default (`limit`: 1–20), with `id`, `description`, and `available`.
+Actions denied by policy are omitted before applying the limit. Availability uses
+known local execution and connection state; it does not validate credentials upstream.
+Schemas are loaded only when requesting a guide or executing an action.
+When more matches exist, `search_actions` returns an opaque top-level `nextCursor`; pass it back as `cursor`
+with the same `query` and `service` to read the next page, so a service with hundreds of actions can be enumerated.
+`null` marks the end. The HTTP `/v1/actions/search` endpoint returns its pagination facts in its `meta` object. The
+legacy `/api/actions/search` array body is unchanged; its pagination values are in the `x-openconnector-total`,
+`x-openconnector-has-more`, and `x-openconnector-next-cursor` response headers.
 
-Use `list_connections` to discover configured accounts before selecting one. Both
+`list_apps` browses provider names, optionally filtered by `query`. Providers with
+no policy-allowed actions are omitted. `list_connections` requires a `service` and
+returns account labels, connection names, default selection, and availability.
+Virtual no-auth entries are omitted because they require no account selection.
+Both lists accept `limit` (default 20, maximum 50) and return a top-level
+`nextCursor` beside `ok` and `data`. Pass that cursor with the same filters to read
+the next page; `null` marks the end. Pages are not snapshots across catalog or
+connection changes. By default, text and structured MCP content contain the same page.
+
+The default `compatible` output mode returns complete JSON in both `content[0].text` and
+`structuredContent` so text-only clients can read every result. To reduce duplicate transmission
+for clients that consume `structuredContent`, explicitly set:
+
+```bash
+OOMOL_CONNECT_MCP_OUTPUT_MODE=compact npm start
+```
+
+Embedding hosts can pass `mcpOutputMode: "compact"` to `createConnectorRuntime` instead. Compact mode
+keeps the complete result in `structuredContent`, including execution metadata and error details.
+The text block contains a short notice on success or the error code and message on failure, with
+the usual `isError` flag. This setting applies to every MCP tool on the deployment. Client names and
+protocol versions do not automatically select it: MCP has no standard client capability confirming
+that the host exposes structured results to its model.
+
+Compact mode reduces duplicate payloads; it does not impose a response size limit or create
+temporary result downloads. A result that exceeds the client's limit as a single copy can still
+be rejected after its action has completed. Do not retry an action that changes external data just
+to retrieve its output.
+
+Use `list_connections` when choosing among accounts for a service. Both
 `get_action_guide` and `execute_action` accept an optional `connectionName`:
 
 `get_action_guide` request:
@@ -157,9 +336,12 @@ Omitting `connectionName` uses the `default` connection. A requested named conne
 the runtime does not silently fall back to another account. Connection results expose only safe
 account identity fields and never include stored credentials. Persistent tokens with a non-empty
 `allowedConnections` list see only those connections in `list_connections` and related discovery;
-`list_apps` omits a provider's default connection identity when that connection's ID is not
-granted. `get_action_guide` and `execute_action` deny ungranted credential connections before lookup.
-Virtual `no_auth` connections remain available.
+`list_apps` contains no account identity. `get_action_guide` and `execute_action` deny ungranted credential connections before lookup.
+No-auth actions remain executable without selecting a connection.
+
+Action input validation runs before credential resolution and provider executor loading. Schema
+errors return `invalid_input` without refreshing OAuth credentials. MCP validation errors include
+execution and audit metadata but omit the unresolved `connection` field.
 
 Preview MCP tool metadata:
 
@@ -228,6 +410,99 @@ credential lookup. `/v1/apps` discovery for that token is filtered to granted cr
 Unknown Action ids return `404 unknown_action` on both `/v1` and MCP `execute_action` /
 `get_action_guide`. Schema and idempotency-key failures stay `400 invalid_input`.
 
+### OAuth Authorization Requests
+
+Create an authorization request with `POST /v1/connections/:service/connect`, or reconnect a
+saved connection with `POST /v1/connections/by-id/:appId/connect`. New connections use the
+configured OAuth source; reconnecting preserves the saved connection's source. A SaaS source
+uses its configured provider configuration and rejects per-request OAuth overrides.
+
+Poll `GET /v1/connection-requests/:connectionRequestId` with the administrator Bearer token
+that owns the request. For SaaS authorization, an explicit valid administrator Bearer token
+allows this GET to query the remote result and commit the local connection. Cookie-only GETs
+and GETs in a local installation without authentication only read the stored result. An invalid
+Bearer token never falls back to a valid cookie. Poll no faster than once every two seconds and
+honor `Retry-After`; transient upstream failures do not permanently fail the authorization.
+
+The browser completion page uses authenticated
+`POST /api/oauth/connection-requests/:connectionRequestId/sync` with `Content-Type: application/json`,
+`X-OpenConnector-Request: sync`, and an `Origin` matching the explicitly configured public origin.
+Its initial GET is read-only. An SDK flow without a browser management session completes through
+Bearer polling. Authorization results and completion responses use `Cache-Control: private, no-store`.
+
+SaaS receives only the configured HTTP(S) completion URL. The caller's final `returnUri`, including
+a native application's custom scheme, stays in Connect and is returned to the browser only after
+a terminal local result. URL parameters on the completion page cannot declare authorization success.
+`connected` means the local connection has been committed; a late result cannot restore a deleted
+connection or overwrite a newer reconnect.
+
+If creating the remote authorization has an uncertain outcome, Connect reports
+`oauth_source_result_unknown` with `data.connectionRequestId`. It does not automatically repeat
+the link request. Inspect the request and resolve any unknown remote account manually before
+starting a replacement authorization. Known cleanup references are saved for cleanup processing.
+
+Project configuration, Console source selection, setup field semantics and recovery steps are
+documented in [SaaS OAuth](saas-oauth.md). Console starts named configured requests through
+POST /api/oauth/connection-requests; SDK clients continue using the /v1 endpoints above.
+
+### SaaS Connection Execution
+
+A saved SaaS connection sends action and proxy requests through its bound project and exact
+provider configuration, user and account identifiers. Changing the default OAuth source does
+not change existing connections. Runtime policy, connection grants and local input validation
+run before remote discovery or execution. The runtime checks the selected configuration's
+capabilities without removing actions from the global catalog. It does not load local provider
+executors or refresh local OAuth credentials for a SaaS connection, and does not fall back to
+another connection after a failure.
+
+Execution shares one validated capability snapshot per runtime for up to 30 seconds. Concurrent
+Action and proxy calls share an in-flight discovery request. Project binding and key are still read
+from storage for each execution, and key rotation or a replacement binding cannot reuse the old
+snapshot. Project health, provider-config reads and authorization setup fetch fresh discovery;
+use the administrator provider-config refresh after changing capabilities on SaaS to update the
+snapshot immediately. Otherwise capability changes can take up to 30 seconds to appear locally.
+
+Every dispatched operation still reaches the SaaS execution endpoint for its current project,
+account, configuration and permission checks. A project-key or provider/configuration rejection
+invalidates the snapshot for the next call; it never replays the rejected POST. Execution rate limits and
+transport failures retain a still-fresh snapshot. Cancelling one shared-discovery waiter ends only
+that caller's wait; when all waiters cancel, Connect aborts discovery and discards the pending entry.
+
+Action responses keep the usual action output in `data`. The local `meta.executionId` stays
+unchanged; `meta.remoteExecutionId` identifies the SaaS execution when available and is also
+stored in the action run log. Proxy responses keep the provider's `status`, `headers` and `data`
+inside the normal response `data` object. An outer HTTP 200 means the proxy completed; the
+provider status can still be 404 or another non-success status. SaaS proxy metadata contains
+distinct local and remote execution IDs.
+
+SaaS proxy accepts GET, POST, PUT, PATCH and DELETE, primitive query values (string, finite
+number, boolean or null), string non-authentication headers, and JSON or text request bodies.
+HEAD, `accessGrant`, unknown request fields, array/object query values, binary bodies and
+non-finite numbers are rejected before contacting SaaS. Local `alias` and `connectionName`
+selectors remain supported. Responses support JSON and UTF-8 text; explicitly unsupported
+media types or charsets are rejected, and SaaS responses do not acquire a `bodyEncoding` field.
+
+Each SaaS execution POST has a **300-second** budget covering the HTTP request and response
+body, subject to earlier caller cancellation or a shorter provider/deployment timeout.
+Capability discovery uses the separate 30-second management budget. The complete decoded
+JSON execution response, including errors, is limited to **64 MiB**. This accommodates a
+10 MiB text payload even when JSON escaping expands it to about 60 MiB; it does not promise
+unlimited provider output. Management and discovery responses retain their 4 MiB limit.
+
+Business errors such as `invalid_input`, `scope_missing`, `credential_expired`,
+`insufficient_credit` and `rate_limited` keep distinct codes with sanitized messages.
+Rejected project keys use `oauth_source_unauthorized`; incompatible responses use
+`oauth_source_protocol_error`; oversized execution responses use `oauth_source_response_too_large`.
+HTTP 429 preserves a valid `Retry-After`, including when replaying a stored idempotent action result.
+
+Timeouts, lost responses and cancellations never automatically replay action or proxy POSTs.
+A cancelled call reports `execution_cancelled`, but SaaS or the provider may already have
+completed the operation. Local idempotency prevents repeat dispatch through its existing
+recorded request boundary; it does not guarantee exactly-once execution across the network.
+
+SaaS deletion is asynchronous after local removal. Scheduling, key-error pause recovery and
+offline clone reset procedures are documented in [SaaS maintenance](saas-maintenance.md).
+
 ### Idempotent Action Retries
 
 `POST /v1/actions/:actionId` accepts an optional `Idempotency-Key` header. Without this header,
@@ -287,14 +562,30 @@ The Web Console also lets you copy cURL, TypeScript, and agent prompt examples f
 
 ## Transit Files
 
-Upload a temporary transit file for Actions that accept a file URL:
+Upload a temporary transit file for Actions that accept a file reference or URL:
 
 ```bash
 curl -s -X POST http://localhost:3000/api/files \
   -F "file=@./report.pdf"
 ```
 
-The response includes a `downloadUrl` under `/api/files/:fileId`. The Node runtime stores transit
+The response includes a `fileId` and a `downloadUrl` under `/api/files/:fileId`.
+For `youtube.upload_video_from_url`, pass the file ID directly instead of a local download URL:
+
+```json
+{
+  "file": { "fileId": "<fileId returned by the upload>" },
+  "title": "My video",
+  "privacyStatus": "private"
+}
+```
+
+Provide exactly one of `file` or `mediaUrl`. File references are read directly from the runtime's
+transit storage and do not require private-network access. `mediaUrl` accepts public URLs only,
+including when `OOMOL_CONNECT_ALLOW_PRIVATE_NETWORK` is enabled. Video upload sources are limited
+to 256 MiB; transit uploads also respect the runtime's configured transit-file limit.
+
+The Node runtime stores transit
 files under `OOMOL_CONNECT_DATA_DIR/files` by default and can use a shared S3-compatible backend;
 see [configuration.md](configuration.md#s3-compatible-transit-files). Transit files are cleaned up
 by age.
@@ -336,6 +627,13 @@ stored credentials local and lets the provider proxy executor apply provider-spe
 Successful responses use the standard `/v1` success envelope with `data.status`, `data.headers`, and
 `data.data`.
 
+Caller cancellation returns HTTP 400 with `errorCode: "execution_cancelled"`. An already cancelled
+request stops before credential resolution; cancellation after dispatch does not undo provider
+side effects or automatically replay the request.
+
+Cancellation during a shared OAuth refresh ends only that caller's credential wait. The refresh
+continues and persists its tokens so other callers can use the updated credential.
+
 Most proxies run under the same 30 second per-request budget as actions, covering the upstream request
 and the response body read. A provider that does not answer in time returns HTTP 500 with `errorCode`
 `provider_error` and `data.status` 504. A minority of providers ship a hand-written proxy that keeps
@@ -371,7 +669,20 @@ These endpoints power the Web Console, examples, and setup scripts:
 - `GET /api/connections/:service/settings` (configured optional non-secret custom credential fields)
 - `PUT /api/connections/:service`
 - `PATCH /api/connections/:service` (optional non-secret custom credential fields only)
-- `DELETE /api/connections/:service`
+- `DELETE /api/connections/:service` — deletes the stored credential and, by default, leaves the grant
+  standing at the provider. With `revoke: true` in the JSON body, the runtime also requests remote OAuth
+  token revocation once the local delete has completed. The attempt is best effort; the answer's
+  `revoked` says `done`, `failed` (the provider refused or could not be reached; the
+  credential is deleted all the same), `unsupported` (no supported revocation protocol, no OAuth token held, or a
+  SaaS connection) or `skipped` (the body did not ask).
+  Revocation may also invalidate related connections. For Google, it removes the user's granted scopes
+  for the project and invalidates tokens for all OAuth clients registered under that project; it is not
+  limited to the selected connection or client. See [Google's token revocation documentation](https://developers.google.com/identity/protocols/oauth2/web-server#tokenrevoke).
+  Ordinary disconnects never request remote revocation. Request `revoke: true` only when ending the
+  remote access is intended, including its effects on shared credentials and related connections.
+  Revocation is best effort: a concurrent refresh in another runtime can make it fail. The runtime
+  does not perform later automatic token cleanup. A `failed` result leaves remote revocation
+  unconfirmed; check the provider's authorization settings when remote access must be removed.
 - `GET /api/oauth/configs`
 - `PUT /api/oauth/configs/:service`
 - `DELETE /api/oauth/configs/:service`

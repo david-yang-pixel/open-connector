@@ -1,6 +1,7 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ProviderFetch, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import {
   optionalIntegerLike,
@@ -128,7 +129,6 @@ export async function validateUpstashRedisCredential(
       accountId: `${service}:${context.restUrl.hostname}`,
       displayName: `Upstash Redis - ${context.restUrl.hostname}`,
     },
-    grantedScopes: [],
     metadata: {
       restUrl: context.restUrl.origin,
       validationCommand: "PING",

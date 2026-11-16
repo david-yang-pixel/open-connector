@@ -4,18 +4,14 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { compactObject, nullableInteger, optionalRecord, optionalString } from "../../core/cast.ts";
 import { assertPublicHttpUrl } from "../../core/request.ts";
-import {
-  credentialProviderProxyBaseUrl,
-  defineProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-  requireApiKeyCredential,
-} from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { credentialProviderProxyBaseUrl, defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "espocrm";
 const espocrmAppUserPath = "/api/v1/App/user";
@@ -179,7 +175,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: readCurrentUserIdentifier(appUser.user),
         displayName: readCurrentUserLabel(appUser.user),
       },
-      grantedScopes: [],
       metadata: {
         baseUrl,
         validationEndpoint: espocrmAppUserPath,

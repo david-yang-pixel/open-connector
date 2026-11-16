@@ -1,7 +1,6 @@
 import type { QueryValue } from "../../core/request.ts";
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
 import {
@@ -14,9 +13,9 @@ import {
   optionalString,
 } from "../../core/cast.ts";
 import { queryParams, readBoundedResponseBytes } from "../../core/request.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   isAbortLikeError,
   providerInputError,
   ProviderRequestError,
@@ -37,7 +36,7 @@ type OpenweatherActionHandler = (input: Record<string, unknown>, context: ApiKey
 
 interface OpenweatherJsonRequestInput {
   path: string;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   phase: OpenweatherPhase;
   method?: string;
   query?: Record<string, QueryValue>;
@@ -47,7 +46,7 @@ interface OpenweatherJsonRequestInput {
 interface OpenweatherBinaryRequestInput {
   baseUrl: string;
   path: string;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   phase: OpenweatherPhase;
   query?: Record<string, QueryValue>;
 }
@@ -143,9 +142,7 @@ export const credentialValidators: CredentialValidators = {
       profile: {
         accountId: service,
         displayName: "OpenWeather API Key",
-        grantedScopes: [],
       },
-      grantedScopes: [],
       metadata: {
         validationEndpoint: "/geo/1.0/direct",
         apiBaseUrl: openweatherApiBaseUrl,

@@ -37,6 +37,13 @@ const documentOutputSchema = s.object(
     optional: [],
   },
 );
+const creationOutputSchema = s.requiredObject("The document creation status and result.", {
+  taskId: s.nullable(s.string("The task ID to poll; null when creation completed synchronously.")),
+  status: s.stringEnum("The document creation state.", ["processing", "succeeded", "failed", "expired"]),
+  document: s.nullable(looseDocumentSchema),
+  pollAfterMs: s.nullable(s.integer("The suggested delay before the next status request.")),
+  failure: s.nullable(s.looseObject("The upstream failure code and message, if creation failed.")),
+});
 const taskOutputSchema = s.looseRequiredObject(
   "A Feishu document background task result.",
   {
@@ -57,6 +64,10 @@ export function createFeishuDocsActions(service: string): readonly ActionDefinit
   return [
     defineProviderAction(service, {
       name: "create_document",
+      asyncLifecycle: {
+        startActionId: `${service}.create_document`,
+        statusActionId: `${service}.get_document_creation`,
+      },
       operationType: "write",
       description:
         "Create a Feishu document from Docx XML or Markdown content, optionally inside a folder or Wiki node.",
@@ -86,7 +97,23 @@ export function createFeishuDocsActions(service: string): readonly ActionDefinit
           optional: ["title", "format", "parentToken", "parentPosition", "referenceMap"],
         },
       ),
-      outputSchema: documentOutputSchema,
+      outputSchema: creationOutputSchema,
+    }),
+    defineProviderAction(service, {
+      name: "get_document_creation",
+      operationType: "read",
+      description:
+        "Get a document creation task status and its completed document. Do not repeat creation while the task is processing.",
+      requiredScopes: [feishuDocsProviderScopes.create],
+      providerPermissions: [feishuDocsProviderScopes.create],
+      asyncLifecycle: {
+        startActionId: `${service}.create_document`,
+        statusActionId: `${service}.get_document_creation`,
+      },
+      inputSchema: s.requiredObject("Identify the document creation task.", {
+        taskId: s.nonEmptyString("The task ID returned by create_document."),
+      }),
+      outputSchema: creationOutputSchema,
     }),
     defineProviderAction(service, {
       name: "fetch_document",
@@ -174,10 +201,18 @@ export function createFeishuDocsActions(service: string): readonly ActionDefinit
           format: documentFormatSchema,
           content: s.string("The replacement, inserted, or appended document content."),
           pattern: s.string("The text matched by `replace_text`."),
-          blockId: s.string("The target block ID, or comma-separated block IDs for `delete_blocks`.", { minLength: 1 }),
+          blockId: s.nonEmptyString(
+            "The target block ID, or comma-separated block IDs for `replace_block` and `delete_blocks`; cannot be combined with a block range.",
+          ),
+          startBlockId: s.nonEmptyString(
+            "The inclusive start of a sibling block range for `replace_block` or `delete_blocks`; requires endBlockId. `0` means document start.",
+          ),
+          endBlockId: s.nonEmptyString(
+            "The inclusive end of a sibling block range for `replace_block` or `delete_blocks`; requires startBlockId. `-1` means document end.",
+          ),
           sourceBlockIds: s.array(
             "The source block IDs used by copy or move operations.",
-            s.string("A source block ID.", { minLength: 1 }),
+            s.nonEmptyString("A source block ID."),
             { minItems: 1 },
           ),
           revisionId: s.integer("The base document revision ID; `-1` means the latest revision.", {
@@ -186,7 +221,17 @@ export function createFeishuDocsActions(service: string): readonly ActionDefinit
           referenceMap: s.looseObject("A reference map accompanying rich content in supported write operations."),
         },
         {
-          optional: ["format", "content", "pattern", "blockId", "sourceBlockIds", "revisionId", "referenceMap"],
+          optional: [
+            "format",
+            "content",
+            "pattern",
+            "blockId",
+            "startBlockId",
+            "endBlockId",
+            "sourceBlockIds",
+            "revisionId",
+            "referenceMap",
+          ],
         },
       ),
       outputSchema: documentOutputSchema,

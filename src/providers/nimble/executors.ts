@@ -1,7 +1,8 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
 
 import { optionalString } from "../../core/cast.ts";
-import { defineApiKeyProviderExecutors, defineProviderProxy } from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import { nimbleActionHandlers, nimbleApiBaseUrl, validateNimbleCredential } from "./runtime.ts";
 
 const service = "nimble";
@@ -25,7 +26,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: optionalString(user.id) ?? optionalString(user.company_id),
         displayName: optionalString(user.name) ?? optionalString(user.email) ?? "Nimble API Key",
       },
-      grantedScopes: [],
       metadata: { apiBaseUrl: nimbleApiBaseUrl, companyId: optionalString(user.company_id) },
     };
   },

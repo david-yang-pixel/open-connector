@@ -4,14 +4,13 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { optionalRecord, optionalString, stringArray } from "../../core/cast.ts";
 import { jsonObject, queryParams } from "../../core/request.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   ProviderRequestError,
   providerUserAgent,
   requiredInputString,
@@ -242,7 +241,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: userId ?? userEmail ?? `motion:${input.apiKey.slice(-6)}`,
         displayName,
       },
-      grantedScopes: [],
       metadata: jsonObject({
         apiBaseUrl: motionApiBaseUrl,
         validationEndpoint: "/users/me",
@@ -254,7 +252,7 @@ export const credentialValidators: CredentialValidators = {
 };
 
 async function requestMotionJson(input: {
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   path: string;
   phase: MotionPhase;
   method?: MotionMethod;

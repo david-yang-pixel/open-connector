@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ApiKeyProviderContext, ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ApiKeyProviderContext, ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-executors.ts";
 import type { GranolaMeeting } from "./actions.ts";
 
 import {
@@ -23,6 +23,7 @@ import {
   requiredInputString,
   requiredResponseRecord,
   runProviderRequest,
+  withRetryAfterSeconds,
 } from "../provider-runtime.ts";
 
 export const granolaApiBaseUrl = "https://public-api.granola.ai";
@@ -158,7 +159,6 @@ export async function validateGranolaCredential(
       accountId: firstFolderId,
       displayName: firstFolderName ?? firstFolderId ?? "Granola API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: granolaApiBaseUrl,
       validationEndpoint: "/v1/folders",
@@ -202,11 +202,7 @@ function granolaUrl(path: string, query?: Record<string, unknown>): URL {
   return url;
 }
 
-function requestGranola(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
-  url: URL,
-  mode: GranolaRequestMode,
-): Promise<unknown> {
+function requestGranola(context: ApiKeyProviderContext, url: URL, mode: GranolaRequestMode): Promise<unknown> {
   return runProviderRequest({ signal: context.signal, label: "Granola" }, async (signal) => {
     const response = await context.fetcher(url.toString(), {
       method: "GET",
@@ -249,5 +245,9 @@ async function assertGranolaResponse(response: Response, mode: GranolaRequestMod
     throw new ProviderRequestError(400, message);
   }
 
-  throw new ProviderRequestError(response.status >= 500 ? 502 : response.status || 502, message);
+  throw new ProviderRequestError(
+    response.status >= 500 ? 502 : response.status || 502,
+    message,
+    withRetryAfterSeconds(response),
+  );
 }

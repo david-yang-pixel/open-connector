@@ -4,15 +4,17 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { optionalRecord, optionalString } from "../../core/cast.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineProviderExecutors,
-  defineProviderProxy,
   providerUserAgent,
   ProviderRequestError,
-  requireApiKeyCredential,
+  providerInputError,
+  providerResponseError,
 } from "../provider-runtime.ts";
 
 const service = "aeroleads";
@@ -67,7 +69,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "api_key",
         displayName: "AeroLeads API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: aeroleadsApiBaseUrl,
         validationMode: "format_only",
@@ -221,7 +222,7 @@ function mapAeroleadsError(status: number, message: string): ProviderRequestErro
     return new ProviderRequestError(status, message);
   }
   if (status >= 400 && status < 500) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
-  return new ProviderRequestError(502, message);
+  return providerResponseError(message);
 }

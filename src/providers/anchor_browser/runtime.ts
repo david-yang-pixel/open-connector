@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { compactObject, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
 import { ProviderRequestError, providerUserAgent, requiredInputString } from "../provider-runtime.ts";
@@ -105,7 +105,6 @@ export async function validateAnchorBrowserCredential(
       accountId: billing.tier || "anchor_browser_api_key",
       displayName: buildAccountLabel(billing),
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: anchorBrowserApiBaseUrl,
       validationEndpoint: anchorBrowserValidationEndpoint,

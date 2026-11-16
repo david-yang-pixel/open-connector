@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { optionalInteger, optionalString, optionalStringArray } from "../../core/cast.ts";
@@ -120,7 +120,6 @@ export async function validateTwilioCredential(
       accountId: optionalString(account.sid) ?? accountSid,
       displayName: optionalString(account.friendly_name) ?? accountSid,
     },
-    grantedScopes: [],
     metadata: {
       accountSid: optionalString(account.sid) ?? accountSid,
     },

@@ -1,10 +1,7 @@
-import type { ProviderActionHandlerSubset } from "../provider-runtime.ts";
-import type { OAuthProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlerSubset, OAuthProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalObjectArray, optionalRecord, optionalString } from "../../core/cast.ts";
 import { ProviderRequestError, readProviderJsonBody, requiredInputString } from "../provider-runtime.ts";
-
-export const feishuOpenBaseUrl = "https://open.feishu.cn/open-apis";
 
 // Feishu returns HTTP 200 with a non-zero `code` for most failures, so map the
 // well-known auth codes to their real meaning instead of a generic 502. This
@@ -15,12 +12,16 @@ const feishuCredentialErrorCodes = new Set([20005, 20006, 99991661, 99991668, 99
 const feishuScopeErrorCodes = new Set([99991679]);
 const feishuInvalidInputErrorCodes = new Set([800010701, 900015206]);
 
-type FeishuActionContext = Pick<OAuthProviderContext, "accessToken" | "fetcher" | "signal">;
+/** The OAuth call context plus the API base of the deployment the token belongs to. */
+type FeishuActionContext = OAuthProviderContext & {
+  readonly openBaseUrl: string;
+};
 interface FeishuActionHandler {
   (input: Record<string, unknown>, context: FeishuActionContext): Promise<unknown>;
 }
 
 export interface FetchFeishuUserInfoInput {
+  openBaseUrl: string;
   accessToken: string;
   fetcher: typeof fetch;
   signal?: AbortSignal;
@@ -60,6 +61,7 @@ export const feishuActionHandlers: ProviderActionHandlerSubset<"feishu", FeishuA
 
 async function feishuGetCurrentUser(context: FeishuActionContext): Promise<Record<string, unknown>> {
   const data = await fetchFeishuUserInfo({
+    openBaseUrl: context.openBaseUrl,
     accessToken: context.accessToken,
     fetcher: context.fetcher,
     signal: context.signal,
@@ -188,7 +190,12 @@ async function feishuSearchBitableRecords(
 export async function fetchFeishuUserInfo(input: FetchFeishuUserInfoInput): Promise<Record<string, unknown>> {
   return feishuApiRequest({
     path: "/authen/v1/user_info",
-    context: { accessToken: input.accessToken, fetcher: input.fetcher, signal: input.signal },
+    context: {
+      openBaseUrl: input.openBaseUrl,
+      accessToken: input.accessToken,
+      fetcher: input.fetcher,
+      signal: input.signal,
+    },
   });
 }
 
@@ -198,7 +205,7 @@ export async function fetchFeishuUserInfo(input: FetchFeishuUserInfoInput): Prom
  * mapping for every Feishu read in this provider.
  */
 async function feishuApiRequest(input: FeishuApiRequestInput): Promise<Record<string, unknown>> {
-  const url = new URL(`${feishuOpenBaseUrl}${input.path}`);
+  const url = new URL(`${input.context.openBaseUrl}${input.path}`);
   for (const [key, value] of input.query ?? []) {
     url.searchParams.set(key, value);
   }
@@ -233,7 +240,14 @@ async function feishuApiRequest(input: FeishuApiRequestInput): Promise<Record<st
   if (!response.ok || code !== 0) {
     const message = optionalString(envelope.msg) ?? `Feishu request failed (HTTP ${response.status}).`;
     const status = mapFeishuErrorStatus(response.status, code);
-    throw new ProviderRequestError(status, code ? `Feishu ${code}: ${message}` : message);
+    throw new ProviderRequestError(
+      status,
+      code ? `Feishu ${code}: ${message}` : message,
+      undefined,
+      feishuCredentialErrorCodes.has(code) || feishuScopeErrorCodes.has(code)
+        ? "authorization_failed"
+        : "provider_error",
+    );
   }
 
   const data = optionalRecord(envelope.data);
@@ -271,7 +285,7 @@ function normalizeFeishuPage(data: Record<string, unknown>): Record<string, unkn
 }
 
 function mapFeishuErrorStatus(httpStatus: number, code: number): number {
-  if (httpStatus === 401 || feishuCredentialErrorCodes.has(code)) {
+  if (feishuCredentialErrorCodes.has(code)) {
     return 401;
   }
   if (httpStatus === 403 || feishuScopeErrorCodes.has(code)) {

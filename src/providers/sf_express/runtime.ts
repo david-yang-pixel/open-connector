@@ -1,5 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderFetch, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { createHash, randomUUID } from "node:crypto";
 import {
@@ -23,7 +24,7 @@ import {
   runProviderRequest,
 } from "../provider-runtime.ts";
 
-export const sfExpressApiBaseUrl = "https://bspgw.sf-express.com/std/service";
+const sfExpressApiBaseUrl = "https://bspgw.sf-express.com/std/service";
 
 /** The sandbox gateway; every documented sandbox-environment row names this host. */
 const sfExpressSandboxBaseUrl = "https://sfapi-sbox.sf-express.com/std/service";
@@ -188,7 +189,6 @@ export async function validateSfExpressCredential(
       accountId: `sf_express:${context.partnerId}`,
       displayName: `SF Express (${context.partnerId})`,
     },
-    grantedScopes: [],
     metadata: {
       environment: context.sandbox ? "sandbox" : "production",
       // The default gateway for that environment; a few services document their own host.
@@ -227,7 +227,7 @@ function javaFormUrlEncode(value: string): string {
  * Standard MD5 is the default because SF used it before offering
  * the choice and what every application created back then still uses.
  */
-export function signSfExpressPayload(
+function signSfExpressPayload(
   msgData: string,
   timestamp: string,
   checkWord: string,

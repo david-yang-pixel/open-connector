@@ -5,7 +5,9 @@ import type {
   ProviderProxyExecutor,
 } from "../../core/types.ts";
 
-import { defineProviderExecutors, defineProviderProxy, requireApiKeyCredential } from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import { executePinpointAction, normalizePinpointApiBaseUrl, validatePinpointCredential } from "./runtime.ts";
 
 const service = "pinpoint";
@@ -52,7 +54,6 @@ export const credentialValidators: CredentialValidators = {
     );
     return {
       profile: { accountId: result.providerAccountId ?? "pinpoint", displayName: result.accountLabel },
-      grantedScopes: [],
       metadata: result.providerMetadata,
     };
   },

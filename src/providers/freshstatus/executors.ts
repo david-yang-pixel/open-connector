@@ -5,7 +5,9 @@ import type {
   ProviderProxyExecutor,
 } from "../../core/types.ts";
 
-import { defineProviderExecutors, defineProviderProxy, requireApiKeyCredential } from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   freshstatusActionHandlers,
   freshstatusApiBaseUrl,
@@ -56,7 +58,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: `freshstatus:${credential.subdomain}`,
         displayName: `Freshstatus ${credential.subdomain}`,
       },
-      grantedScopes: [],
       metadata: {
         subdomain: credential.subdomain,
         apiBaseUrl: freshstatusApiBaseUrl,

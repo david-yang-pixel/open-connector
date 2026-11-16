@@ -1,16 +1,14 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
 import type { McpToolOptions } from "../mcp-tools.ts";
-import type { ApiKeyProviderContext, ProviderFetch } from "../provider-runtime.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { sha256Hex } from "../../core/aws-sigv4.ts";
 import { optionalRecord } from "../../core/cast.ts";
 import { listMcpTools, callMcpTool } from "../mcp-tools.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  mapProviderActionHandlers,
-  requiredInputString,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors, mapProviderActionHandlers } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { requiredInputString } from "../provider-runtime.ts";
 import { fastmossMcpActions } from "./actions.ts";
 const origin = "https://mcp.fastmoss.com";
 const endpoint = `${origin}/mcp`;
@@ -37,7 +35,7 @@ export const proxy: ProviderProxyExecutor = defineProviderProxy({
   baseUrl: origin,
   auth: { type: "api_key_query", name: "api_key" },
   skipDnsValidation: true,
-  redirect: "error",
+  redirect: "manual",
   allowedEndpoint(value) {
     const url = new URL(value, origin);
     return (
@@ -71,7 +69,7 @@ function connectionInput(key: string, fetcher: ProviderFetch, signal?: AbortSign
     service: "FastMoss",
     fetcher,
     signal,
-    redirect: "error",
+    redirect: "manual",
     terminateSession: true,
     maxResponseBytes: 16 * 1024 * 1024,
   };

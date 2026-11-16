@@ -1,6 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -22,8 +21,7 @@ export const discolikeApiBaseUrl = "https://api.discolike.com/v1";
 
 type DiscolikePhase = "validate" | "execute";
 type DiscolikeQueryValue = string | number | boolean | readonly string[] | undefined;
-type DiscolikeContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
-type DiscolikeActionHandler = (input: Record<string, unknown>, context: DiscolikeContext) => Promise<unknown>;
+type DiscolikeActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 
 export const discolikeActionHandlers: ProviderActionHandlers<"discolike", DiscolikeActionHandler> = {
   async discover_companies(input, context) {
@@ -102,7 +100,6 @@ export async function validateDiscolikeCredential(
       accountId: "api_key",
       displayName: accountStatus ? `DiscoLike ${accountStatus}` : "DiscoLike API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       validationEndpoint: "/usage",
       accountStatus,
@@ -115,7 +112,7 @@ export async function validateDiscolikeCredential(
 async function requestDiscolikeDomainObject(
   path: string,
   input: Record<string, unknown>,
-  context: DiscolikeContext,
+  context: ApiKeyProviderContext,
 ): Promise<Record<string, unknown>> {
   const payload = await requestDiscolikeJson({
     path,
@@ -158,7 +155,7 @@ function buildSharedFilterQuery(input: Record<string, unknown>): Record<string, 
 async function requestDiscolikeJson(input: {
   path: string;
   query: Record<string, DiscolikeQueryValue>;
-  context: DiscolikeContext;
+  context: ApiKeyProviderContext;
   phase: DiscolikePhase;
 }): Promise<unknown> {
   const timeout = createProviderTimeout(input.context.signal);

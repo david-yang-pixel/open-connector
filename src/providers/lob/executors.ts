@@ -4,19 +4,14 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
 import { optionalBoolean, optionalRecord, optionalString } from "../../core/cast.ts";
 import { compactJson, queryParams } from "../../core/request.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-  runProviderRequest,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError, runProviderRequest } from "../provider-runtime.ts";
 
 const service = "lob";
 const lobApiBaseUrl = "https://api.lob.com/v1";
@@ -69,7 +64,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: `lob:${suffix}`,
         displayName: "Lob API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: lobApiBaseUrl,
         validationEndpoint: "/addresses?limit=1",
@@ -171,7 +165,7 @@ async function bulkVerifyInternationalAddresses(
 }
 
 async function requestLobJson(input: {
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   path: string;
   method: "GET" | "POST";
   phase: "validate" | "execute";

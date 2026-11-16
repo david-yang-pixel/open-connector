@@ -1,13 +1,9 @@
 import type { ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers, ProviderActionSources, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ProviderActionSources, ProviderRuntimeHandler } from "../provider-executors.ts";
 
-import {
-  defineProviderExecutors,
-  defineProviderProxy,
-  mapProviderActionSources,
-  ProviderRequestError,
-  providerUserAgent,
-} from "../provider-runtime.ts";
+import { defineProviderExecutors, mapProviderActionSources } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 interface Context {
   fetcher: typeof fetch;
@@ -23,7 +19,7 @@ async function execute(input: Record<string, unknown>, context: Context, name: s
   if (input.urlName !== undefined) url.searchParams.set("urlName", String(input.urlName));
   const response = await context.fetcher(url, {
     headers: { accept: "application/json", "user-agent": providerUserAgent },
-    redirect: "error",
+    redirect: "manual",
   });
   const payload = await response.json().catch(() => null);
   if (!response.ok)

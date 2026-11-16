@@ -1,6 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -15,7 +14,6 @@ import { providerUserAgent, ProviderRequestError, requiredInputString } from "..
 export const coderabbitApiBaseUrl = "https://api.coderabbit.ai";
 
 type JsonObject = Record<string, unknown>;
-type CoderabbitRuntimeContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
 type CoderabbitActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 
 interface CoderabbitCredentialInput {
@@ -229,7 +227,7 @@ export async function validateCoderabbitApiKey(
   input: CoderabbitCredentialInput,
   options: { fetcher: typeof fetch; signal?: AbortSignal },
 ): Promise<CredentialValidationResult> {
-  const context: CoderabbitRuntimeContext = {
+  const context: ApiKeyProviderContext = {
     apiKey: input.apiKey,
     fetcher: options.fetcher,
     signal: options.signal,
@@ -243,7 +241,6 @@ export async function validateCoderabbitApiKey(
       accountId: "coderabbit:organization",
       displayName: "CodeRabbit Organization",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: coderabbitApiBaseUrl,
       validationEndpoint: "/v1/users",
@@ -257,7 +254,7 @@ export async function validateCoderabbitApiKey(
 
 async function listUsers(
   input: Record<string, unknown>,
-  context: CoderabbitRuntimeContext,
+  context: ApiKeyProviderContext,
 ): Promise<{
   seatsPurchased: number;
   seatsAssigned: number;
@@ -297,7 +294,7 @@ async function requestCoderabbit(
     search?: URLSearchParams;
     body?: Record<string, unknown>;
   },
-  context: CoderabbitRuntimeContext,
+  context: ApiKeyProviderContext,
 ): Promise<JsonObject> {
   const url = new URL(`${coderabbitApiBaseUrl}${request.path}`);
   if (request.search) {

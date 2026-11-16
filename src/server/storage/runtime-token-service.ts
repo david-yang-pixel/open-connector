@@ -12,6 +12,7 @@ export interface RuntimeTokenRecord {
   allowedProxies: string[];
   allowedConnections: string[];
   connectionPermissions?: ConnectionPermissionGrant[];
+  allowedTriggers?: string[];
   createdAt: string;
   lastUsedAt?: string;
 }
@@ -24,6 +25,7 @@ export interface RuntimeTokenSummary {
   allowedProxies: string[];
   allowedConnections: string[];
   connectionPermissions?: ConnectionPermissionGrant[];
+  allowedTriggers?: string[];
   createdAt: string;
   lastUsedAt?: string;
 }
@@ -35,8 +37,10 @@ export interface RuntimeTokenCreation {
 
 export interface IRuntimeTokenStore {
   add(record: RuntimeTokenRecord): Promise<void>;
+  hasAny(): Promise<boolean>;
   list(): Promise<RuntimeTokenRecord[]>;
   findByHash(tokenHash: string): Promise<RuntimeTokenRecord | undefined>;
+  findById(id: string): Promise<RuntimeTokenRecord | undefined>;
   updatePolicy(id: string, policy: TokenPolicy): Promise<RuntimeTokenRecord | undefined>;
   revoke(id: string): Promise<boolean>;
   markUsed(id: string, usedAt: string): Promise<void>;
@@ -79,6 +83,7 @@ export class RuntimeTokenService {
       allowedProxies: normalizedPolicy.allowedProxies,
       allowedConnections: normalizedPolicy.allowedConnections ?? [],
       connectionPermissions: normalizedPolicy.connectionPermissions ?? [],
+      allowedTriggers: normalizedPolicy.allowedTriggers ?? [],
       createdAt: now,
     };
     await this.store.add(record);
@@ -131,6 +136,7 @@ export class RuntimeTokenService {
           allowedProxies: token.allowedProxies,
           allowedConnections: remainingConnections,
           connectionPermissions: remainingPermissions,
+          allowedTriggers: token.allowedTriggers,
         });
       }
     } catch (error) {
@@ -156,6 +162,7 @@ export class RuntimeTokenService {
       allowedProxies: matched.allowedProxies,
       allowedConnections: matched.allowedConnections ?? [],
       connectionPermissions: matched.connectionPermissions ?? [],
+      allowedTriggers: matched.allowedTriggers ?? [],
     };
   }
 
@@ -201,6 +208,7 @@ export function summarizeRuntimeToken(record: RuntimeTokenRecord): RuntimeTokenS
     allowedProxies: record.allowedProxies,
     allowedConnections: record.allowedConnections,
     connectionPermissions: record.connectionPermissions ?? [],
+    allowedTriggers: record.allowedTriggers ?? [],
     createdAt: record.createdAt,
     lastUsedAt: record.lastUsedAt,
   };

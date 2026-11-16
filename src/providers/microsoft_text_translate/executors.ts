@@ -6,7 +6,9 @@ import type {
 } from "../../core/types.ts";
 
 import { optionalString } from "../../core/cast.ts";
-import { defineProviderExecutors, defineProviderProxy, requireApiKeyCredential } from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   microsoftTextTranslateActionHandlers,
   microsoftTextTranslateApiBaseUrl,
@@ -53,7 +55,6 @@ export const credentialValidators: CredentialValidators = {
     await validateMicrosoftTextTranslateCredential({ apiKey: input.apiKey, region, fetcher, signal });
     return {
       profile: { displayName: region ? `Azure Translator (${region})` : "Azure Translator" },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: microsoftTextTranslateApiBaseUrl,
         apiVersion: microsoftTextTranslateApiVersion,

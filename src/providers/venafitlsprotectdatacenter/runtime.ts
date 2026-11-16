@@ -1,18 +1,19 @@
 import type { CredentialValidationResult, ProviderExecutors } from "../../core/types.ts";
-import type { ProviderFetch, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { createHash } from "node:crypto";
 import { optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
 import { assertPublicHttpUrl, encodePathSegment, isPrivateNetworkAccessAllowed } from "../../core/request.ts";
+import { requireCustomCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
 import {
-  defineProviderExecutors,
   providerInputError,
   ProviderRequestError,
   providerUserAgent,
-  requireCustomCredential,
+  defaultProviderRequestTimeoutMs,
 } from "../provider-runtime.ts";
 
-const requestTimeoutMs = 30_000;
 interface Credentials {
   domain: string;
   clientId: string;
@@ -38,7 +39,6 @@ export async function validateVenafiDatacenterCredential(
       accountId: `venafi-datacenter:${url.host}:${fingerprint(credentials.username)}`,
       displayName: `${credentials.username} at ${url.hostname}`,
     },
-    grantedScopes: ["certificate:manage"],
     metadata: { domain: credentials.domain },
   };
 }
@@ -206,7 +206,7 @@ async function guardedRequest(
       "user-agent": providerUserAgent,
       ...init.headers,
     },
-    signal: signal ?? AbortSignal.timeout(requestTimeoutMs),
+    signal: signal ?? AbortSignal.timeout(defaultProviderRequestTimeoutMs),
   });
   const text = await response.text();
   let payload: unknown = {};

@@ -1,6 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean, optionalNumber, optionalRawString, optionalRecord } from "../../core/cast.ts";
 import {
@@ -8,6 +7,7 @@ import {
   ProviderRequestError,
   readProviderTextBody,
   runProviderRequest,
+  providerInputError,
 } from "../provider-runtime.ts";
 
 export const zenscrapeApiBaseUrl = "https://app.zenscrape.com/api/v1";
@@ -53,7 +53,6 @@ export async function validateZenscrapeCredential(
   );
   return {
     profile: { accountId: "zenscrape", displayName: "Zenscrape API Key" },
-    grantedScopes: [],
     metadata: {
       validationEndpoint: "/api/v1/get",
       apiBaseUrl: zenscrapeApiBaseUrl,
@@ -64,7 +63,7 @@ export async function validateZenscrapeCredential(
 async function requestZenscrapeRaw(
   query: Record<string, string | number | boolean | undefined>,
   forwardHeaders: Record<string, string> | undefined,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: ZenscrapePhase,
 ): Promise<{ response: Response; bodyText: string }> {
   return runProviderRequest(
@@ -139,13 +138,13 @@ function createZenscrapeError(status: number, body: string, phase: ZenscrapePhas
   const message = extractZenscrapeErrorMessage(body) ?? `Zenscrape request failed with status ${status}`;
   if (status === 429) return new ProviderRequestError(429, message);
   if (phase === "validate" && status >= 400 && status < 500) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (phase === "execute" && (status === 401 || status === 403)) {
     return new ProviderRequestError(status, message);
   }
   if (phase === "execute" && status === 400) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   return new ProviderRequestError(status || 502, message);
 }

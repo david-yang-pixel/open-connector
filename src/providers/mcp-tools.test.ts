@@ -1,4 +1,5 @@
 import { beforeEach, expect, it, vi } from "vitest";
+import { withMcpClient } from "./mcp-client.ts";
 import { callMcpTool, listMcpTools } from "./mcp-tools.ts";
 
 const client = vi.hoisted(() => ({
@@ -7,7 +8,7 @@ const client = vi.hoisted(() => ({
 }));
 
 vi.mock("./mcp-client.ts", () => ({
-  withMcpClient: async (_options: unknown, run: (value: typeof client) => Promise<unknown>) => run(client),
+  withMcpClient: vi.fn(async (_options: unknown, run: (value: typeof client) => Promise<unknown>) => run(client)),
 }));
 
 beforeEach(() => {
@@ -99,4 +100,33 @@ it("maps MCP invalid-params tool results to invalid_input", async () => {
     code: "invalid_input",
     message: "Example MCP tool query rejected the input: MCP error -32602: missing query",
   });
+});
+
+it("returns declared output schemas only when requested", async () => {
+  const tool = {
+    name: "read",
+    inputSchema: { type: "object" },
+    outputSchema: { type: "object", properties: { value: { type: "string" } } },
+  };
+  client.request.mockResolvedValue({ tools: [tool] });
+  const options = { endpoint: "https://example.com/mcp", service: "Example" };
+  expect((await listMcpTools(options))[0]?.outputSchema).toBeUndefined();
+  expect((await listMcpTools(options, { includeOutputSchema: true }))[0]?.outputSchema).toEqual(tool.outputSchema);
+});
+
+it("preserves tool metadata only when requested", async () => {
+  const tool = { name: "calendar", inputSchema: { type: "object" }, _meta: { visibility: "user" } };
+  client.request.mockResolvedValue({ tools: [tool] });
+  const options = { endpoint: "https://example.com/mcp", service: "Example" };
+  expect((await listMcpTools(options))[0]?.metadata).toBeUndefined();
+  expect((await listMcpTools(options, { includeMetadata: true }))[0]?.metadata).toEqual({ visibility: "user" });
+});
+
+it("forwards modern protocol negotiation for stateless MCP tools", async () => {
+  client.request.mockResolvedValue({ tools: [] });
+  await listMcpTools({ endpoint: "https://example.com/mcp", service: "Example", protocolVersion: "modern" });
+  expect(withMcpClient).toHaveBeenLastCalledWith(
+    expect.objectContaining({ protocolVersion: "modern", terminateSession: undefined }),
+    expect.any(Function),
+  );
 });

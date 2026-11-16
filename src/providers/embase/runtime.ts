@@ -1,4 +1,4 @@
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
 import {
@@ -6,6 +6,7 @@ import {
   providerUserAgent,
   ProviderRequestError,
   runProviderRequest,
+  providerResponseError,
 } from "../provider-runtime.ts";
 
 export const embaseApiBaseUrl = "https://api.elsevier.com/content/embase";
@@ -81,7 +82,7 @@ export function createEmbaseActionContext(values: Record<string, string>, fetche
 export async function validateEmbaseCredential(
   input: Record<string, string>,
   fetcher: typeof fetch,
-): Promise<{ profile: { displayName: string }; grantedScopes: string[]; metadata: Record<string, unknown> }> {
+): Promise<{ profile: { displayName: string }; metadata: Record<string, unknown> }> {
   const credentials = readValidationCredentials(input);
   const response = await requestEmbaseJson({
     path: "/article",
@@ -93,7 +94,6 @@ export async function validateEmbaseCredential(
 
   return {
     profile: { displayName: "Embase API Key" },
-    grantedScopes: [],
     metadata: compactObject({
       validationEndpoint: "/article",
       usesInstitutionToken: credentials.institutionToken ? true : undefined,
@@ -173,7 +173,7 @@ function createEmbaseError(status: number, payload: unknown, phase: EmbasePhase)
     return new ProviderRequestError(429, message);
   }
   if (phase === "validate" && 400 <= status && status < 500) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (status === 401) {
     return new ProviderRequestError(401, message);
@@ -184,7 +184,7 @@ function createEmbaseError(status: number, payload: unknown, phase: EmbasePhase)
   if (400 <= status && status < 500) {
     return new ProviderRequestError(502, message, status);
   }
-  return new ProviderRequestError(502, message);
+  return providerResponseError(message);
 }
 
 function extractEmbaseErrorMessage(payload: unknown): string | undefined {

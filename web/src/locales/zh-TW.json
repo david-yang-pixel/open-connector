@@ -16,7 +16,9 @@
     "showMore": "顯示更多",
     "showing": "顯示 {{shown}} / {{total}}",
     "success": "成功",
-    "unavailable": "無法使用"
+    "unavailable": "無法使用",
+    "cancel": "取消",
+    "undo": "復原"
   },
   "brand": {
     "subtitle": "本機執行階段控制台",
@@ -36,10 +38,11 @@
     "providers": "服務提供者",
     "marketplace": "Marketplace",
     "oauthApps": "OAuth Apps",
+    "oauthClients": "OAuth 用戶端",
     "actions": "動作",
     "runs": "執行記錄",
     "access": "API 金鑰",
-    "docs": "文件"
+    "docs": "接入指南"
   },
   "shell": {
     "invalidUnlockToken": "請輸入有效的管理員權杖以解鎖控制台。",
@@ -61,9 +64,14 @@
       "providers": {
         "title": "服務提供者"
       },
-      "marketplace": { "title": "Marketplace" },
+      "marketplace": {
+        "title": "Marketplace"
+      },
       "oauthApps": {
         "title": "OAuth Apps"
+      },
+      "oauthClients": {
+        "title": "OAuth 用戶端"
       },
       "actions": {
         "title": "動作"
@@ -75,12 +83,16 @@
         "title": "API 金鑰"
       },
       "resources": {
-        "title": "資源"
+        "title": "接入指南"
       },
       "authorize": {
         "title": "授權用戶端"
       }
-    }
+    },
+    "settings": "設定",
+    "settingsDescription": "管理語言、外觀、連接與執行環境。",
+    "oomolKeyDescription": "查看支援的服務與優惠，再選擇接入或管理 Key。",
+    "notifications": "通知"
   },
   "unlock": {
     "token": "管理員權杖",
@@ -114,10 +126,26 @@
     "noRecentCallsDescription": "執行一個動作以查看服務提供者的呼叫次數。"
   },
   "marketplace": {
+    "oneKey": {
+      "headline": "一個 Key，接入多種 AI 與資料服務",
+      "description": "透過 OOMOL 官方 Key 使用目前目錄中相容的服務，無須逐家註冊與設定。依實際用量計費。",
+      "getKey": "取得 OOMOL Key",
+      "haveKey": "已有 Key？立即連接",
+      "benefitsLabel": "OOMOL Key 的接入方式",
+      "benefitSetup": "免去逐家註冊與設定 API Key",
+      "benefitChoice": "仍可選擇使用服務商原廠 Key",
+      "benefitPricing": "部分模型有優惠，費用依實際用量計算",
+      "connectTitle": "接入 OOMOL Key",
+      "connectDescription": "貼上 OOMOL 官方 Key，驗證後即可管理相容服務。",
+      "keyLabel": "OOMOL Key",
+      "keyHelp": "從 OOMOL 控制台複製 Key。連接後可查看並啟用相容服務。",
+      "advanced": "進階設定：Marketplace 來源",
+      "keyPlaceholder": "貼上 OOMOL 官方 API Key"
+    },
     "default": {
       "browseDescription": "瀏覽可用功能",
-      "title": "官方應用",
-      "description": "由 OOMOL Marketplace 提供，連接官方 API Key 後可用。",
+      "title": "OOMOL Key 支援的服務與功能",
+      "description": "僅列出目前版本相容的操作。支援部分操作不代表支援服務商的全部功能。",
       "failed": "暫時無法載入官方目錄，請稍後重試。",
       "retry": "重試",
       "loading": "正在載入官方應用…",
@@ -133,7 +161,10 @@
         "kling": "7 折",
         "minimax": "8 折",
         "seedance": "9 折"
-      }
+      },
+      "supportedActions": "{{count}} 項支援操作",
+      "connected": "已連接",
+      "providerDetails": "查看提供商詳情"
     },
     "summary": {
       "title": "Connector Marketplace",
@@ -141,8 +172,16 @@
       "providers": "服務提供者",
       "actions": "操作"
     },
-    "status": { "disabled": "未啟用", "available": "可用", "unavailable": "不可用", "auth_error": "驗證失敗" },
-    "pricing": { "free": "免費", "metered": "按量計費" },
+    "status": {
+      "disabled": "未啟用",
+      "available": "可用",
+      "unavailable": "不可用",
+      "auth_error": "驗證失敗"
+    },
+    "pricing": {
+      "free": "免費",
+      "metered": "按量計費"
+    },
     "configuration": {
       "reconnect": "目前來源尚未就緒，請在上方檢查設定並重新驗證。",
       "title": "連線設定",
@@ -184,21 +223,85 @@
     }
   },
   "providers": {
+    "managedEmpty": {
+      "title": "尚無已設定的連接",
+      "description": "使用上方的 OOMOL Key，或在「發現連接」中設定自己的憑證。"
+    },
+    "hostedAccess": {
+      "connectedCustom": "託管來源已連接。可在已設定連接中查看可用服務。",
+      "intro": "使用一個 OOMOL Key 接入多種 AI 與資料服務，也可使用自己的服務商憑證。",
+      "connected": "內建帳號已接入。可在已設定連接中查看可用服務。",
+      "connect": "接入 OOMOL Key",
+      "manage": "管理 OOMOL Key",
+      "close": "收起設定",
+      "features": "支援的服務",
+      "hideFeatures": "收起功能",
+      "removeKey": "刪除 Key",
+      "removeHelp": "刪除已儲存的 Key 並停用全部內建帳號？自行設定的憑證會保留。",
+      "confirmRemove": "確認刪除 Key",
+      "hide": "隱藏 OOMOL Key 推薦",
+      "restore": "OOMOL Key",
+      "hiddenNotice": "可在右上角設定 ⚙️ → OOMOL Key 中重新顯示。",
+      "hiddenTitle": "已隱藏 OOMOL Key"
+    },
+    "managedSources": {
+      "label": "連接來源",
+      "all": "全部",
+      "builtIn": "內建帳號",
+      "ownKey": "自有憑證"
+    },
+    "oneKey": {
+      "title": "使用 OOMOL Key 接入",
+      "description": "使用一個 OOMOL Key 接入 {{name}}，無須另外設定服務商的 API Key。",
+      "alternative": "也可以在下方自行設定服務商原廠 Key。",
+      "connect": "接入 OOMOL Key",
+      "available": "支援 OOMOL Key",
+      "builtIn": "內建帳號",
+      "connectedTitle": "內建帳號",
+      "connectedDescription": "此服務可透過 {{name}} 的內建帳號執行。"
+    },
     "catalogTitle": "服務提供者",
     "viewLabel": "服務提供者檢視",
-    "views": { "manage": "我的連線", "discover": "探索應用程式" },
+    "views": {
+      "manage": "已設定連接",
+      "discover": "發現連接"
+    },
     "discovery": {
       "browseByTask": "依任務瀏覽",
       "explore": "探索應用程式",
       "scenarios": {
-        "ai": { "title": "AI 與 Agent", "description": "模型、Agent、搜尋與媒體生成" },
-        "crossBorderEcommerce": { "title": "電商營運", "description": "店面、訂單、履約與市場資料" },
-        "communication": { "title": "團隊協作", "description": "訊息、電子郵件、會議與通知" },
-        "docs": { "title": "文件與知識", "description": "文件、知識庫、雲端硬碟與試算表" },
-        "productivity": { "title": "專案與效率", "description": "專案、工作、行程與自動化" },
-        "marketing": { "title": "行銷與成長", "description": "廣告、內容、潛在客戶與成長資料" },
-        "dataStorage": { "title": "資料與分析", "description": "資料倉儲、資料庫、BI 與儲存" },
-        "developer": { "title": "開發與雲端", "description": "程式碼、部署、雲端服務與可觀測性" }
+        "ai": {
+          "title": "AI 與 Agent",
+          "description": "模型、Agent、搜尋與媒體生成"
+        },
+        "investment": {
+          "title": "投資與交易",
+          "description": "股票、加密資產、行情、持倉與交易紀錄"
+        },
+        "crossBorderEcommerce": {
+          "title": "電商營運",
+          "description": "店面、訂單、履約與市場資料"
+        },
+        "communication": {
+          "title": "協作與知識",
+          "description": "訊息、電子郵件、會議、文件、雲端硬碟與知識庫"
+        },
+        "productivity": {
+          "title": "專案與效率",
+          "description": "專案、工作、行程與自動化"
+        },
+        "marketing": {
+          "title": "行銷與成長",
+          "description": "廣告、內容、潛在客戶與成長資料"
+        },
+        "dataStorage": {
+          "title": "資料與分析",
+          "description": "資料倉儲、資料庫、BI 與儲存"
+        },
+        "developer": {
+          "title": "開發與雲端",
+          "description": "程式碼、部署、雲端服務與可觀測性"
+        }
       }
     },
     "brandNotice": "第三方名稱、標誌及商標歸其各自權利人所有，此處僅用於識別對應的服務提供者。本專案不主張擁有相關權利。再散布本專案或將其用於商業用途的使用者，應自行查閱適用的品牌規範，並依其具體用途取得所需許可。",
@@ -207,6 +310,8 @@
     "filters": {
       "all": "全部",
       "connected": "已連線",
+      "oneKey": "支援 OOMOL Key",
+      "noSetup": "免設定",
       "notConnected": "尚未連線",
       "oauthNeedsConfig": "OAuth 需要設定"
     },
@@ -287,6 +392,8 @@
       "noAuth": "無須驗證"
     },
     "connectionMessages": {
+      "disconnectNotice": "已中斷「{{name}}」",
+      "cloudDisconnectNotice": "雲端帳號將在背景刪除。",
       "noAuth": "此服務提供者無須本機憑證即可執行。",
       "needsOAuthClient": "{{name}} 需要本機 OAuth 用戶端才能連線。",
       "manualOAuthClient": "使用自訂 OAuth App 連線 {{name}}。",
@@ -341,13 +448,21 @@
       "callbackUrl": "Callback URL",
       "clientId": "Client ID",
       "clientSecret": "Client Secret",
-      "storedSecretHint": "已儲存的 secret 不會顯示。儲存變更時請再次輸入。",
+      "storedSecretHint": "留空保留已儲存的密鑰，輸入新值可替換。",
+      "clearSecret": "儲存時清除已儲存的 {{name}}",
       "saving": "正在儲存 OAuth 用戶端...",
       "saved": "OAuth 用戶端已儲存。",
       "failed": "無法儲存 OAuth 用戶端。",
       "resetting": "正在重設 OAuth 用戶端...",
       "reset": "OAuth 用戶端已重設。",
-      "resetFailed": "無法重設 OAuth 用戶端。"
+      "resetFailed": "無法重設 OAuth 用戶端。",
+      "useDefaultScopes": "使用預設權限",
+      "scopeLabel": "授權範圍",
+      "emptyScopes": "僅申請連線所需的基本權限。",
+      "removeScope": "移除 {{scope}}",
+      "scopePlaceholder": "新增 scope",
+      "additionalScopes": "額外權限",
+      "advancedScopes": "進階設定"
     },
     "execution": {
       "executable": "可執行",
@@ -373,6 +488,75 @@
     "dialog": {
       "configureTitle": "設定 {{name}} OAuth App",
       "editTitle": "編輯 {{name}} OAuth App"
+    }
+  },
+  "oauthClients": {
+    "title": "OAuth 用戶端",
+    "description": "管理透過 OAuth 2.1 連線 MCP 端點的用戶端。",
+    "newClient": "新增用戶端",
+    "emptyTitle": "沒有 OAuth 用戶端",
+    "emptyDescription": "註冊一個用戶端，讓 MCP 用戶端透過 OAuth 連線。",
+    "clientName": "用戶端名稱",
+    "clientId": "用戶端 ID",
+    "registration": "註冊方式",
+    "authMethod": "權杖端點驗證",
+    "redirectUris": "重新導向 URI",
+    "redirectUrisHint": "每行一個 URI。使用 HTTPS，或僅限環回位址的 HTTP。",
+    "scopes": "範圍",
+    "created": "建立於",
+    "confidential": "機密",
+    "public": "公開",
+    "registrationType": {
+      "manual": "手動",
+      "dcr": "動態 (DCR)",
+      "cimd": "中繼資料 (CIMD)"
+    },
+    "authMethodValue": {
+      "none": "公開（無）",
+      "client_secret_basic": "Basic",
+      "client_secret_post": "請求主體"
+    },
+    "edit": "編輯",
+    "rotateSecret": "輪換密鑰",
+    "delete": "刪除",
+    "save": "儲存",
+    "create": "建立用戶端",
+    "createDialog": {
+      "title": "新增 OAuth 用戶端",
+      "description": "註冊用於 OAuth 2.1 授權的用戶端。"
+    },
+    "editDialog": {
+      "title": "編輯 {{name}}",
+      "description": "更新用戶端名稱、重新導向 URI 和範圍。"
+    },
+    "deleteDialog": {
+      "title": "刪除 {{name}}",
+      "description": "將撤銷該用戶端的所有權杖，且無法復原。",
+      "confirm": "刪除用戶端"
+    },
+    "secret": {
+      "title": "{{name}} 的用戶端密鑰",
+      "description": "請立即複製此密鑰。",
+      "warning": "此密鑰僅顯示一次，之後無法再取得。",
+      "copy": "複製",
+      "copied": "已複製",
+      "done": "完成"
+    },
+    "toasts": {
+      "created": "用戶端已建立。",
+      "updated": "用戶端已更新。",
+      "rotated": "密鑰已輪換。",
+      "deleted": "用戶端已刪除。",
+      "saveFailed": "無法儲存用戶端。",
+      "rotateFailed": "無法輪換密鑰。",
+      "deleteFailed": "無法刪除用戶端。"
+    },
+    "errors": {
+      "nameRequired": "用戶端名稱為必填欄位。",
+      "redirectUriRequired": "至少需要一個重新導向 URI。",
+      "redirectUriInvalid": "重新導向 URI 必須是絕對 HTTPS 位址，或環回位址的 HTTP。",
+      "scopeInvalid": "選取了不支援的範圍。",
+      "loadFailed": "無法載入 OAuth 用戶端。"
     }
   },
   "actions": {
@@ -408,7 +592,10 @@
     "running": "執行中",
     "runningAction": "正在執行動作...",
     "actionFailed": "動作執行失敗。",
-    "loadingDetails": "正在載入動作詳情..."
+    "loadingDetails": "正在載入動作詳情...",
+    "useFromClient": "在端側使用",
+    "clientExampleHelp": "複製目前網關的呼叫範例。多個帳號時，先選擇使用的連接。",
+    "clientGuide": "接入指南"
   },
   "runs": {
     "noRunsTitle": "尚無執行記錄",
@@ -702,6 +889,67 @@
     "openapi": {
       "title": "OpenAPI JSON",
       "description": "在指令碼或工具匯入器中使用產生的規格。"
+    },
+    "onboarding": {
+      "eyebrow": "網關已部署，接下來連接你的客戶端",
+      "title": "讓應用與 Agent 使用你的網關",
+      "description": "選擇適合你的接入方式，先成功執行一個 Action，再使用已連接的服務。",
+      "stepAddress": "確認網關地址",
+      "stepClient": "選擇接入方式",
+      "stepAction": "呼叫第一個 Action",
+      "prepare": "確認連接資訊",
+      "prepareHelp": "填寫一次網關地址，下方所有範例都會同步更新。",
+      "gatewayUrl": "你的網關 Base URL",
+      "gatewayHelp": "填寫客戶端可存取的地址，不要加上 /v1 或 /mcp。",
+      "urlError": "請輸入完整的 HTTP 或 HTTPS 地址，不包含帳號密碼、查詢參數或片段。",
+      "authLabel": "執行階段驗證",
+      "tokenAuth": "使用 Runtime Token",
+      "oauthAuth": "OAuth 2.1",
+      "noAuth": "尚未啟用驗證",
+      "oauthHelp": "MCP 用戶端會自動探索 OAuth 2.1 授權伺服器。如果用戶端需要，可以使用動態用戶端註冊。",
+      "oauthPkceNote": "PKCE S256 為必要項，並且在 authorize 與 token 請求中必須傳送 resource 參數（即 MCP 資源 URI）。",
+      "oauthDiscovery": "OAuth 2.1 探索端點",
+      "oauthCliSdkNote": "OAuth 2.1 適用於 MCP 用戶端。下方 CLI 與 SDK 範例使用 Runtime Token 驗證，僅支援 OAuth 的閘道會拒絕這類權杖：請將閘道設為 mixed（混合）模式，或為這些範例提供 OAuth 存取權杖。",
+      "tokenHelp": "建立 Token 後，替換程式碼中的 <RUNTIME_TOKEN>。此頁面不會儲存 Token。",
+      "createToken": "建立 Runtime Token",
+      "tokenDifferenceTitle": "這裡應該使用哪一種 Key？",
+      "tokenDifference": "Runtime Token 用於存取你部署的網關；OOMOL Key 用於啟用網關裡的託管服務。服務提供者的憑證保存在網關內。",
+      "localhostHelp": "localhost 指的是執行客戶端的裝置。如果網關在另一台伺服器上，請填寫該伺服器的存取地址。",
+      "clientTitle": "選擇你使用網關的方式",
+      "clientHelp": "三種方式都能探索和呼叫同一批 Action，選擇適合你的客戶端即可。",
+      "mcpAudience": "Agent 客戶端",
+      "cliAudience": "終端與指令碼",
+      "sdkAudience": "應用程式碼",
+      "mcpTitle": "讓 Agent 呼叫網關裡的能力",
+      "mcpHelp": "適用於支援遠端 HTTP 服務和 Authorization 請求標頭的 MCP 客戶端。",
+      "mcpConfigure": "將設定複製到客戶端的 MCP 服務設定中。啟用驗證時，替換 Token 預留值。",
+      "mcpDiscover": "讓 Agent 先使用 search_actions 尋找能力，再用 get_action_guide 了解操作參數。",
+      "mcpExecute": "使用右側參數呼叫 execute_action。需要選擇帳號時，可先呼叫 list_connections。",
+      "cliTitle": "在終端裡呼叫 Action",
+      "cliHelp": "oo connector 會向你自己的網關發出請求，這些命令不需要登入 OOMOL 帳號。",
+      "cliInstall": "在準備執行命令的裝置上安裝 oo。",
+      "cliConfigure": "在同一個終端設定網關環境變數。這些變數優先於已儲存的連接和託管 Key。",
+      "cliExecute": "搜尋 Action，查看參數 Schema，再傳入 JSON 執行。",
+      "sdkTitle": "從你的應用程式碼接入",
+      "sdkHelp": "自部署網關使用 OpenConnector。SDK 負責請求，服務提供者的憑證和執行邏輯由網關管理。",
+      "sdkInstall": "在 Node.js 或 TypeScript 專案裡安裝 SDK。",
+      "sdkConfigure": "啟用驗證時，在應用執行環境設定 OOMOL_CONNECT_RUNTIME_TOKEN。",
+      "sdkExecute": "檢查連接，讀取目錄，再從程式碼呼叫同一個 Action。",
+      "install": "安裝客戶端",
+      "configure": "連接你的網關",
+      "firstAction": "試用 hackernews.get_top_stories",
+      "copy": "複製程式碼",
+      "copied": "程式碼已複製",
+      "fullGuide": "查看完整教學",
+      "platform": "客戶端作業系統",
+      "tokenEnv": "設定應用環境的 Runtime Token",
+      "nextTitle": "接下來，用於你的業務流程",
+      "nextHelp": "Hacker News 不需要服務提供者的憑證。成功執行後，可選擇已連接的服務；每個 Action 都有 CLI 和 SDK 範例。",
+      "browseActions": "探索 Action",
+      "actionDetails": "查看這個 Action",
+      "moreTitle": "通訊協定與介面參考",
+      "sdkRunHelp": "將上面的程式碼儲存為 client.mjs，再於同一個終端執行。",
+      "runExample": "執行範例"
     }
   },
   "authorize": {
@@ -721,12 +969,112 @@
     "failed": "無法完成授權請求。",
     "revokeHint": "此權杖會列在 API 金鑰頁面，你可以隨時修改它的權限或將其撤銷。"
   },
-  "hostedPromo": {
-    "title": "歡迎使用 Open Connect",
-    "headline": "一個 Key，開始 AI 創作",
-    "description": "使用 Kling、Seedance、MiniMax 等模型生成圖片與影片",
-    "offer": "部分模型低至 7 折",
-    "cta": "取得 API Key",
-    "dismiss": "關閉，不再顯示"
+  "saas": {
+    "authorizationSettings": "授權設定",
+    "updateKey": "更新金鑰",
+    "keyStored": "專案金鑰已加密儲存。",
+    "manageProject": "專案維護",
+    "errors": {
+      "title": "操作未完成",
+      "encryption": "請設定 OOMOL_CONNECT_ENCRYPTION_KEY 並重新啟動 Connect，再儲存專案金鑰。後續啟動需使用相同的加密金鑰。",
+      "origin": "請將 OOMOL_CONNECT_ORIGIN 設為瀏覽器中的控制台位址並重新啟動。協定、主機和連接埠必須一致；localhost 與 127.0.0.1 不相同。",
+      "blocked": "雲端位址遭封鎖。請檢查代理的 Fake-IP 和 DNS 設定，讓網域解析為公用 IP。",
+      "dns": "無法解析雲端網域，請檢查 Connect 主機的 DNS。",
+      "network": "無法連接雲端，請檢查 Connect 主機的網路、代理和 TLS 憑證。",
+      "redirect": "雲端回傳重新導向，為保護專案金鑰已停止請求。請檢查雲端位址。",
+      "json": "雲端未回傳有效的 JSON，請檢查介面、代理或登入攔截頁。",
+      "size": "雲端回應超過大小限制，請檢查雲端日誌。",
+      "timeout": "雲端請求逾時，請檢查網路後重試。",
+      "key": "專案金鑰無效或權限不足。請使用雲端專案的 API 金鑰，不能使用 Marketplace 金鑰。",
+      "protocol": "雲端介面格式不相容，請核對雲端與 Connect 版本。",
+      "notFound": "找不到雲端資源，請檢查專案設定及介面部署。",
+      "inUse": "專案仍在使用中。請切換預設授權方式、移除連線，並處理待完成的授權與清理工作。",
+      "mismatch": "專案或授權設定已變更，請重新整理後選擇。",
+      "rateLimit": "請求過於頻繁，請稍後重試。",
+      "configuration": "雲端專案設定不正確，請檢查金鑰、加密設定與控制台位址。",
+      "scopes": "雲端 OAuth 設定缺少必要權限，請更新授權範圍。",
+      "input": "輸入不正確，請檢查專案金鑰或所選設定。",
+      "session": "控制台登入已失效，請重新登入。",
+      "unknown": "暫時無法完成操作，請重試；若持續失敗，請查看 Connect 伺服器日誌。"
+    },
+    "configurationId": "設定 ID",
+    "configurationDetails": "查看設定詳情",
+    "settingsDescription": "選擇新帳號在哪裡授權及執行操作。",
+    "settingsTitle": "{{name}} 授權設定",
+    "openProjects": "開啟雲端專案",
+    "project": "OOMOL 雲端授權",
+    "projectDescription": "透過 OOMOL 雲端連接 Gmail 等第三方帳號，無需在本機設定 OAuth 應用程式。連接後的操作由雲端執行。",
+    "remoteNotice": "操作的輸入與結果會經過 OOMOL 雲端，並可能消耗專案額度。此處不設消費上限。",
+    "projectId": "專案 ID",
+    "projectKey": "專案 API 金鑰",
+    "keyHint": "填入 OOMOL 雲端專案的 API 金鑰，不能使用 Marketplace 金鑰。已儲存的金鑰不會顯示；更換時請輸入新金鑰。",
+    "cleanup": "清理待辦：{{pending}} 項待處理 · {{manual}} 項需人工處理",
+    "paused": "清理已暫停，請更新專案金鑰以恢復。",
+    "save": "儲存專案",
+    "saving": "正在儲存…",
+    "saved": "已儲存。",
+    "failed": "操作失敗，請重試。",
+    "remove": "移除專案設定",
+    "removed": "已移除專案設定。",
+    "removeHint": "請先將服務預設來源切回本機、移除 SaaS 連線，並處理授權請求與清理待辦。移除此設定不會刪除 SaaS 專案。",
+    "confirmRemove": "確認移除",
+    "defaultSource": "授權方式",
+    "local": "本機 OAuth 應用程式",
+    "remote": "OOMOL 雲端",
+    "sourceHint": "僅影響新建連線。既有連線重新連線時仍使用原來源。",
+    "loading": "正在載入…",
+    "loadFailed": "載入失敗",
+    "configUnavailable": "無法使用",
+    "configUnavailableHint": "已儲存的雲端設定目前無法使用。請檢查雲端專案及其供應商設定，然後重新檢查或選擇其他授權方式。",
+    "noConfigs": "沒有可用的相容雲端設定。請先設定雲端專案及對應的供應商設定。",
+    "saveSource": "儲存來源",
+    "capabilities": "{{count}} 個相容操作",
+    "proxyYes": "支援代理",
+    "proxyNo": "不支援代理",
+    "scopes": "授權範圍",
+    "pending": "正在等待授權，請保持完成頁開啟。",
+    "connected": "連線已完成。",
+    "manualResult": "無法確認授權結果，請先檢查 SaaS 專案再重新發起。",
+    "status": {
+      "unconfigured": "未設定",
+      "available": "可用",
+      "unavailable": "暫時無法使用",
+      "auth_error": "專案金鑰無效"
+    },
+    "retry": "重新檢查"
+  },
+  "customMcp": {
+    "service": "服務識別碼",
+    "serviceHelp": "使用小寫字母、數字、底線或連字號，建立後無法修改。",
+    "add": "新增 MCP 服務",
+    "description": "連接遠端 MCP 服務，自動探索可用工具。",
+    "name": "名稱",
+    "endpoint": "MCP 位址",
+    "transport": "傳輸方式",
+    "auth": "驗證方式",
+    "noAuth": "無需驗證",
+    "headers": "API Key / 請求標頭",
+    "headerHelp": "在這裡定義驗證標頭，建立連線時再填寫對應的值。",
+    "headerName": "標頭名稱",
+    "prefix": "前綴（選填）",
+    "removeHeader": "移除標頭",
+    "addHeader": "新增標頭",
+    "oauthHelp": "留空 Client ID 可自動註冊。新增服務後再授權帳號。",
+    "manualOAuth": "手動填寫 OAuth 端點",
+    "issuer": "授權伺服器位址",
+    "authorizationUrl": "授權端點",
+    "tokenUrl": "權杖端點",
+    "scopes": "權限範圍（空格分隔）",
+    "working": "連接中…",
+    "settings": "MCP 服務",
+    "save": "儲存",
+    "syncConnection": "用於探索工具的連線",
+    "synced": "{{count}} 個工具，上次同步於 {{time}}",
+    "notSynced": "連接帳號後即可探索工具。",
+    "syncFailed": "工具探索失敗，請檢查連線和服務位址後重試。",
+    "sync": "同步工具",
+    "disable": "停用",
+    "enable": "啟用",
+    "delete": "刪除服務"
   }
 }

@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
 import { providerUserAgent, ProviderRequestError, requiredInputString } from "../provider-runtime.ts";
@@ -111,7 +111,6 @@ export async function validateSmugmugCredential(context: ApiKeyProviderContext):
       accountId: "api_key",
       displayName: "SmugMug API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: smugmugApiBaseUrl,
       validationEndpoint: `${smugmugApiBasePath}/user/${smugmugDemoUserNickname}`,

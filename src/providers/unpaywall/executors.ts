@@ -1,13 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
 import type { ProviderFetch } from "../provider-runtime.ts";
 
-import {
-  defineProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-  requireCustomCredential,
-} from "../provider-runtime.ts";
+import { requireCustomCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 const service = "unpaywall";
 const baseUrl = "https://api.unpaywall.org/v2";
 interface Context {
@@ -66,7 +63,7 @@ export const credentialValidators: CredentialValidators = {
     const email = required(input.values.email, "email");
     if (!email.includes("@")) throw new ProviderRequestError(400, "email must be a valid email address");
     await request("/10.1038%2Fnature12373", {}, { email, fetcher, signal });
-    return { profile: { accountId: email, displayName: email }, grantedScopes: [], metadata: { apiBaseUrl: baseUrl } };
+    return { profile: { accountId: email, displayName: email }, metadata: { apiBaseUrl: baseUrl } };
   },
 };
 async function request(path: string, query: Record<string, string | undefined>, context: Context): Promise<unknown> {

@@ -1,6 +1,5 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   optionalBoolean,
@@ -11,9 +10,9 @@ import {
   requiredRecord,
   requiredStringArray,
 } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   providerInputError,
   providerResponseError,
   providerUserAgent,
@@ -96,7 +95,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: optionalString(user.id) ?? email ?? "concord-api-key",
         displayName: optionalString(user.fullName) ?? email ?? "Concord API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: concordApiBaseUrl,
         validationEndpoint: "/user/me",
@@ -118,18 +116,14 @@ export const proxy: ProviderProxyExecutor = defineProviderProxy({
 
 async function requestConcordObject(
   path: string,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: ConcordPhase,
   label: string,
 ): Promise<Record<string, unknown>> {
   return requiredRecord(await requestConcordJson(path, context, phase), `Concord ${label}`, providerResponseError);
 }
 
-async function requestConcordJson(
-  path: string,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
-  phase: ConcordPhase,
-): Promise<unknown> {
+async function requestConcordJson(path: string, context: ApiKeyProviderContext, phase: ConcordPhase): Promise<unknown> {
   return runProviderRequest({ signal: context.signal, label: "Concord" }, async (signal) => {
     const response = await context.fetcher(`${concordApiBaseUrl}${path}`, {
       headers: {

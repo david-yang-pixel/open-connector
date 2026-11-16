@@ -5,21 +5,21 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
 import { assertPublicHttpUrl, isPrivateNetworkAccessAllowed } from "../../core/request.ts";
+import { requireCustomCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderFetch,
-  defineProviderExecutors,
-  defineProviderProxy,
   ProviderRequestError,
   providerUserAgent,
-  requireCustomCredential,
+  defaultProviderRequestTimeoutMs,
 } from "../provider-runtime.ts";
 
 const service = "rocket_chat";
-const requestTimeoutMs = 30_000;
 const validationPath = "/me";
 
 interface RocketChatCredential {
@@ -191,7 +191,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: profileId,
         displayName: name ?? username ?? `Rocket.Chat User ${profileId}`,
       },
-      grantedScopes: [],
       metadata: compactObject({
         baseUrl: credential.baseUrl,
         apiBaseUrl: credential.apiBaseUrl,
@@ -252,8 +251,8 @@ async function requestRocketChat(options: {
   body?: Record<string, unknown>;
 }): Promise<{ status: number; payload: unknown; rawText: string }> {
   const signal = options.signal
-    ? AbortSignal.any([options.signal, AbortSignal.timeout(requestTimeoutMs)])
-    : AbortSignal.timeout(requestTimeoutMs);
+    ? AbortSignal.any([options.signal, AbortSignal.timeout(defaultProviderRequestTimeoutMs)])
+    : AbortSignal.timeout(defaultProviderRequestTimeoutMs);
   const headers = new Headers({
     accept: "application/json",
     "user-agent": providerUserAgent,

@@ -1,6 +1,6 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -10,17 +10,13 @@ import {
   optionalString,
   requiredRecord,
 } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError, defaultProviderRequestTimeoutMs } from "../provider-runtime.ts";
 
 const service = "ffhub";
 const ffhubApiBaseUrl = "https://api.ffhub.io/v1/";
 const ffhubValidationPath = "/status";
-const ffhubDefaultTimeoutMs = 30_000;
 
 type FfhubRequestPhase = "validate" | "execute";
 type FfhubActionContext = ApiKeyProviderContext;
@@ -121,7 +117,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "api_key",
         displayName: "FFHub API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: "https://api.ffhub.io/v1",
         validationEndpoint: ffhubValidationPath,
@@ -297,7 +292,7 @@ function readNullableInteger(value: unknown): number | null {
 
 function createFfhubRequestSignal(parent?: AbortSignal): FfhubRequestSignal {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), ffhubDefaultTimeoutMs);
+  const timeout = setTimeout(() => controller.abort(), defaultProviderRequestTimeoutMs);
   const abortFromParent = (): void => controller.abort(parent?.reason);
   if (parent?.aborted) {
     controller.abort(parent.reason);

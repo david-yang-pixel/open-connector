@@ -4,7 +4,7 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -14,14 +14,15 @@ import {
   optionalRecord,
   optionalString,
 } from "../../core/cast.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineProviderExecutors,
-  defineProviderProxy,
   providerUserAgent,
   ProviderRequestError,
   readProviderTextBody,
-  requireApiKeyCredential,
   runProviderRequest,
+  providerInputError,
 } from "../provider-runtime.ts";
 
 const fullContactApiBaseUrl = "https://api.fullcontact.com/v3";
@@ -166,7 +167,6 @@ export const credentialValidators: CredentialValidators = {
       profile: {
         displayName: "FullContact API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: fullContactApiBaseUrl,
         validationMode: "format_only",
@@ -238,7 +238,7 @@ function createFullContactError(status: number, payload: unknown, mode: FullCont
   }
 
   if (mode === "validate" && (status === 401 || status === 403)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
 
   if (mode === "execute" && (status === 401 || status === 403)) {
@@ -246,7 +246,7 @@ function createFullContactError(status: number, payload: unknown, mode: FullCont
   }
 
   if ([400, 404, 422].includes(status)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
 
   return new ProviderRequestError(status >= 500 ? 502 : status || 502, message);

@@ -1,11 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   ProviderRequestError,
   providerUserAgent,
   requiredResponseRecord,
@@ -216,7 +215,6 @@ export const credentialValidators: CredentialValidators = {
       profile: {
         displayName: firstAccountName ?? firstAccountEmail ?? "Atlas.so API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: atlasSoApiBaseUrl,
         validationEndpoint: "/v1/accounts",
@@ -230,7 +228,7 @@ export const credentialValidators: CredentialValidators = {
 };
 
 async function requestAtlasSoJson(input: {
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   path: string;
   phase: AtlasSoPhase;
   method?: AtlasSoMethod;

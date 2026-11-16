@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
 import { compactObject, optionalInteger, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
@@ -9,6 +9,7 @@ import {
   isAbortLikeError,
   providerUserAgent,
   ProviderRequestError,
+  providerInputError,
 } from "../provider-runtime.ts";
 
 const clickhouseDefaultDatabase = "default";
@@ -95,7 +96,6 @@ export async function validateClickhouseCredential(
       accountId: `${baseUrl}:${context.username}`,
       displayName: `${context.username}@${new URL(baseUrl).host}`,
     },
-    grantedScopes: [],
     metadata: compactObject({
       baseUrl,
       username: context.username,
@@ -448,10 +448,10 @@ function createClickhouseError(
 ): ProviderRequestError {
   const message = responseText.trim() || `ClickHouse request failed with ${status}`;
   if (phase === "validate" && [400, 401, 403].includes(status)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if ([400, 404, 422].includes(status)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (status === 429) {
     return new ProviderRequestError(429, message);
@@ -466,7 +466,7 @@ export function normalizeClickhouseBaseUrl(
   const raw = requireCredentialString(value, "baseUrl");
   const url = assertPublicHttpUrl(raw, {
     fieldName: "baseUrl",
-    createError: (message) => new ProviderRequestError(400, message),
+    createError: providerInputError,
     allowPrivateNetwork,
   });
   url.hash = "";

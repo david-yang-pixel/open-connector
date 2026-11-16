@@ -8,18 +8,27 @@ const service = "googlechat";
 /**
  * Google Chat provider backed by the Chat API and a user-provided Google OAuth app.
  *
- * Scoped to read-only space and message history access, which the Chat API
- * supports under user authentication.
+ * An OAuth connection requests space and message history reads, space membership
+ * reads (chat.memberships.readonly, to find a direct message's other participant),
+ * Workspace directory profile reads (directory.readonly, used through the People
+ * API to name members and senders), and plain-text message creation, which is
+ * what the Chat API supports under user authentication. Message creation uses the
+ * Sensitive-tier chat.messages.create scope rather than the Restricted-tier
+ * chat.messages, so update, delete, and reaction access is never requested.
+ * Service account tokens stay on the space and message read scopes, so sending
+ * and naming need an OAuth user connection.
  */
 export const provider: ProviderDefinition = {
   service,
   displayName: "Google Chat",
-  description: "Read Google Chat spaces and message history as the authenticated Google Workspace user.",
+  description:
+    "Read Google Chat spaces and message history, name members and message senders through the Workspace directory, and send plain-text messages, as the authenticated Google Workspace user. Sending and naming require an OAuth user connection: service account connections only read spaces and messages.",
   categories: ["Communication", "Productivity"],
   authTypes: ["oauth2", "custom_credential"],
   auth: [
     {
       type: "oauth2",
+      requiredScopes: ["openid", "email", "profile"],
       authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth",
       tokenUrl: "https://oauth2.googleapis.com/token",
       scopes: googleChatOAuthScopes,
@@ -53,7 +62,7 @@ export const provider: ProviderDefinition = {
           secret: false,
           placeholder: "user@your-domain.com",
           description:
-            "Workspace user to impersonate through domain-wide delegation. In the Workspace Admin console (Security > Access and data control > API Controls > Domain-wide Delegation), grant the service account client ID the Chat scopes this provider requests.",
+            "Workspace user to impersonate through domain-wide delegation. In the Workspace Admin console (Security > Access and data control > API Controls > Domain-wide Delegation), grant the service account client ID https://www.googleapis.com/auth/chat.spaces.readonly, https://www.googleapis.com/auth/chat.messages.readonly, openid, email, and profile. Service account connections only read spaces and messages; sending messages and naming members need an OAuth connection.",
         },
       ],
     },

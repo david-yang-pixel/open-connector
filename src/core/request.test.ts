@@ -1,7 +1,9 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
+import { withProviderNetworkPolicy } from "./provider-network-policy.ts";
 import {
   assertPublicHttpUrl,
   classifyIpAddress,
+  hasPathTraversalSegment,
   isBlockedIpAddress,
   isEgressTrustedHost,
   isIpAddress,
@@ -9,9 +11,37 @@ import {
   isPrivateNetworkAccessAllowed,
   parseEgressTrustedHosts,
   parsePrivateNetworkAccessFlag,
-  setEgressTrustedHosts,
-  setPrivateNetworkAccessAllowed,
+  readBoundedResponseBytes,
+  storeResponseInTransit,
 } from "./request.ts";
+
+it.each([undefined, "2"])(
+  "rejects oversized bodies without awaiting stream cancellation (Content-Length: %s)",
+  async (contentLength) => {
+    let cancelled = false;
+    const response = new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array(2));
+        },
+        cancel() {
+          cancelled = true;
+          return new Promise<void>(() => {});
+        },
+      }),
+      { headers: contentLength === undefined ? undefined : { "content-length": contentLength } },
+    );
+    await expect(
+      readBoundedResponseBytes(response, {
+        maxBytes: 1,
+        fieldName: "response",
+        createError: (message) => new Error(message),
+      }),
+    ).rejects.toThrow("response exceeds 1 bytes");
+    expect(cancelled).toBe(true);
+  },
+  1000,
+);
 
 describe("assertPublicHttpUrl", () => {
   it("canonicalizes public hostnames with trailing dots", () => {
@@ -78,6 +108,7 @@ describe("assertPublicHttpUrl", () => {
       "http://service.localhost:3000/",
       "http://127.0.0.1:3000/",
       "http://100.100.100.200/",
+      "http://168.63.129.16/",
       "http://169.254.169.254/",
       "http://224.0.0.1/",
       "http://[fd7a:115c:a1e0::1]/",
@@ -94,6 +125,7 @@ describe("isBlockedIpAddress", () => {
       "169.254.169.254",
       "0.0.0.0",
       "100.100.100.200",
+      "168.63.129.16",
       "224.0.0.1",
       "255.255.255.255",
     ]) {
@@ -115,20 +147,37 @@ describe("isBlockedIpAddress", () => {
   });
 
   it("allows public IPv4 addresses", () => {
-    for (const address of ["1.1.1.1", "8.8.8.8", "93.184.216.34"]) {
+    for (const address of ["1.1.1.1", "8.8.8.8", "93.184.216.34", "168.63.129.15", "168.63.129.17"]) {
       expect(isBlockedIpAddress(address)).toBe(false);
     }
   });
 
   it("blocks reserved IPv6 addresses regardless of the private-network flag", () => {
-    for (const address of ["::", "::1", "fe80::1", "ff02::1", "2001:db8::1", "100::1", "fd00:ec2::254"]) {
+    for (const address of [
+      "::",
+      "::1",
+      "fe80::1",
+      "ff02::1",
+      "2001:db8::1",
+      "100::1",
+      "fd00:ec2::254",
+      "fd20:ce::254",
+      "fd00:c1::a9fe:a9fe",
+    ]) {
       expect(isBlockedIpAddress(address)).toBe(true);
       expect(isBlockedIpAddress(address, true)).toBe(true);
     }
   });
 
   it("blocks unique-local and site-local IPv6 unless private networks are allowed", () => {
-    for (const address of ["fd00::1", "fc00::1", "fec0::1", "fd7a:115c:a1e0::1"]) {
+    for (const address of [
+      "fd00::1",
+      "fc00::1",
+      "fec0::1",
+      "fd7a:115c:a1e0::1",
+      "fd20:ce::253",
+      "fd00:c1::a9fe:a9fd",
+    ]) {
       expect(isBlockedIpAddress(address)).toBe(true);
       expect(isBlockedIpAddress(address, true)).toBe(false);
     }
@@ -159,6 +208,17 @@ describe("isBlockedIpAddress", () => {
     // 6to4 embedding 192.168.1.1 (c0a8:0101).
     expect(isBlockedIpAddress("2002:c0a8:101::1")).toBe(true);
     expect(isBlockedIpAddress("2002:c0a8:101::1", true)).toBe(false);
+    // 168.63.129.16 (a83f:8110) stays blocked in every embedding, even with private networks allowed:
+    // v4-mapped, NAT64, 6to4, Teredo server, and Teredo obfuscated client (57c0:7eef).
+    for (const address of [
+      "::ffff:168.63.129.16",
+      "64:ff9b::a83f:8110",
+      "2002:a83f:8110::1",
+      "2001:0:a83f:8110:0:0:f7f7:f7f7",
+      "2001:0:808:808:0:0:57c0:7eef",
+    ]) {
+      expect(isBlockedIpAddress(address, true)).toBe(true);
+    }
   });
 
   it("applies the IPv4 policy to Teredo client and server addresses", () => {
@@ -233,10 +293,13 @@ describe("classifyIpAddress", () => {
       "127.0.0.1",
       "169.254.169.254",
       "100.100.100.200",
+      "168.63.129.16",
       "::1",
       "fe80::1",
       "ff02::1",
       "fd00:ec2::254",
+      "fd20:ce::254",
+      "fd00:c1::a9fe:a9fe",
     ]) {
       expect(classifyIpAddress(value)).toBe("always-blocked");
     }
@@ -267,17 +330,16 @@ describe("classifyIpAddress", () => {
 });
 
 describe("private network access deployment flag", () => {
-  afterEach(() => setPrivateNetworkAccessAllowed(false));
-
   it("is disabled by default", () => {
     expect(isPrivateNetworkAccessAllowed()).toBe(false);
   });
 
   it("reflects the configured value", () => {
-    setPrivateNetworkAccessAllowed(true);
-    expect(isPrivateNetworkAccessAllowed()).toBe(true);
-    setPrivateNetworkAccessAllowed(false);
-    expect(isPrivateNetworkAccessAllowed()).toBe(false);
+    return withProviderNetworkPolicy({ allowPrivateNetwork: true }, async () => {
+      expect(isPrivateNetworkAccessAllowed()).toBe(true);
+
+      withProviderNetworkPolicy({}, () => expect(isPrivateNetworkAccessAllowed()).toBe(false));
+    });
   });
 
   it("parses only explicit truthy env values", () => {
@@ -299,8 +361,6 @@ function readPublicUrl(value: string, allowPrivateNetwork = false): URL {
 }
 
 describe("trusted egress hosts", () => {
-  afterEach(() => setEgressTrustedHosts([]));
-
   it("parses a comma-separated list and drops entries that would match nothing", () => {
     expect(parseEgressTrustedHosts(" .feishu.cn , API.Example.com ,, . ,")).toEqual([".feishu.cn", "api.example.com"]);
     expect(parseEgressTrustedHosts(undefined)).toEqual([]);
@@ -308,25 +368,190 @@ describe("trusted egress hosts", () => {
   });
 
   it("matches a dot-prefixed entry against the domain and its subdomains only", () => {
-    setEgressTrustedHosts([".feishu.cn"]);
-    expect(isEgressTrustedHost("feishu.cn")).toBe(true);
-    expect(isEgressTrustedHost("open.feishu.cn")).toBe(true);
-    expect(isEgressTrustedHost("OPEN.FEISHU.CN")).toBe(true);
-    expect(isEgressTrustedHost("open.feishu.cn.")).toBe(true);
-    // A look-alike registration must not inherit the allowlist.
-    expect(isEgressTrustedHost("evilfeishu.cn")).toBe(false);
-    expect(isEgressTrustedHost("feishu.cn.attacker.example")).toBe(false);
+    return withProviderNetworkPolicy({ trustedHosts: [".feishu.cn"] }, async () => {
+      expect(isEgressTrustedHost("feishu.cn")).toBe(true);
+      expect(isEgressTrustedHost("open.feishu.cn")).toBe(true);
+      expect(isEgressTrustedHost("OPEN.FEISHU.CN")).toBe(true);
+      expect(isEgressTrustedHost("open.feishu.cn.")).toBe(true);
+      // A look-alike registration must not inherit the allowlist.
+      expect(isEgressTrustedHost("evilfeishu.cn")).toBe(false);
+      expect(isEgressTrustedHost("feishu.cn.attacker.example")).toBe(false);
+    });
   });
 
   it("requires an exact match for an entry without a leading dot", () => {
-    setEgressTrustedHosts(["api.example.com"]);
-    expect(isEgressTrustedHost("api.example.com")).toBe(true);
-    expect(isEgressTrustedHost("sub.api.example.com")).toBe(false);
-    expect(isEgressTrustedHost("example.com")).toBe(false);
+    return withProviderNetworkPolicy({ trustedHosts: ["api.example.com"] }, async () => {
+      expect(isEgressTrustedHost("api.example.com")).toBe(true);
+      expect(isEgressTrustedHost("sub.api.example.com")).toBe(false);
+      expect(isEgressTrustedHost("example.com")).toBe(false);
+    });
   });
 
   it("trusts no hosts by default", () => {
     expect(isEgressTrustedHost("open.feishu.cn")).toBe(false);
     expect(isEgressTrustedHost("")).toBe(false);
+  });
+});
+
+describe("storeResponseInTransit", () => {
+  type Stored = { via: "stream" | "file"; bytes: Uint8Array; name: string; mimeType: string };
+
+  function store(options: { maxBytes: number; streaming: boolean; tooLargeAt?: number }) {
+    const stored: Stored[] = [];
+    const upload = (bytes: number) => ({ fileId: "f", downloadUrl: "http://t/f", sizeBytes: bytes }) as never;
+    const writer = {
+      maxBytes: options.maxBytes,
+      async create(file: File) {
+        stored.push({
+          via: "file",
+          bytes: new Uint8Array(await file.arrayBuffer()),
+          name: file.name,
+          mimeType: file.type,
+        });
+        return upload(file.size);
+      },
+      createFromStream: options.streaming
+        ? async (file: { body: ReadableStream<Uint8Array>; name: string; mimeType: string }) => {
+            const chunks: number[] = [];
+            for await (const chunk of file.body as unknown as AsyncIterable<Uint8Array>) {
+              chunks.push(...chunk);
+              if (options.tooLargeAt !== undefined && chunks.length > options.tooLargeAt) {
+                throw Object.assign(new Error("Transit file too large"), { code: "file_too_large" });
+              }
+            }
+            stored.push({ via: "stream", bytes: Uint8Array.from(chunks), name: file.name, mimeType: file.mimeType });
+            return upload(chunks.length);
+          }
+        : undefined,
+      read: async () => {
+        throw new Error("unused");
+      },
+      delete: async () => false,
+    };
+    return { stored, writer };
+  }
+
+  const options = {
+    name: "report.pdf",
+    mimeType: "application/pdf",
+    fieldName: "Test download",
+    createError: (message: string) => Object.assign(new Error(message), { status: 413 }),
+  };
+
+  it.each([true, false])(
+    "enforces the smaller provider limit without Content-Length (streaming=%s)",
+    async (streaming) => {
+      const { stored, writer } = store({ maxBytes: 1024, streaming });
+      await expect(
+        storeResponseInTransit(new Response("12345"), writer, { ...options, maxBytes: 4 }),
+      ).rejects.toMatchObject({ status: 413, message: "Test download exceeds 4 bytes" });
+      expect(stored).toEqual([]);
+    },
+  );
+
+  it("pipes the body to a streaming backend instead of buffering it", async () => {
+    const { stored, writer } = store({ maxBytes: 1024, streaming: true });
+    const upload = await storeResponseInTransit(new Response(new Uint8Array([1, 2, 3])), writer, options);
+    expect(stored).toEqual([
+      { via: "stream", bytes: new Uint8Array([1, 2, 3]), name: "report.pdf", mimeType: "application/pdf" },
+    ]);
+    expect(upload.sizeBytes).toBe(3);
+  });
+
+  it("keeps the bounded buffered path for backends without streaming", async () => {
+    const { stored, writer } = store({ maxBytes: 1024, streaming: false });
+    await storeResponseInTransit(new Response(new Uint8Array([4, 5])), writer, options);
+    expect(stored.map((s) => [s.via, [...s.bytes]])).toEqual([["file", [4, 5]]]);
+  });
+
+  it.each([true, false])("normalizes the mime type the way File does (streaming=%s)", async (streaming) => {
+    const { stored, writer } = store({ maxBytes: 1024, streaming });
+    await storeResponseInTransit(new Response("content"), writer, {
+      ...options,
+      mimeType: "Application/X-NDJSON",
+    });
+    expect(stored[0]?.mimeType).toBe("application/x-ndjson");
+  });
+
+  it.each([true, false])(
+    "empties a mime type carrying non-ASCII bytes like File does (streaming=%s)",
+    async (streaming) => {
+      const { stored, writer } = store({ maxBytes: 1024, streaming });
+      await storeResponseInTransit(new Response("content"), writer, {
+        ...options,
+        mimeType: "text/plain\u0080",
+      });
+      expect(stored[0]?.mimeType).toBe("");
+    },
+  );
+
+  it.each([true, false])(
+    "repairs unpaired filename surrogates without changing emoji (streaming=%s)",
+    async (streaming) => {
+      const { stored, writer } = store({ maxBytes: 1024, streaming });
+      await storeResponseInTransit(new Response("content"), writer, {
+        ...options,
+        name: "report-\ud800-\udc00-\u{1f4ca}.pdf",
+      });
+      expect(stored[0]?.name).toBe("report-\ufffd-\ufffd-\u{1f4ca}.pdf");
+    },
+  );
+
+  it("refuses a declared length over the limit before reading the body", async () => {
+    const { stored, writer } = store({ maxBytes: 2, streaming: true });
+    const response = new Response(new Uint8Array([1, 2, 3]), { headers: { "content-length": "3" } });
+    await expect(storeResponseInTransit(response, writer, options)).rejects.toMatchObject({
+      message: "Test download exceeds 2 bytes",
+      status: 413,
+    });
+    expect(stored).toEqual([]);
+  });
+
+  it("reports the store's own over-limit refusal as the caller's error", async () => {
+    const { writer } = store({ maxBytes: 2, streaming: true, tooLargeAt: 2 });
+    await expect(
+      storeResponseInTransit(new Response(new Uint8Array([1, 2, 3])), writer, options),
+    ).rejects.toMatchObject({ message: "Test download exceeds 2 bytes", status: 413 });
+  });
+});
+
+describe("hasPathTraversalSegment", () => {
+  it("rejects literal and percent-encoded dot segments", () => {
+    for (const path of ["/api/../v3", "/api/%2e%2e/v3", "/api/%2E%2e/v3", "/api/%2e./v3", "/api/./v1", "/api/%2e/v1"]) {
+      expect(hasPathTraversalSegment(path), path).toBe(true);
+    }
+  });
+
+  it("rejects dot segments hidden behind an encoded separator inside one segment", () => {
+    for (const path of [
+      "/api/..%2F..%2F..%2Fv3/users",
+      "/api/..%2f..%2fv3",
+      "/api/%2e%2e%2Fv3",
+      "/api/..%5C..%5Cv3",
+      "/api/v1%2F..%2F..%2Fv3",
+      "/api/%2e.%2Fv3",
+    ]) {
+      expect(hasPathTraversalSegment(path), path).toBe(true);
+    }
+  });
+
+  it("rejects malformed percent encoding", () => {
+    for (const path of ["/api/%zz/v1", "/api/v1%", "/api/%E0%A4%A"]) {
+      expect(hasPathTraversalSegment(path), path).toBe(true);
+    }
+  });
+
+  it("accepts encoded separators and dots that do not form a dot segment", () => {
+    for (const path of [
+      "/projects/group%2Fproject/repository/files/docs%2FREADME%2Emd",
+      "/10.1038%2Fnature12373",
+      "/@scope%2Fpackage",
+      "/files/a%2F%2Fb",
+      "/api/v1/...",
+      "/api/..hidden/x",
+      "/api/v1/items?path=../x#../y",
+    ]) {
+      expect(hasPathTraversalSegment(path), path).toBe(false);
+    }
   });
 });

@@ -6,12 +6,9 @@ import type {
 } from "../../core/types.ts";
 import type { AppStoreServerContext } from "./runtime-helpers.ts";
 
-import {
-  defineProviderExecutors,
-  defineProviderProxy,
-  providerProxyEndpointPrefixes,
-  requireCustomCredential,
-} from "../provider-runtime.ts";
+import { requireCustomCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy, providerProxyEndpointPrefixes } from "../provider-proxy.ts";
 import { createAppStoreServerAuthorization, readAppStoreServerCredential } from "./jwt.ts";
 import {
   appStoreServerActionHandlers,

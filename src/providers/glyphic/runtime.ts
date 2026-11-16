@@ -1,6 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalString } from "../../core/cast.ts";
 import {
@@ -8,11 +7,10 @@ import {
   isAbortLikeError,
   providerUserAgent,
   ProviderRequestError,
+  defaultProviderRequestTimeoutMs,
 } from "../provider-runtime.ts";
 
 export const glyphicApiBaseUrl = "https://api.glyphic.ai";
-
-const glyphicRequestTimeoutMs = 30_000;
 
 type GlyphicRequestMode = "validate" | "execute";
 type GlyphicQueryValue = string | number | boolean | readonly string[] | null | undefined;
@@ -142,7 +140,6 @@ export async function validateGlyphicCredential(
       accountId: "glyphic:organization",
       displayName: "Glyphic API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: glyphicApiBaseUrl,
       validationEndpoint: "/v1/test/ping",
@@ -153,7 +150,7 @@ export async function validateGlyphicCredential(
 
 async function requestGlyphicObject(
   path: string,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   label: string,
 ): Promise<Record<string, unknown>> {
   const payload = await requestGlyphicJson({ method: "GET", path }, context, "execute");
@@ -162,7 +159,7 @@ async function requestGlyphicObject(
 
 async function requestGlyphicArray(
   path: string,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   label: string,
 ): Promise<Array<Record<string, unknown>>> {
   const payload = await requestGlyphicJson({ method: "GET", path }, context, "execute");
@@ -175,10 +172,10 @@ async function requestGlyphicJson(
     path: string;
     query?: Record<string, GlyphicQueryValue>;
   },
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   mode: GlyphicRequestMode,
 ): Promise<unknown> {
-  const timeout = createProviderTimeout(context.signal, glyphicRequestTimeoutMs);
+  const timeout = createProviderTimeout(context.signal);
   try {
     const response = await context.fetcher(buildGlyphicUrl(input.path, input.query), {
       method: input.method,
@@ -200,7 +197,10 @@ async function requestGlyphicJson(
       throw error;
     }
     if (timeout.didTimeout() || isAbortLikeError(error)) {
-      throw new ProviderRequestError(504, `Glyphic request timed out after ${glyphicRequestTimeoutMs / 1000} seconds`);
+      throw new ProviderRequestError(
+        504,
+        `Glyphic request timed out after ${defaultProviderRequestTimeoutMs / 1000} seconds`,
+      );
     }
 
     const message = error instanceof Error && error.message.trim() ? error.message : "request failed";

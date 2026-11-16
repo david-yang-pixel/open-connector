@@ -1,12 +1,11 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalBooleanOrNull, optionalRecord, rawStringOrNull } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   isAbortLikeError,
   providerUserAgent,
   ProviderRequestError,
@@ -226,7 +225,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "active_trail:api_token",
         displayName: "ActiveTrail API Token",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: activeTrailApiBaseUrl,
         validationEndpoint: "/account/balance",
@@ -240,7 +238,7 @@ export const credentialValidators: CredentialValidators = {
 async function requestActiveTrailJson(input: {
   method: ActiveTrailMethod;
   path: string;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   query?: Record<string, QueryValue>;
   body?: Record<string, unknown>;
   phase: ActiveTrailPhase;

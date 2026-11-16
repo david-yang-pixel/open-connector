@@ -1,5 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers, ProviderFetch } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { Buffer } from "node:buffer";
 import {
@@ -236,7 +237,6 @@ export async function validateAcuitySchedulingCredential(
       accountId: `acuity_scheduling:${account.id}`,
       displayName: account.name ?? account.email ?? `Acuity Scheduling ${credential.userId}`,
     },
-    grantedScopes: [],
     metadata: {
       userId: credential.userId,
       accountId: account.id,

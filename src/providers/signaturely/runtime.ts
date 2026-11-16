@@ -1,6 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
 import {
@@ -71,7 +70,6 @@ export async function validateSignaturelyCredential(
       accountId: id,
       displayName: optionalString(user.name)?.trim() || optionalString(user.email)?.trim() || "Signaturely API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       validationEndpoint: "/user/by-api",
       userId: id,
@@ -84,7 +82,7 @@ export async function validateSignaturelyCredential(
 }
 async function request(
   path: string,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: "validate" | "execute",
   method = "GET",
   body?: Record<string, unknown>,

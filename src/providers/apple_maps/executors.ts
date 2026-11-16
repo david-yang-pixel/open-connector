@@ -5,14 +5,10 @@ import type {
   ProviderProxyExecutor,
 } from "../../core/types.ts";
 
-import {
-  defineProviderExecutors,
-  defineProviderProxy,
-  mapProviderActionNames,
-  ProviderRequestError,
-  providerProxyEndpointPrefixes,
-  requireCustomCredential,
-} from "../provider-runtime.ts";
+import { requireCustomCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors, mapProviderActionNames } from "../provider-executors.ts";
+import { defineProviderProxy, providerProxyEndpointPrefixes } from "../provider-proxy.ts";
+import { ProviderRequestError } from "../provider-runtime.ts";
 import { appleMapsActions } from "./actions.ts";
 import { acquireAppleMapsAccessToken, readAppleMapsCredential } from "./auth.ts";
 import { appleMapsApiOrigin } from "./client.ts";

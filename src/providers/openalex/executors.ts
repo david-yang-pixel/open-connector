@@ -1,16 +1,11 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderRequestContext } from "../provider-runtime.ts";
 
 import { compactObject, optionalInteger, optionalRecord, optionalString, rawStringOrNull } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-  runProviderRequest,
-  setSearchParams,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent, runProviderRequest, setSearchParams } from "../provider-runtime.ts";
 import { openalexApiBaseUrl, openalexEntityValues } from "./constants.ts";
 
 const service = "openalex";
@@ -140,7 +135,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "openalex",
         displayName: "OpenAlex API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         validationEndpoint: "/works",
         apiBaseUrl: openalexApiBaseUrl,
@@ -155,7 +149,7 @@ async function requestOpenAlexJson(input: {
   path: string;
   apiKey: string;
   params: Record<string, string | undefined>;
-  context: Pick<ApiKeyProviderContext, "fetcher" | "signal">;
+  context: ProviderRequestContext;
   phase: OpenAlexPhase;
 }): Promise<Record<string, unknown>> {
   return runProviderRequest({ signal: input.context.signal, label: "OpenAlex" }, async (signal) => {

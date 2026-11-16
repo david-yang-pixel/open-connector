@@ -1,12 +1,9 @@
-import type { CredentialValidators, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ApiKeyProviderContext, ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderExecutors, CredentialValidators, ProviderProxyExecutor } from "../../core/types.ts";
+import type { ApiKeyProviderContext, ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-executors.ts";
 
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const baseUrl = "https://prod-api.ringg.ai/ca/api/v0";
 const requests: Record<string, { method: string; path: string; id?: string }> = {
@@ -55,11 +52,9 @@ const handlers: ProviderActionHandlers<"ringg_ai", ProviderRuntimeHandler<ApiKey
   get_call: (input, context) => execute("get_call", input, context),
 };
 
-export const executors: import("../../core/types.ts").ProviderExecutors = defineApiKeyProviderExecutors(
-  "ringg_ai",
-  handlers,
-  { skipDnsValidation: true },
-);
+export const executors: ProviderExecutors = defineApiKeyProviderExecutors("ringg_ai", handlers, {
+  skipDnsValidation: true,
+});
 export const proxy: ProviderProxyExecutor = defineProviderProxy({
   service: "ringg_ai",
   baseUrl,
@@ -83,7 +78,6 @@ export const credentialValidators: CredentialValidators = {
       throw new ProviderRequestError(502, "Ringg AI workspace response did not include a valid id and name");
     return {
       profile: { accountId: id, displayName: name },
-      grantedScopes: [],
       metadata: { apiBaseUrl: baseUrl, workspaceId: id },
     };
   },

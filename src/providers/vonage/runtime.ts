@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { Buffer } from "node:buffer";
@@ -10,6 +10,7 @@ import {
   providerUserAgent,
   readProviderJsonBody,
   runProviderRequest,
+  providerResponseError,
 } from "../provider-runtime.ts";
 
 export const vonageApiBaseUrl = "https://rest.nexmo.com";
@@ -123,7 +124,6 @@ export async function validateVonageCredential(
   const balance = normalizeBalance(await requestVonage({ path: "/account/get-balance", context, phase: "validate" }));
   return {
     profile: { accountId: `vonage:${context.apiKey}`, displayName: `Vonage ${context.apiKey}` },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: vonageApiBaseUrl,
       validationEndpoint: "/account/get-balance",
@@ -254,8 +254,8 @@ function mapSmsError(status: string, message?: string): ProviderRequestError {
   const text = message ?? `Vonage rejected the SMS with status ${status}`;
   if (status === "1" || status === "9" || status === "10") return new ProviderRequestError(429, text);
   if (["4", "8", "11", "14", "32"].includes(status)) return new ProviderRequestError(401, text);
-  if (invalidInputSmsStatuses.has(status)) return new ProviderRequestError(400, text);
-  return new ProviderRequestError(502, text);
+  if (invalidInputSmsStatuses.has(status)) return providerInputError(text);
+  return providerResponseError(text);
 }
 
 function requireResponseRecord(value: unknown, label: string): Record<string, unknown> {

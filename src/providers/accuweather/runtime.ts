@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { optionalBoolean, optionalInteger, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
 import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
@@ -9,8 +9,7 @@ export const accuweatherApiBaseUrl = "https://dataservice.accuweather.com";
 
 type AccuweatherRequestPhase = "validate" | "execute";
 type AccuweatherQueryValue = string | number | boolean | undefined;
-type AccuweatherActionContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
-type AccuweatherActionHandler = (input: Record<string, unknown>, context: AccuweatherActionContext) => Promise<unknown>;
+type AccuweatherActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 
 export const accuweatherActionHandlers: ProviderActionHandlers<"accuweather", AccuweatherActionHandler> = {
   async search_locations(input, context) {
@@ -142,7 +141,6 @@ export async function validateAccuweatherCredential(
       accountId: "api_key",
       displayName: "AccuWeather API Key",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: accuweatherApiBaseUrl,
       validationEndpoint: "/locations/v1/cities/autocomplete",
@@ -153,7 +151,7 @@ export async function validateAccuweatherCredential(
 
 async function accuweatherGetJson(
   input: { path: string; query?: Record<string, AccuweatherQueryValue> },
-  context: AccuweatherActionContext,
+  context: ApiKeyProviderContext,
   phase: AccuweatherRequestPhase,
 ): Promise<unknown> {
   let response: Response;

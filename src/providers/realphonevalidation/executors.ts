@@ -1,15 +1,11 @@
 import type { CredentialValidationResult, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { createHash } from "node:crypto";
 import { optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "realphonevalidation";
 const realPhoneValidationApiBaseUrl = "https://api.realvalidation.com";
@@ -84,9 +80,7 @@ export async function validateRealPhoneValidationCredential(
     profile: {
       accountId: createHash("sha256").update(apiKey).digest("hex"),
       displayName: "RealPhoneValidation API Token",
-      grantedScopes: [],
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: realPhoneValidationApiBaseUrl,
       validationEndpoint: turboStandardPath,
@@ -109,7 +103,7 @@ export const credentialValidators = {
 async function requestRealPhoneValidation(input: {
   path: string;
   phone: string;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   mode: "validate" | "execute";
   includeEnrichment: boolean;
 }): Promise<RealPhoneValidationResponse> {

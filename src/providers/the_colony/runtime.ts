@@ -1,9 +1,14 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { compactObject, optionalNumber, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
-import { createProviderTimeout, providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
+import {
+  createProviderTimeout,
+  providerUserAgent,
+  ProviderRequestError,
+  providerInputError,
+} from "../provider-runtime.ts";
 
 export const theColonyApiBaseUrl = "https://thecolony.cc/api/v1";
 
@@ -17,7 +22,7 @@ type TheColonyActionHandler = (input: Record<string, unknown>, context: ApiKeyPr
 interface TheColonyRequestInput {
   method: "GET" | "POST";
   path: string;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   phase: TheColonyRequestPhase;
   query?: Record<string, QueryValue>;
   body?: Record<string, unknown>;
@@ -193,7 +198,6 @@ export async function validateTheColonyCredential(
       accountId: userId,
       displayName: accountLabel ?? "The Colony API key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: theColonyApiBaseUrl,
       username,
@@ -226,10 +230,7 @@ async function requestTheColonyJson(input: TheColonyRequestInput): Promise<unkno
   return payload;
 }
 
-async function exchangeTheColonyToken(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
-  phase: TheColonyRequestPhase,
-): Promise<string> {
+async function exchangeTheColonyToken(context: ApiKeyProviderContext, phase: TheColonyRequestPhase): Promise<string> {
   const response = await fetchTheColony({
     url: buildTheColonyUrl(theColonyTokenPath),
     init: {
@@ -338,7 +339,7 @@ function mapTheColonyError(status: number, payload: unknown, phase: TheColonyReq
     return new ProviderRequestError(429, message);
   }
   if (phase === "validate" && (status === 401 || status === 403)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (phase === "execute" && (status === 401 || status === 403)) {
     return new ProviderRequestError(401, message);
@@ -421,5 +422,5 @@ function readObjectPayload(payload: unknown, label: string): Record<string, unkn
 }
 
 function readRequiredString(input: Record<string, unknown>, fieldName: string): string {
-  return requiredString(input[fieldName], fieldName, (message) => new ProviderRequestError(400, message));
+  return requiredString(input[fieldName], fieldName, providerInputError);
 }

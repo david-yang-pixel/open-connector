@@ -92,5 +92,61 @@
         <a href="https://app.nibrun.com/deploy?name=open-connector&amp;binary=https%3A%2F%2Fgithub.com%2Foomol-lab%2Fopen-connector%2Freleases%2Flatest%2Fdownload%2Fopen-connector-linux-x64&amp;port=3000&amp;env=HOST%3D0.0.0.0&amp;env=OOMOL_CONNECT_DATA_DIR%3D%24%7BNIBRUN_DATA_DIR%7D&amp;env=OOMOL_CONNECT_ORIGIN%3Dhttps%3A%2F%2F%24%7BNIBRUN_HOSTNAME%7D&amp;env=OOMOL_CONNECT_CATALOG_LAZY_SCHEMAS%3Dtrue&amp;env=OOMOL_CONNECT_ENCRYPTION_KEY&amp;env=OOMOL_CONNECT_ADMIN_TOKEN&amp;env=OOMOL_CONNECT_RUNTIME_TOKEN"><strong>一鍵部署</strong></a>
       </td>
     </tr>
+    <tr>
+      <td valign="middle" align="center">
+        <a href="https://nexusai.run/"><img src="../../assets/deployment-options/nexus-ai.svg" alt="NEXUS AI" width="140"></a>
+      </td>
+      <td valign="top">
+        將儲存庫的 <code>docker/Dockerfile</code> 建置為具有獨立 HTTPS URL 的容器。部署連結會把
+        <code>OOMOL_CONNECT_ORIGIN</code> 設為該 URL，在表單中要求填寫 admin token，並產生 encryption key 和
+        runtime token，因此 Web Console 和所有 API 從第一次啟動起就需要驗證。密鑰在表單中填寫或由伺服器
+        產生，絕不會出現在連結中。
+        <br><br>
+        <strong>優點：</strong>從原始碼一鍵部署，在同一個主控台查看日誌和重新部署，付費方案支援自訂網域。SQLite
+        資料庫位於容器內：重新啟動後保留，但重新建置後不保留。需要長期保存的資料請把
+        <code>OOMOL_CONNECT_DATABASE_URL</code> 設為 PostgreSQL，在首次啟動前以及每次重新部署引入新遷移前執行
+        <a href="../configuration.md#runtime-database">PostgreSQL 遷移</a>，並保持
+        <code>OOMOL_CONNECT_ENCRYPTION_KEY</code> 不變，因為已儲存的憑證都以它加密。
+        <br><br>
+        <strong>價格：</strong>Free 方案包含 1 個具公開 HTTPS URL 的活躍部署，無需信用卡，但僅供測試與評估，測試部署
+        會自動過期。Starter 為 $29/月，含 2 個活躍部署和自訂網域；Pro 為 $149/月，含 5 個。每個應用程式有 512 MB
+        記憶體。見 <a href="https://nexusai.run/pricing">NEXUS AI 定價</a>。
+      </td>
+      <td valign="middle" align="center">
+        <a href="https://nexusai.run/deploy?repo=https%3A%2F%2Fgithub.com%2Foomol-lab%2Fopen-connector&amp;dockerfile=docker%2FDockerfile&amp;env=OOMOL_CONNECT_ORIGIN%3D%7Burl%7D&amp;require=OOMOL_CONNECT_ADMIN_TOKEN&amp;generate=OOMOL_CONNECT_ENCRYPTION_KEY&amp;generate=OOMOL_CONNECT_RUNTIME_TOKEN&amp;template=open-connector"><strong>一鍵部署</strong></a>
+      </td>
+    </tr>
+    <tr>
+      <td valign="middle" align="center">
+        <a href="https://pethost.dev/"><img src="../../assets/deployment-options/pethost.svg" alt="Pethost" width="140"></a>
+      </td>
+      <td valign="top">
+        一鍵範本，執行已發布的 <code>ghcr.io/oomol-lab/open-connector</code> 映像，並提供獨立的 HTTPS 位址。它把 <code>OOMOL_CONNECT_ORIGIN</code> 設為該位址，要求填寫 admin token，並產生加密金鑰和 runtime token，因此 Web Console 和所有 API 從首次啟動起就需要驗證。包含 SQLite 資料庫的資料目錄位於磁碟區上，重新啟動和重新部署後都會保留。
+        <br><br>
+        <strong>優點：</strong>整台伺服器按月固定價格計費，OpenConnector 可以與其他應用程式和資料庫共用這台伺服器；不按用量計費，也不會休眠。每晚備份、日誌和每個 HTTP 請求都在同一個面板中，MCP 伺服器讓 AI 代理可以部署和管理它。
+        <br><br>
+        <strong>價格：</strong>2 vCPU、3 GB 記憶體、30 GB SSD 起價 €9.99/月，4 vCPU、6 GB、60 GB 為 €17.99/月，能放多少專案就放多少。OpenConnector 閒置時約佔用 230 MB 記憶體。見 <a href="https://pethost.dev/#pricing">Pethost 定價</a>。
+      </td>
+      <td valign="middle" align="center">
+        <a href="https://pethost.dev/templates/open-connector/"><strong>一鍵部署</strong></a>
+      </td>
+    </tr>
+    <tr>
+      <td valign="middle" align="center">
+        <a href="https://zop.dev/"><img src="../../assets/deployment-options/zopday.svg" alt="ZopDay" width="140"></a>
+      </td>
+      <td valign="top">
+        執行已發布的 <code>ghcr.io/oomol-lab/open-connector</code> 映像，提供 HTTPS 位址和管理面板。
+        首次啟動前需要設定公開網址、驗證權杖、加密金鑰和持久儲存空間。OAuth 應用程式由你自行註冊。
+        <br><br>
+        <strong>優點：</strong>容器管理面板，以及在自有雲端透過 Helm 部署。
+        <br><br>
+        <strong>價格：</strong>見
+        <a href="https://zop.dev/zopday#pricing">ZopDay 定價</a>。
+      </td>
+      <td valign="middle" align="center">
+        <a href="../zopday.md"><strong>部署指南（英文）</strong></a>
+      </td>
+    </tr>
   </tbody>
 </table>

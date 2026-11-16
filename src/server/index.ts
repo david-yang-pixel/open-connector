@@ -1,20 +1,27 @@
 import type { ConnectorRuntime, ConnectorTransitFileOptions } from "./connector-runtime.ts";
+import type { OAuthServerSettings } from "./oauth/settings.ts";
 import type { ServerType } from "@hono/node-server";
 
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
+import { setGlobalProxyFromEnv } from "node:http";
 import { join } from "node:path";
 import { defaultLazySchemaCacheFiles } from "../catalog-lazy-schemas.ts";
 import { parseActionPolicyList } from "../core/action-policy.ts";
 import { parseEgressTrustedHosts, parsePrivateNetworkAccessFlag } from "../core/request.ts";
+import { readMcpOAuthClientMetadata } from "../custom-mcp/definition.ts";
 import { isConsoleShellRequest } from "./api/console-paths.ts";
+import { DEFAULT_OAUTH_CLOSE_DELAY_SECONDS, parseOAuthResultOrigins } from "./api/oauth-completion-page.ts";
 import { registerStaticRoutes } from "./api/static-routes.ts";
 import { createConnectorRuntime } from "./connector-runtime.ts";
 import { logger } from "./logger.ts";
+import { parseMcpOutputMode } from "./mcp-settings.ts";
 import { resolveServerAssets } from "./server-assets.ts";
 import { createDirectoryMigrationSource } from "./storage/migration-source.ts";
 import { migratePostgresRuntimeDatabase, sqliteMigrationsNotice } from "./storage/node-runtime-database.ts";
 import { DEFAULT_RUN_LIMIT } from "./storage/runtime-store.ts";
+
+setGlobalProxyFromEnv();
 
 const port = Number(process.env.PORT ?? 3000);
 const hostname = process.env.HOST ?? "127.0.0.1";
@@ -27,6 +34,10 @@ const runLimit = readPositiveIntegerEnv("OOMOL_CONNECT_RUN_LIMIT", DEFAULT_RUN_L
 const databaseUrl = optionalEnv("OOMOL_CONNECT_DATABASE_URL");
 const databasePoolMax = readPositiveIntegerEnv("OOMOL_CONNECT_DATABASE_POOL_MAX", 10);
 const databaseConnectTimeoutMs = readPositiveIntegerEnv("OOMOL_CONNECT_DATABASE_CONNECT_TIMEOUT_MS", 10_000);
+const oauthCloseDelaySeconds = readNonNegativeIntegerEnv(
+  "OOMOL_CONNECT_OAUTH_CLOSE_DELAY_SECONDS",
+  DEFAULT_OAUTH_CLOSE_DELAY_SECONDS,
+);
 
 // The standalone binary embeds migrations/postgresql, but the PostgreSQL startup validator refuses to serve until
 // they are applied and its error text points at `npm run runtime:migrate`, which a binary user does not have.
@@ -63,10 +74,16 @@ async function main(): Promise<void> {
   const runtime = await createConnectorRuntime({
     dataDir,
     publicOrigin,
+    publicOriginConfigured: Boolean(process.env.OOMOL_CONNECT_ORIGIN),
     assets,
     encryptionKey: process.env.OOMOL_CONNECT_ENCRYPTION_KEY,
     adminToken: optionalEnv("OOMOL_CONNECT_ADMIN_TOKEN"),
     runtimeToken: optionalEnv("OOMOL_CONNECT_RUNTIME_TOKEN"),
+    authMode: parseAuthModeEnv(process.env.OOMOL_CONNECT_OAUTH_AUTH_MODE),
+    oauth: parseOAuthServerEnv(),
+    trustProxyHeaders: parseOptionalBooleanFlag(process.env.OOMOL_CONNECT_OAUTH_TRUST_PROXY_HEADERS),
+    eventVerifyToken: optionalEnv("OOMOL_CONNECT_EVENT_VERIFY_TOKEN"),
+    mcpOutputMode: parseMcpOutputMode(process.env.OOMOL_CONNECT_MCP_OUTPUT_MODE),
     jwt: {
       jwksUri: process.env.OOMOL_CONNECT_JWKS_URI,
       issuer: process.env.OOMOL_CONNECT_JWT_ISSUER,
@@ -83,8 +100,16 @@ async function main(): Promise<void> {
       blockedActions: parseActionPolicyList(process.env.OOMOL_CONNECT_BLOCKED_ACTIONS),
       allowedProxies: parseActionPolicyList(process.env.OOMOL_CONNECT_ALLOWED_PROXIES),
       blockedProxies: parseActionPolicyList(process.env.OOMOL_CONNECT_BLOCKED_PROXIES),
+      allowedTriggers: parseActionPolicyList(process.env.OOMOL_CONNECT_ALLOWED_TRIGGERS),
+      blockedTriggers: parseActionPolicyList(process.env.OOMOL_CONNECT_BLOCKED_TRIGGERS),
     },
     allowedCustomOAuth: parseActionPolicyList(process.env.OOMOL_CONNECT_ALLOWED_CUSTOM_OAUTH),
+    oauthResultOrigins: parseOAuthResultOrigins(process.env.OOMOL_CONNECT_OAUTH_RESULT_ORIGINS),
+    customMcpOAuthClient: readMcpOAuthClientMetadata({
+      clientName: optionalEnv("OOMOL_CONNECT_CUSTOM_MCP_CLIENT_NAME"),
+      logoUri: optionalEnv("OOMOL_CONNECT_CUSTOM_MCP_CLIENT_LOGO_URI"),
+      clientUri: optionalEnv("OOMOL_CONNECT_CUSTOM_MCP_CLIENT_URI"),
+    }),
     postgres: databaseUrl
       ? {
           connectionString: databaseUrl,
@@ -94,9 +119,13 @@ async function main(): Promise<void> {
       : undefined,
     transitFiles: readTransitFileOptions(),
     runLimit,
-    lazySchemas: parseBooleanEnv("OOMOL_CONNECT_CATALOG_LAZY_SCHEMAS"),
+    lazySchemas:
+      optionalEnv("OOMOL_CONNECT_CATALOG_LAZY_SCHEMAS") === undefined
+        ? true
+        : parseBooleanEnv("OOMOL_CONNECT_CATALOG_LAZY_SCHEMAS"),
     schemaCacheFiles: readPositiveIntegerEnv("OOMOL_CONNECT_CATALOG_SCHEMA_CACHE_FILES", defaultLazySchemaCacheFiles),
     apiReference: true,
+    oauthCloseDelaySeconds,
     logger,
   });
 
@@ -205,6 +234,42 @@ function waitForShutdown(server: ServerType, runtime: ConnectorRuntime): Promise
   });
 }
 
+function parseAuthModeEnv(value: string | undefined): "none" | "runtime_token" | "oauth" | "mixed" | undefined {
+  if (value === undefined || value === "") return undefined;
+  if (value === "none" || value === "runtime_token" || value === "oauth" || value === "mixed") return value;
+  throw new Error(`OOMOL_CONNECT_OAUTH_AUTH_MODE must be one of: none, runtime_token, oauth, mixed.`);
+}
+
+function parseOAuthServerEnv(): OAuthServerSettings | undefined {
+  if (!parseBooleanFlag(process.env.OOMOL_CONNECT_OAUTH_ENABLED)) {
+    return undefined;
+  }
+  return {
+    enabled: true,
+    issuer: optionalEnv("OOMOL_CONNECT_OAUTH_ISSUER"),
+    accessTokenTtlSeconds: optionalEnv("OOMOL_CONNECT_OAUTH_ACCESS_TOKEN_TTL")
+      ? readPositiveIntegerEnv("OOMOL_CONNECT_OAUTH_ACCESS_TOKEN_TTL", 3600)
+      : undefined,
+    refreshTokenTtlSeconds: optionalEnv("OOMOL_CONNECT_OAUTH_REFRESH_TOKEN_TTL")
+      ? readPositiveIntegerEnv("OOMOL_CONNECT_OAUTH_REFRESH_TOKEN_TTL", 30 * 86400)
+      : undefined,
+    authorizationCodeTtlSeconds: optionalEnv("OOMOL_CONNECT_OAUTH_CODE_TTL")
+      ? readPositiveIntegerEnv("OOMOL_CONNECT_OAUTH_CODE_TTL", 60)
+      : undefined,
+    allowDynamicRegistration: parseOptionalBooleanFlag(process.env.OOMOL_CONNECT_OAUTH_ALLOW_DCR),
+    allowClientIdMetadataDocuments: parseOptionalBooleanFlag(process.env.OOMOL_CONNECT_OAUTH_ALLOW_CIMD),
+  };
+}
+
+function parseBooleanFlag(value: string | undefined): boolean {
+  if (value === undefined || value === "") return false;
+  return value === "1" || value.toLowerCase() === "true";
+}
+
+function parseOptionalBooleanFlag(value: string | undefined): boolean | undefined {
+  return value === undefined || value === "" ? undefined : parseBooleanFlag(value);
+}
+
 function readPositiveIntegerEnv(name: string, fallback: number): number {
   const value = process.env[name];
   if (value === undefined) {
@@ -213,6 +278,16 @@ function readPositiveIntegerEnv(name: string, fallback: number): number {
 
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function readNonNegativeIntegerEnv(name: string, fallback: number): number {
+  const value = optionalEnv(name);
+  if (value === undefined) {
+    return fallback;
+  }
+
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
 function readTransitFileOptions(): ConnectorTransitFileOptions {

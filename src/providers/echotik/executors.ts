@@ -6,13 +6,10 @@ import type {
 } from "../../core/types.ts";
 
 import { requiredString } from "../../core/cast.ts";
-import {
-  basicAuthorizationHeader,
-  defineProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  requireCustomCredential,
-} from "../provider-runtime.ts";
+import { requireCustomCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { basicAuthorizationHeader, ProviderRequestError } from "../provider-runtime.ts";
 import {
   createEchoTikProviderAccountId,
   echotikActionHandlers,
@@ -58,7 +55,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: createEchoTikProviderAccountId(username),
         displayName: "EchoTik API Credential",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: echotikApiBaseUrl,
         validationEndpoint: "/echotik/category/l1?language=en-US",

@@ -1,6 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { optionalBoolean, optionalInteger, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
 import { jsonObject } from "../../core/request.ts";
@@ -17,8 +16,7 @@ export const giftUpApiBaseUrl = "https://api.giftup.app";
 const giftUpValidationEndpoint = "/company";
 
 type GiftUpRequestPhase = "validate" | "execute";
-type GiftUpRuntimeContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
-type GiftUpActionHandler = (input: Record<string, unknown>, context: GiftUpRuntimeContext) => Promise<unknown>;
+type GiftUpActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 type GiftUpQueryValue = string | number | boolean | readonly string[] | undefined;
 
 export const giftUpActionHandlers: ProviderActionHandlers<"gift_up", GiftUpActionHandler> = {
@@ -96,7 +94,6 @@ export async function validateGiftUpCredential(
       accountId: company.id ?? "gift_up",
       displayName: company.name ?? "Gift Up API Key",
     },
-    grantedScopes: [],
     metadata: jsonObject({
       apiBaseUrl: giftUpApiBaseUrl,
       validationEndpoint: giftUpValidationEndpoint,
@@ -107,7 +104,7 @@ export async function validateGiftUpCredential(
   };
 }
 
-async function getCompany(context: GiftUpRuntimeContext): Promise<unknown> {
+async function getCompany(context: ApiKeyProviderContext): Promise<unknown> {
   return {
     company: normalizeCompany(
       await requestGiftUpJson({
@@ -120,7 +117,7 @@ async function getCompany(context: GiftUpRuntimeContext): Promise<unknown> {
   };
 }
 
-async function listGiftCards(input: Record<string, unknown>, context: GiftUpRuntimeContext): Promise<unknown> {
+async function listGiftCards(input: Record<string, unknown>, context: ApiKeyProviderContext): Promise<unknown> {
   const payload = await requestGiftUpJson({
     context,
     method: "GET",
@@ -147,7 +144,7 @@ async function listGiftCards(input: Record<string, unknown>, context: GiftUpRunt
   };
 }
 
-async function getGiftCard(input: Record<string, unknown>, context: GiftUpRuntimeContext): Promise<unknown> {
+async function getGiftCard(input: Record<string, unknown>, context: ApiKeyProviderContext): Promise<unknown> {
   const code = requiredInputString(input.code, "code");
   return {
     giftCard: normalizeGiftCard(
@@ -163,7 +160,7 @@ async function getGiftCard(input: Record<string, unknown>, context: GiftUpRuntim
 
 async function giftCardEvent(
   input: Record<string, unknown>,
-  context: GiftUpRuntimeContext,
+  context: ApiKeyProviderContext,
   event: "reactivate" | "void",
 ): Promise<unknown> {
   const code = requiredInputString(input.code, "code");
@@ -182,7 +179,7 @@ async function giftCardEvent(
 
 async function giftCardBalanceOperation(
   input: Record<string, unknown>,
-  context: GiftUpRuntimeContext,
+  context: ApiKeyProviderContext,
   operation: "top-up" | "redeem",
 ): Promise<unknown> {
   const code = requiredInputString(input.code, "code");
@@ -197,7 +194,7 @@ async function giftCardBalanceOperation(
   );
 }
 
-async function redeemGiftCardInFull(input: Record<string, unknown>, context: GiftUpRuntimeContext): Promise<unknown> {
+async function redeemGiftCardInFull(input: Record<string, unknown>, context: ApiKeyProviderContext): Promise<unknown> {
   const code = requiredInputString(input.code, "code");
   return normalizeTransactionResult(
     await requestGiftUpJson({
@@ -210,7 +207,10 @@ async function redeemGiftCardInFull(input: Record<string, unknown>, context: Gif
   );
 }
 
-async function undoGiftCardRedemption(input: Record<string, unknown>, context: GiftUpRuntimeContext): Promise<unknown> {
+async function undoGiftCardRedemption(
+  input: Record<string, unknown>,
+  context: ApiKeyProviderContext,
+): Promise<unknown> {
   const code = requiredInputString(input.code, "code");
   return normalizeTransactionResult(
     await requestGiftUpJson({
@@ -226,7 +226,7 @@ async function undoGiftCardRedemption(input: Record<string, unknown>, context: G
   );
 }
 
-async function listItems(input: Record<string, unknown>, context: GiftUpRuntimeContext): Promise<unknown> {
+async function listItems(input: Record<string, unknown>, context: ApiKeyProviderContext): Promise<unknown> {
   const payload = await requestGiftUpJson({
     context,
     method: "GET",
@@ -240,7 +240,7 @@ async function listItems(input: Record<string, unknown>, context: GiftUpRuntimeC
   };
 }
 
-async function getItem(input: Record<string, unknown>, context: GiftUpRuntimeContext): Promise<unknown> {
+async function getItem(input: Record<string, unknown>, context: ApiKeyProviderContext): Promise<unknown> {
   const id = requiredInputString(input.id, "id");
   return {
     item: normalizeItem(
@@ -254,7 +254,7 @@ async function getItem(input: Record<string, unknown>, context: GiftUpRuntimeCon
   };
 }
 
-async function listOrders(input: Record<string, unknown>, context: GiftUpRuntimeContext): Promise<unknown> {
+async function listOrders(input: Record<string, unknown>, context: ApiKeyProviderContext): Promise<unknown> {
   const payload = await requestGiftUpJson({
     context,
     method: "GET",
@@ -276,7 +276,7 @@ async function listOrders(input: Record<string, unknown>, context: GiftUpRuntime
   };
 }
 
-async function getOrder(input: Record<string, unknown>, context: GiftUpRuntimeContext): Promise<unknown> {
+async function getOrder(input: Record<string, unknown>, context: ApiKeyProviderContext): Promise<unknown> {
   const id = requiredInputString(input.id, "id");
   return {
     order: normalizeOrder(
@@ -290,7 +290,7 @@ async function getOrder(input: Record<string, unknown>, context: GiftUpRuntimeCo
   };
 }
 
-async function listLocations(context: GiftUpRuntimeContext): Promise<unknown> {
+async function listLocations(context: ApiKeyProviderContext): Promise<unknown> {
   const payload = await requestGiftUpJson({
     context,
     method: "GET",
@@ -303,7 +303,7 @@ async function listLocations(context: GiftUpRuntimeContext): Promise<unknown> {
   };
 }
 
-async function listPromotions(context: GiftUpRuntimeContext): Promise<unknown> {
+async function listPromotions(context: ApiKeyProviderContext): Promise<unknown> {
   const payload = await requestGiftUpJson({
     context,
     method: "GET",
@@ -316,7 +316,10 @@ async function listPromotions(context: GiftUpRuntimeContext): Promise<unknown> {
   };
 }
 
-async function listReportTransactions(input: Record<string, unknown>, context: GiftUpRuntimeContext): Promise<unknown> {
+async function listReportTransactions(
+  input: Record<string, unknown>,
+  context: ApiKeyProviderContext,
+): Promise<unknown> {
   const payload = await requestGiftUpJson({
     context,
     method: "GET",
@@ -341,7 +344,7 @@ async function listReportTransactions(input: Record<string, unknown>, context: G
   };
 }
 
-async function getReportTransaction(input: Record<string, unknown>, context: GiftUpRuntimeContext): Promise<unknown> {
+async function getReportTransaction(input: Record<string, unknown>, context: ApiKeyProviderContext): Promise<unknown> {
   const id = requiredInputString(input.id, "id");
   return {
     transaction: normalizeTransaction(
@@ -356,7 +359,7 @@ async function getReportTransaction(input: Record<string, unknown>, context: Gif
 }
 
 async function requestGiftUpJson(input: {
-  context: GiftUpRuntimeContext;
+  context: ApiKeyProviderContext;
   method: "GET" | "POST";
   path: string;
   phase: GiftUpRequestPhase;

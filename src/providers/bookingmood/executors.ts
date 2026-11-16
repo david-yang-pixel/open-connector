@@ -1,11 +1,11 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { optionalRecord, optionalString, requiredRecord, requiredString } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   providerInputError,
   ProviderRequestError,
   providerResponseError,
@@ -59,7 +59,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "bookingmood",
         displayName: readLabel(firstProduct) ?? "Bookingmood API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: bookingmoodApiBaseUrl,
         validationEndpoint: "/products",

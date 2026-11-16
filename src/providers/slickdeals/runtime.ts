@@ -1,12 +1,11 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
-import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
+import { ProviderRequestError, providerUserAgent, defaultProviderRequestTimeoutMs } from "../provider-runtime.ts";
 
 export const slickdealsApiBaseUrl = "https://api-syn.slickdeals.net/sdapi/syndication/1";
-const slickdealsRequestTimeoutMs = 30_000;
 
 type SlickdealsPhase = "validate" | "execute";
 type QueryValue = string | number | boolean | readonly number[] | undefined;
@@ -174,7 +173,7 @@ async function requestSlickdealsJson(input: {
   signal?: AbortSignal;
   phase: SlickdealsPhase;
 }) {
-  const timeoutSignal = AbortSignal.timeout(slickdealsRequestTimeoutMs);
+  const timeoutSignal = AbortSignal.timeout(defaultProviderRequestTimeoutMs);
   const signal = input.signal ? AbortSignal.any([input.signal, timeoutSignal]) : timeoutSignal;
   try {
     const response = await input.fetcher(buildSlickdealsUrl(input.path, input.query), {
@@ -184,7 +183,7 @@ async function requestSlickdealsJson(input: {
         authorization: `Bearer ${input.token}`,
         "user-agent": providerUserAgent,
       },
-      redirect: "error",
+      redirect: "manual",
       signal,
     });
     const payload = await readPayload(response);

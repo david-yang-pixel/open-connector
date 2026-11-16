@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import {
   optionalBoolean,
@@ -16,6 +16,7 @@ import {
   ProviderRequestError,
   providerUserAgent,
   readProviderJsonBody,
+  providerInputError,
 } from "../provider-runtime.ts";
 
 export const typebotApiBaseUrl = "https://app.typebot.com/api";
@@ -73,7 +74,6 @@ export async function validateTypebotCredential(
   const count = Array.isArray(workspaces) ? workspaces.length : 0;
   return {
     profile: { displayName: count === 1 ? "Typebot Workspace" : `Typebot (${count} workspaces)` },
-    grantedScopes: [],
     metadata: { apiBaseUrl: typebotApiBaseUrl, validationEndpoint: validationPath, workspaceCount: count },
   };
 }
@@ -122,6 +122,6 @@ function typebotError(response: Response, payload: unknown, phase: "validate" | 
   if (response.status === 401 || response.status === 403) {
     return new ProviderRequestError(phase === "validate" ? 400 : response.status, message);
   }
-  if ([400, 404, 422].includes(response.status)) return new ProviderRequestError(400, message);
+  if ([400, 404, 422].includes(response.status)) return providerInputError(message);
   return new ProviderRequestError(response.status >= 500 ? 502 : response.status, message);
 }

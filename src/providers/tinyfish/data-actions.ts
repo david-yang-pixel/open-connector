@@ -1,0 +1,190 @@
+import type { TinyfishEndpoint } from "./endpoints.ts";
+
+import { readSchemaProperties } from "../../core/json-schema.ts";
+import { s } from "../../core/json-schema.ts";
+import { fetchInput, fetchOutput, searchInput, searchOutput, usageInput, usageOutput } from "./data-schemas.ts";
+import { monitorCreateInput, monitorId, monitorOutput, monitorUpdateInput } from "./monitor-schemas.ts";
+import { researchId, researchInput, researchListInput, researchOutput, researchStatus } from "./research-schemas.ts";
+const researchIdInput = s.requiredObject("Research run identifier.", { research_run_id: researchId });
+const monitorIdInput = s.requiredObject("Monitor identifier.", { id: monitorId });
+const usageQueryKeys = Object.keys(readSchemaProperties(usageInput));
+export const dataEndpoints: TinyfishEndpoint[] = [
+  {
+    name: "search",
+    description: "Search web pages, news or research papers with optional content fetching.",
+    operationType: "read",
+    origin: "search",
+    method: "GET",
+    path: "/",
+    queryKeys: Object.keys(readSchemaProperties(searchInput)),
+    inputSchema: searchInput,
+    outputSchema: searchOutput,
+  },
+  {
+    name: "list_search_usage",
+    description: "List paginated search usage records and recorded results.",
+    operationType: "read",
+    origin: "search",
+    method: "GET",
+    path: "/usage",
+    queryKeys: usageQueryKeys,
+    inputSchema: usageInput,
+    outputSchema: usageOutput,
+  },
+  {
+    name: "fetch_urls",
+    description:
+      "Fetch up to ten URLs with content extraction, selectors and conditional request support; inspect per-URL errors.",
+    operationType: "read",
+    origin: "fetchApi",
+    method: "POST",
+    path: "/",
+    inputSchema: fetchInput,
+    outputSchema: fetchOutput,
+  },
+  {
+    name: "list_fetch_usage",
+    description: "List paginated fetch usage records.",
+    operationType: "read",
+    origin: "fetchApi",
+    method: "GET",
+    path: "/usage",
+    queryKeys: usageQueryKeys,
+    inputSchema: usageInput,
+    outputSchema: usageOutput,
+  },
+  {
+    name: "start_research",
+    description: "Start deep or maximum-depth research and retrieve its reports through get_research_run.",
+    operationType: "write",
+    origin: "main",
+    method: "POST",
+    path: "/v1/automation/run-research-async",
+    inputSchema: researchInput,
+    outputSchema: s.looseObject("Research submission.", {
+      research_run_id: researchId,
+      error: s.nullable(s.looseObject("Run creation error; null on success.")),
+    }),
+  },
+  {
+    name: "list_research_runs",
+    description: "List research runs with query, state, timestamp and cursor filters.",
+    operationType: "read",
+    origin: "main",
+    method: "GET",
+    path: "/v1/research-run",
+    queryKeys: Object.keys(readSchemaProperties(researchListInput)),
+    inputSchema: researchListInput,
+    outputSchema: s.looseObject("Research run page.", {
+      data: s.array("Research runs.", researchOutput),
+      pagination: s.looseObject("Pagination metadata.", {
+        total: s.integer("Total matching runs."),
+        next_cursor: s.nullable(s.string("Next-page cursor.")),
+        has_more: s.boolean("Whether more results exist."),
+      }),
+    }),
+  },
+  {
+    name: "get_research_run",
+    description: "Get research progress, final reports, sources and terminal outcome.",
+    operationType: "read",
+    origin: "main",
+    method: "GET",
+    path: "/v1/research-run/{research_run_id}",
+    pathKeys: ["research_run_id"],
+    inputSchema: researchIdInput,
+    outputSchema: researchOutput,
+  },
+  {
+    name: "cancel_research_run",
+    description: "Cancel a research run and return whether its state changed.",
+    operationType: "destructive",
+    origin: "main",
+    method: "POST",
+    path: "/v1/research-run/{research_run_id}/cancel",
+    pathKeys: ["research_run_id"],
+    inputSchema: researchIdInput,
+    outputSchema: s.looseObject("Cancellation outcome.", {
+      research_run_id: researchId,
+      status: researchStatus,
+      cancelled: s.boolean("Whether this request cancelled the run."),
+    }),
+  },
+  {
+    name: "create_monitor",
+    description: "Create a Page or Topic Monitor with a schedule and baseline run; requires a personal API key.",
+    operationType: "write",
+    origin: "main",
+    method: "POST",
+    path: "/v1/monitors",
+    inputSchema: monitorCreateInput,
+    outputSchema: s.looseObject("Created monitor and baseline.", {
+      monitor: monitorOutput,
+      run: s.looseObject("Baseline page or topic run."),
+    }),
+  },
+  {
+    name: "list_monitors",
+    description: "List Page and Topic Monitors owned by the personal API key.",
+    operationType: "read",
+    origin: "main",
+    method: "GET",
+    path: "/v1/monitors",
+    inputSchema: s.requiredObject("No parameters.", {}),
+    outputSchema: s.looseObject("Monitor list.", {
+      monitors: s.array("Owned monitors.", monitorOutput),
+    }),
+  },
+  {
+    name: "get_monitor",
+    description: "Get a Page or Topic Monitor and its configuration.",
+    operationType: "read",
+    origin: "main",
+    method: "GET",
+    path: "/v1/monitors/{id}",
+    pathKeys: ["id"],
+    inputSchema: monitorIdInput,
+    outputSchema: monitorOutput,
+  },
+  {
+    name: "update_monitor",
+    description:
+      "Pause or resume a Monitor, or update its schedule and optional metadata; these update modes cannot be combined.",
+    operationType: "destructive",
+    origin: "main",
+    method: "PATCH",
+    path: "/v1/monitors/{id}",
+    pathKeys: ["id"],
+    inputSchema: monitorUpdateInput,
+    outputSchema: monitorOutput,
+  },
+  {
+    name: "delete_monitor",
+    description: "Delete a Monitor and stop its scheduled runs.",
+    operationType: "destructive",
+    origin: "main",
+    method: "DELETE",
+    path: "/v1/monitors/{id}",
+    pathKeys: ["id"],
+    inputSchema: monitorIdInput,
+    outputSchema: s.looseObject("Deletion result.", {
+      deleted: s.literal(true, {
+        description: "Whether deletion succeeded.",
+      }),
+      id: monitorId,
+    }),
+  },
+  {
+    name: "run_monitor",
+    description: "Run a Monitor immediately and return its Page or Topic results.",
+    operationType: "write",
+    origin: "main",
+    method: "POST",
+    path: "/v1/monitors/{id}/runs",
+    pathKeys: ["id"],
+    inputSchema: monitorIdInput,
+    outputSchema: s.looseObject("Monitor run result.", {
+      run: s.looseObject("Page or Topic run, including change detection results."),
+    }),
+  },
+];

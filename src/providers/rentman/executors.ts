@@ -4,17 +4,13 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 import type { RentmanActionName } from "./actions.ts";
 
 import { compactObject, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "rentman";
 const rentmanApiBaseUrl = "https://api.rentman.net";
@@ -100,9 +96,7 @@ async function validateRentmanCredential(
     profile: {
       accountId: "rentman-jwt",
       displayName: "Rentman JWT",
-      grantedScopes: [],
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: rentmanApiBaseUrl,
       validationEndpoint: "/contacts",
@@ -178,7 +172,7 @@ function rentmanUrl(path: string, query?: Record<string, string | number | undef
 }
 
 async function requestRentman(input: {
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   url: URL;
   mode: "validate" | "execute";
 }): Promise<unknown> {

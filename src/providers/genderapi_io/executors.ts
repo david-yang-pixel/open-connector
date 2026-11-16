@@ -1,22 +1,17 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 
 const service = "genderapi_io";
 const genderapiIoApiBaseUrl = "https://api.genderapi.io";
 const genderapiIoValidationName = "Alice";
 
 type GenderapiIoPhase = "validate" | "execute";
-type GenderapiIoActionContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
-type GenderapiIoActionHandler = (input: Record<string, unknown>, context: GenderapiIoActionContext) => Promise<unknown>;
+type GenderapiIoActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 
 interface GenderapiIoNormalizedPrediction {
   status: true;
@@ -112,7 +107,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "genderapi-io-api-key",
         displayName: "GenderAPI.io API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: genderapiIoApiBaseUrl,
         validationEndpoint: "/api",
@@ -131,7 +125,7 @@ export const credentialValidators: CredentialValidators = {
 async function requestGenderapiIo(
   path: string,
   query: Record<string, string | boolean | undefined>,
-  context: GenderapiIoActionContext,
+  context: ApiKeyProviderContext,
   phase: GenderapiIoPhase,
 ): Promise<unknown> {
   let response: Response;

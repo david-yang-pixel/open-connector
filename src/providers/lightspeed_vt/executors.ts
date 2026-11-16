@@ -7,13 +7,10 @@ import type {
 
 import { Buffer } from "node:buffer";
 import { optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
-import {
-  defineProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-  requireApiKeyCredential,
-} from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 
 const service = "lightspeed_vt";
 const baseUrl = "https://webservices.lightspeedvt.net/REST/V1";
@@ -115,7 +112,6 @@ export const credentialValidators: CredentialValidators = {
     await request("/users/count", {}, context);
     return {
       profile: { displayName: "LightSpeed VT API Account" },
-      grantedScopes: [],
       metadata: { apiBaseUrl: baseUrl, validationEndpoint: "/users/count" },
     };
   },

@@ -1,11 +1,11 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   providerUserAgent,
   ProviderRequestError,
   readProviderTextBody,
@@ -113,7 +113,6 @@ export const credentialValidators: CredentialValidators = {
           ? `Nutrient DWS ${account.subscriptionType} account`
           : "Nutrient DWS API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: nutrientApiBaseUrl,
         validationEndpoint: "/account/info",

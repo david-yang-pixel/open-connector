@@ -1,14 +1,9 @@
 import type { ProviderDefinition } from "../../core/types.ts";
 
-import { feishuActions } from "./actions.ts";
-import { feishuProviderScopes } from "./scopes.ts";
+import { feishuActions, feishuOAuthScopesFor } from "./actions.ts";
 
 const service = "feishu";
-const feishuOAuthScopes = [
-  feishuProviderScopes.offlineAccess,
-  feishuProviderScopes.userIdRead,
-  ...new Set(feishuActions.flatMap((action) => action.providerPermissions)),
-];
+const feishuOAuthScopes = feishuOAuthScopesFor(feishuActions);
 
 /**
  * Feishu provider backed by the user_access_token, so an agent reads the
@@ -24,6 +19,7 @@ export const provider: ProviderDefinition = {
   auth: [
     {
       type: "oauth2",
+      requiredScopes: ["offline_access", "auth:user.id:read"],
       authorizationUrl: "https://accounts.feishu.cn/open-apis/authen/v1/authorize",
       tokenUrl: "https://open.feishu.cn/open-apis/authen/v2/oauth/token",
       scopes: feishuOAuthScopes,

@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { optionalRawString, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
 import { providerUserAgent, ProviderRequestError, runProviderRequest } from "../provider-runtime.ts";
@@ -208,9 +208,7 @@ export async function validateSimplesatCredential(
   return {
     profile: {
       displayName: "Simplesat API Key",
-      grantedScopes: [],
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: simplesatApiBaseUrl,
       validationEndpoint: `${simplesatValidationPath}?page_size=1`,

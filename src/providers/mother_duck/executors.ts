@@ -4,15 +4,14 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { optionalRecord, optionalString } from "../../core/cast.ts";
 import { jsonObject } from "../../core/request.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   isAbortLikeError,
   providerUserAgent,
   ProviderRequestError,
@@ -27,7 +26,7 @@ type MotherDuckPhase = "validate" | "execute";
 type MotherDuckActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 
 interface MotherDuckRequestInput {
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   method?: MotherDuckMethod;
   path: string;
   phase: MotherDuckPhase;
@@ -92,7 +91,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: firstUsername ? `motherduck:${firstUsername}` : `motherduck:${input.apiKey.slice(-6)}`,
         displayName: firstUsername ? `MotherDuck ${firstUsername}` : "MotherDuck Admin API Token",
       },
-      grantedScopes: [],
       metadata: jsonObject({
         apiBaseUrl: motherDuckApiBaseUrl,
         validationEndpoint: "/v1/active_accounts",

@@ -1,6 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
 import {
@@ -9,6 +8,7 @@ import {
   providerUserAgent,
   ProviderRequestError,
   readProviderTextBody,
+  providerInputError,
 } from "../provider-runtime.ts";
 
 export const yGyApiBaseUrl = "https://api.y.gy/api/v1";
@@ -114,7 +114,6 @@ export async function validateYGyCredential(
   );
   return {
     profile: { accountId: "y_gy", displayName: "Y.GY API Key" },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: yGyApiBaseUrl,
       validationEndpoint: "/link?limit=1&offset=0",
@@ -167,7 +166,7 @@ function updateLinkBody(input: Record<string, unknown>): Record<string, unknown>
 }
 
 async function requestYGyJson(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   input: {
     path: string;
     method?: Exclude<YGyMethod, "DELETE">;
@@ -191,7 +190,7 @@ async function requestYGyJson(
 }
 
 async function requestYGy(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   input: {
     path: string;
     method?: YGyMethod;
@@ -259,7 +258,7 @@ function createYGyError(
     return new ProviderRequestError(status, message);
   }
   if (status === 400 || status === 409 || status === 422 || (status === 404 && notFoundAsInvalidInput)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   return new ProviderRequestError(status || 502, message);
 }

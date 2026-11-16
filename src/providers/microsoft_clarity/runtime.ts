@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { compactObject, objectArray, optionalString, requiredRecord } from "../../core/cast.ts";
 import { providerUserAgent, ProviderRequestError, requiredInputString } from "../provider-runtime.ts";
@@ -10,10 +10,9 @@ const microsoftClarityExportPath = "/export-data/api/v1/project-live-insights";
 const microsoftClarityValidationCacheTtlMs = 60_000;
 
 type MicrosoftClarityRequestPhase = "validate" | "execute";
-type MicrosoftClarityActionContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
 type MicrosoftClarityActionHandler = (
   input: Record<string, unknown>,
-  context: MicrosoftClarityActionContext,
+  context: ApiKeyProviderContext,
 ) => Promise<unknown>;
 
 const validationCache = new Map<string, number>();
@@ -51,7 +50,6 @@ export async function validateMicrosoftClarityCredential(
       accountId: "microsoft_clarity",
       displayName: "Microsoft Clarity API Token",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: microsoftClarityApiBaseUrl,
       validationEndpoint: microsoftClarityExportPath,
@@ -63,10 +61,7 @@ export async function validateMicrosoftClarityCredential(
   };
 }
 
-async function exportLiveInsights(
-  input: Record<string, unknown>,
-  context: MicrosoftClarityActionContext,
-): Promise<unknown> {
+async function exportLiveInsights(input: Record<string, unknown>, context: ApiKeyProviderContext): Promise<unknown> {
   const payload = await requestMicrosoftClarity({
     apiKey: context.apiKey,
     fetcher: context.fetcher,

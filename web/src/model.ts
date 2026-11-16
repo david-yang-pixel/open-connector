@@ -1,3 +1,5 @@
+import { buildCliActionExample, buildSdkActionExample, shellSingleQuote } from "./client-onboarding";
+
 /** The setup projection supplied by Open Connector, without OAuth protocol configuration. */
 export type AuthDefinition =
   | { type: "no_auth" }
@@ -6,6 +8,8 @@ export type AuthDefinition =
   | {
       type: "oauth2";
       scopes: string[];
+      supportsScopeSelection?: boolean;
+      requiredScopes?: string[];
       authorizationOptions?: OAuthAuthorizationOption[];
       clientFields?: CredentialField[];
       clientSetup?: OAuthClientSetup;
@@ -18,14 +22,13 @@ export interface OAuthAuthorizationOption {
   required: boolean;
   defaultSelected: boolean;
   risk: "standard" | "sensitive" | "destructive";
-  requires?: string[];
 }
 
 export type ProviderScenario =
   | "ai"
   | "cross-border-ecommerce"
+  | "investment"
   | "communication"
-  | "docs"
   | "productivity"
   | "marketing"
   | "data-storage"
@@ -86,7 +89,8 @@ export interface ProviderDefinition {
   displayName: string;
   description?: string;
   categories: string[];
-  scenario?: ProviderScenario;
+  categoryDisplayNames?: Record<string, string>;
+  scenario?: ProviderScenario | "docs";
   authTypes: string[];
   auth: AuthDefinition[];
   homepageUrl?: string;
@@ -95,6 +99,7 @@ export interface ProviderDefinition {
 }
 
 export interface ConnectionRecord {
+  saas?: { managedProjectId: string; providerConfigId: string };
   id?: string;
   service: string;
   connectionName?: string;
@@ -125,7 +130,36 @@ export interface ProviderPreference {
   updatedAt: string;
 }
 
+export type OAuthSource =
+  | { mode: "local" }
+  | {
+      mode: "saas";
+      managedProjectId: string;
+      projectId: string;
+      providerConfigId: string;
+    };
+
+export interface SaasProjectState {
+  configured: boolean;
+  projectId: string | null;
+  baseUrl: string | null;
+  status: "unconfigured" | "available" | "unavailable" | "auth_error";
+  cleanup: { pending: number; manual: number; paused: boolean };
+}
+
+export interface SaasProviderConfig {
+  id: string;
+  service: string;
+  displayName: string;
+  callbackUrl: string;
+  effectiveScopes: string[];
+  actionIds: string[];
+  proxyAvailable: boolean;
+}
+
 export interface OAuthConfig {
+  missingFields?: string[];
+  oauthSource?: OAuthSource;
   service: string;
   configured: boolean;
   customClientAvailable?: boolean;
@@ -142,6 +176,7 @@ export interface RuntimeTokenSummary {
   allowedActions: string[];
   blockedActions: string[];
   allowedProxies: string[];
+  allowedTriggers?: string[];
   allowedConnections: string[];
   connectionPermissions?: ConnectionPermissionGrant[];
   createdAt: string;
@@ -165,7 +200,9 @@ export interface PolicyRules {
   allowedActions: string[];
   blockedActions: string[];
   allowedProxies: string[];
+  allowedTriggers?: string[];
   blockedProxies: string[];
+  blockedTriggers?: string[];
 }
 
 export interface RuntimePolicyState {
@@ -424,7 +461,9 @@ function providerRequiresOAuth(provider: ProviderDefinition): boolean {
 }
 
 function oauthClientConfigured(service: string, oauthConfigs: OAuthConfig[]): boolean {
-  return oauthConfigs.some((config) => config.service === service && config.configured);
+  return oauthConfigs.some(
+    (config) => config.service === service && (config.configured || config.oauthSource?.mode === "saas"),
+  );
 }
 
 export function credentialFieldsFor(auth: AuthDefinition): CredentialField[] {
@@ -435,7 +474,13 @@ export function filterProviders(providers: ProviderDefinition[], query: string):
   const normalized = query.trim().toLowerCase();
   if (!normalized) return providers;
   return providers.filter((provider) =>
-    [provider.displayName, provider.service, provider.categories.join(" "), provider.authTypes.join(" ")]
+    [
+      provider.displayName,
+      provider.service,
+      provider.categories.join(" "),
+      Object.values(provider.categoryDisplayNames ?? {}).join(" "),
+      provider.authTypes.join(" "),
+    ]
       .join(" ")
       .toLowerCase()
       .includes(normalized),
@@ -531,30 +576,35 @@ export function parameterSummaries(
 export function buildActionExamples(
   action: FullActionDefinition,
   origin: string,
-): { curl: string; typescript: string } {
+  connectionName?: string,
+): { curl: string; typescript: string; cli: string; sdk: string } {
   const endpoint = `${origin}/v1/actions/${action.id}`;
   const body = { input: JSON.parse(exampleInput(action.inputSchema)) as unknown };
   const bodyText = JSON.stringify(body, null, 2);
+  const clientAction = { id: action.id, service: action.service, name: action.name, input: body.input, connectionName };
   return {
     curl: [
       `curl -s ${endpoint} \\`,
       "  -H 'content-type: application/json' \\",
+      '  -H "Authorization: Bearer $OOMOL_CONNECT_RUNTIME_TOKEN" \\',
+      ...(connectionName ? [`  -H ${shellSingleQuote(`x-oo-connector-alias: ${connectionName}`)} \\`] : []),
       `  -d ${shellSingleQuote(JSON.stringify(body))}`,
     ].join("\n"),
     typescript: [
+      'const headers = new Headers({ "content-type": "application/json" });',
+      "const runtimeToken = process.env.OOMOL_CONNECT_RUNTIME_TOKEN;",
+      'if (runtimeToken) headers.set("authorization", `Bearer ${runtimeToken}`);',
+      ...(connectionName ? [`headers.set("x-oo-connector-alias", ${JSON.stringify(connectionName)});`] : []),
       `const response = await fetch(${JSON.stringify(endpoint)}, {`,
       `  method: "POST",`,
-      `  headers: { "content-type": "application/json" },`,
+      `  headers,`,
       `  body: JSON.stringify(${bodyText}),`,
       `});`,
       `const result = await response.json();`,
     ].join("\n"),
+    cli: buildCliActionExample(origin, clientAction),
+    sdk: buildSdkActionExample(origin, clientAction),
   };
-}
-
-/** Quote a value for a POSIX shell so an apostrophe inside an example does not end the argument. */
-function shellSingleQuote(value: string): string {
-  return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
 export function formatDate(value: string): string {

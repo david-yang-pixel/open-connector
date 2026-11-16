@@ -1,14 +1,11 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderActionSources, ProviderFetch } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext, ProviderActionSources } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  isAbortLikeError,
-  mapProviderActionSources,
-  providerUserAgent,
-  ProviderRequestError,
-} from "../provider-runtime.ts";
+import { mapProviderActionSources } from "../provider-executors.ts";
+import { isAbortLikeError, providerUserAgent, ProviderRequestError, providerInputError } from "../provider-runtime.ts";
 
 const manusApiBaseUrl = "https://api.manus.ai";
 const validationEndpoint = "/v2/project.list";
@@ -136,7 +133,6 @@ export async function validateManusCredential(
       accountId: "api_key",
       displayName: "Manus API Key",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: manusApiBaseUrl,
       validationEndpoint,
@@ -301,7 +297,7 @@ function mapManusError(
     return new ProviderRequestError(429, message);
   }
   if (phase === "validate" && (status === 401 || status === 403)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (phase === "execute" && status === 401) {
     return new ProviderRequestError(401, message);
@@ -314,7 +310,7 @@ function mapManusError(
     );
   }
   if (status === 400 || status === 404 || status === 422) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   return new ProviderRequestError(status >= 500 ? 502 : status || 500, message);
 }

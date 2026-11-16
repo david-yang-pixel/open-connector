@@ -1,18 +1,14 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString, recordOrEmpty, stringArray } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError, defaultProviderRequestTimeoutMs } from "../provider-runtime.ts";
 
 const service = "feathery";
 const featheryApiBaseUrl = "https://api.feathery.io";
 const featheryValidationPath = "/api/account/";
-const featheryRequestTimeoutMs = 30_000;
 
 type FeatheryRequestMode = "validate" | "execute";
 type FeatheryRequestMethod = "GET" | "POST" | "PATCH" | "DELETE";
@@ -306,7 +302,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: team ? `team:${team}` : "api_key",
         displayName: team ? `Feathery ${team}` : "Feathery API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: featheryApiBaseUrl,
         validationEndpoint: featheryValidationPath,
@@ -331,7 +326,7 @@ async function requestFeatheryJson(input: FeatheryRequestInput, fetcher: typeof 
     }
   }
 
-  const timeoutSignal = AbortSignal.timeout(featheryRequestTimeoutMs);
+  const timeoutSignal = AbortSignal.timeout(defaultProviderRequestTimeoutMs);
   const signal = input.signal ? AbortSignal.any([input.signal, timeoutSignal]) : timeoutSignal;
   try {
     const response = await fetcher(url.toString(), {

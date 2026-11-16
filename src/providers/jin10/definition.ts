@@ -18,7 +18,7 @@ export const provider: ProviderDefinition = {
       label: "API Key",
       placeholder: "sk-...",
       description:
-        "Jin10 MCP API key used as a Bearer token for https://mcp.jin10.com/mcp. Create or copy it from your Jin10 data service account.",
+        "Jin10 MCP API key used as a Bearer token for https://mcp.jin10.com/mcp. Sign in, activate, and copy your MCP Token from the Jin10 Intelligent Open Platform: https://mcp.jin10.com/app/.",
     },
   ],
   homepageUrl: "https://www.jin10.com",

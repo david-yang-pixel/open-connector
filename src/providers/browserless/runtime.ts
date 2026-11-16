@@ -1,6 +1,6 @@
 import type { CredentialValidationResult, TransitFileWriter } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { compactObject, optionalBoolean, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
 import { readBoundedResponseBytes } from "../../core/request.ts";
@@ -17,8 +17,7 @@ const browserlessValidationUrl = "https://example.com";
 
 type BrowserlessRequestPhase = "validate" | "execute";
 type BrowserlessBinaryActionName = "generate_pdf" | "take_screenshot";
-type BrowserlessActionContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal" | "transitFiles">;
-type BrowserlessActionHandler = (input: Record<string, unknown>, context: BrowserlessActionContext) => Promise<unknown>;
+type BrowserlessActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 type BrowserlessRequestInput = {
   path: string;
   apiKey: string;
@@ -81,7 +80,6 @@ export async function validateBrowserlessCredential(
       accountId: "api_token",
       displayName: "Browserless API Token",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: browserlessApiBaseUrl,
       validationEndpoint: "/content",
@@ -92,7 +90,7 @@ export async function validateBrowserlessCredential(
 
 async function fetchBrowserlessContent(
   input: Record<string, unknown>,
-  context: BrowserlessActionContext,
+  context: ApiKeyProviderContext,
 ): Promise<{ html: string }> {
   const html = await requestBrowserless({
     path: "/content",
@@ -111,7 +109,7 @@ async function fetchBrowserlessBinary(
   actionName: BrowserlessBinaryActionName,
   path: string,
   input: Record<string, unknown>,
-  context: BrowserlessActionContext,
+  context: ApiKeyProviderContext,
 ): Promise<Record<string, unknown>> {
   const transitFiles = requireBrowserlessTransitFiles(context, actionName);
   const response = await requestBrowserless({
@@ -221,7 +219,7 @@ async function requestBrowserless(input: BrowserlessRequestInput): Promise<Brows
 }
 
 function requireBrowserlessTransitFiles(
-  context: Pick<BrowserlessActionContext, "transitFiles">,
+  context: Pick<ApiKeyProviderContext, "transitFiles">,
   actionName: BrowserlessBinaryActionName,
 ): TransitFileWriter {
   if (!context.transitFiles) {

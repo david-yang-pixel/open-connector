@@ -1,21 +1,139 @@
 import type { CatalogStore, ProviderSummaryDefinition } from "./catalog-store.ts";
 import type { JsonSchema, ProviderDefinition } from "./core/types.ts";
 
+import * as jsonSchema from "@cfworker/json-schema";
 import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { catalogIndexFileName, createCatalogIndex } from "./catalog-index.ts";
 import { defaultLazySchemaCacheFiles } from "./catalog-lazy-schemas.ts";
 import { createCatalogStore, loadCatalog, resolveExecutableActionIds } from "./catalog-store.ts";
+import { defineProviderAction } from "./core/provider-definition.ts";
+import { validateActionInput } from "./core/validation.ts";
+import { createOpenApiDocument } from "./server/api/openapi.ts";
+import { serializeRuntimeAction } from "./server/api/runtime-api.ts";
+
+vi.mock("@cfworker/json-schema", async (importOriginal) => {
+  const actual = await importOriginal<typeof jsonSchema>();
+  return { ...actual, Validator: vi.fn(class extends actual.Validator {}) };
+});
 
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await Promise.all(temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
 });
 
 describe("catalog store", () => {
+  it.each(["eager", "lazy", "indexed"])("preserves action authentication provenance (%s)", async (mode) => {
+    const provider = providerFixture("example", ["personal", "public", "inherited"]);
+    provider.authTypes = ["oauth2", "api_key", "no_auth"];
+    provider.auth = [
+      {
+        type: "oauth2",
+        authorizationUrl: "https://example.test/auth",
+        tokenUrl: "https://example.test/token",
+        scopes: [],
+        tokenEndpointAuthMethod: "none",
+      },
+      { type: "api_key" },
+      { type: "no_auth" },
+    ];
+    provider.actions[0]!.authTypes = ["oauth2", "api_key"];
+    provider.actions[1]!.authTypes = ["no_auth"];
+    const before = structuredClone(provider);
+    const directory = await writeCatalogDir([provider]);
+    const catalog = await loadCatalog(directory, {
+      lazySchemas: mode !== "eager",
+      lazySchemaIndexFile: mode === "indexed" ? await writeCatalogIndex(directory, [provider]) : undefined,
+      executableServices: ["example"],
+    });
+    const personal = await catalog.getAction("example.personal");
+    expect(personal?.execution).toEqual({
+      locallyExecutable: true,
+      catalogOnly: false,
+      requiredAuthTypes: ["oauth2", "api_key"],
+      authTypesSource: "action",
+      noAuthRunnable: false,
+      needsCredential: true,
+    });
+    expect((await catalog.getAction("example.public"))?.execution).toMatchObject({
+      requiredAuthTypes: ["no_auth"],
+      authTypesSource: "action",
+      noAuthRunnable: true,
+      needsCredential: false,
+    });
+    expect((await catalog.getAction("example.inherited"))?.execution).toMatchObject({
+      requiredAuthTypes: provider.authTypes,
+      authTypesSource: "provider",
+    });
+    const wire = serializeRuntimeAction(personal!);
+    const schema = createOpenApiDocument().components.schemas.RuntimeActionMetadata;
+    expect(new jsonSchema.Validator(schema).validate(wire).valid).toBe(true);
+    expect(wire.execution.authTypesSource).toBe("action");
+    expect(catalog.actionsById.get("example.personal")?.execution).toEqual(personal?.execution);
+    expect(provider).toEqual(before);
+  });
+
+  it("retains action authentication declarations through the provider helper", () => {
+    const authTypes = ["api_key"] as const;
+    const action = defineProviderAction("example", {
+      name: "read",
+      description: "Read example.",
+      operationType: "read",
+      authTypes,
+      inputSchema: { type: "object" },
+      outputSchema: { type: "object" },
+    });
+    expect(action.authTypes).toEqual(authTypes);
+    expect(action.authTypes).not.toBe(authTypes);
+  });
+
+  it("rejects empty and unsupported action authentication metadata", () => {
+    for (const authTypes of [[], ["oauth2"]] as const) {
+      const provider = providerFixture("example", ["read"]);
+      provider.actions[0]!.authTypes = [...authTypes];
+      expect(() => createCatalogStore([provider])).toThrow("Invalid action authentication types");
+    }
+  });
+
+  it.each([false, true])("reuses compiled validators while definitions are resident (lazy=%s)", async (lazySchemas) => {
+    const catalogDir = await writeCatalogDir([
+      providerFixture("example", ["ping"]),
+      providerFixture("remote", ["ping"]),
+    ]);
+    const catalog = await loadCatalog(catalogDir, { lazySchemas, lazySchemaCacheFiles: 1 });
+    const compiled = vi.mocked(jsonSchema.Validator);
+    compiled.mockClear();
+    const [first, concurrent] = await Promise.all([
+      catalog.getAction("example.ping"),
+      catalog.getAction("example.ping"),
+    ]);
+    if (!first || !concurrent) throw new Error("Missing fixture action");
+    expect(concurrent).toBe(first);
+    validateActionInput(first, {});
+    const repeated = await catalog.getAction(first.id);
+    if (!repeated) throw new Error("Missing fixture action");
+    expect(repeated).toBe(first);
+    validateActionInput(repeated, {});
+    expect(compiled).toHaveBeenCalledTimes(1);
+
+    await catalog.getAction("remote.ping");
+    await writeProviderFile(catalogDir, providerFixture("example", ["ping"], 2));
+    const reloaded = await catalog.getAction(first.id);
+    if (!reloaded) throw new Error("Missing fixture action");
+    if (lazySchemas) {
+      expect(reloaded).not.toBe(first);
+      expect(reloaded.inputSchema).toEqual(schemaFor("ping", 2));
+    } else {
+      expect(reloaded).toBe(first);
+    }
+    validateActionInput(reloaded, {});
+    expect(compiled).toHaveBeenCalledTimes(lazySchemas ? 2 : 1);
+  });
+
   it("preserves optional provider descriptions without defaulting missing ones", () => {
     const providers: ProviderDefinition[] = [
       {
@@ -45,7 +163,7 @@ describe("catalog store", () => {
     expect(catalog.providers.find((provider) => provider.service === "plain")).not.toHaveProperty("description");
   });
 
-  it("builds provider summaries that drop action schemas but keep metadata", () => {
+  it("builds provider summaries that drop action schemas but keep metadata", async () => {
     const providers: ProviderDefinition[] = [
       {
         service: "example",
@@ -83,7 +201,7 @@ describe("catalog store", () => {
     expect(summary?.execution.actionCount).toBe(1);
     expect(summary?.scenario).toBe("developer");
     // The full catalog still carries schemas for /api/actions/:actionId.
-    expect(catalog.actionsById.get("example.ping")?.inputSchema).toEqual({
+    expect((await catalog.getAction("example.ping"))?.inputSchema).toEqual({
       type: "object",
       properties: { message: { type: "string" } },
     });
@@ -130,11 +248,33 @@ describe("catalog store", () => {
 });
 
 describe("loadCatalog", () => {
+  it("coalesces concurrent schema reads and retries after a failed read", async () => {
+    const catalogDir = await writeCatalogDir([providerFixture("example", ["ping", "pong"])]);
+    const catalog = await loadCatalog(catalogDir, { lazySchemas: true });
+    await writeFile(join(catalogDir, "example.json"), "invalid json");
+    await expect(catalog.getAction("example.ping")).rejects.toThrow(SyntaxError);
+    await writeProviderFile(catalogDir, providerFixture("example", ["ping", "pong"], 2));
+    const [first, second] = await Promise.all([catalog.getAction("example.ping"), catalog.getAction("example.ping")]);
+    expect(first?.inputSchema).toBe(second?.inputSchema);
+    expect(first?.inputSchema).toEqual(schemaFor("ping", 2));
+    expect(await catalog.getAction("missing.action")).toBeUndefined();
+  });
+
+  it("copies and serializes metadata without reading the schema files", async () => {
+    const catalogDir = await writeCatalogDir([providerFixture("example", ["ping"])]);
+    const catalog = await loadCatalog(catalogDir, { lazySchemas: true });
+    await rm(catalogDir, { recursive: true });
+    const metadata = catalog.actionsById.get("example.ping")!;
+    expect(JSON.parse(JSON.stringify({ ...metadata }))).toMatchObject({ id: "example.ping" });
+    expect(metadata).not.toHaveProperty("inputSchema");
+    await expect(catalog.getAction(metadata.id)).rejects.toThrow();
+  });
+
   it("keeps schemas as plain data properties by default", async () => {
     const catalogDir = await writeCatalogDir([providerFixture("example", ["ping", "pong"])]);
 
     const catalog = await loadCatalog(catalogDir);
-    const action = catalog.actionsById.get("example.ping")!;
+    const action = (await catalog.getAction("example.ping"))!;
     const descriptor = Object.getOwnPropertyDescriptor(action, "inputSchema")!;
 
     expect(descriptor.get).toBeUndefined();
@@ -155,7 +295,7 @@ describe("loadCatalog", () => {
       providers.map((provider) => provider.service),
     );
     expect(catalog.actions).toHaveLength(18);
-    expect(catalog.actionsById.get("service08.pong")?.inputSchema).toEqual(schemaFor("pong", 1));
+    expect((await catalog.getAction("service08.pong"))?.inputSchema).toEqual(schemaFor("pong", 1));
   });
 
   it("reads lazy schemas from disk on access, so a change to an uncached file is picked up", async () => {
@@ -163,14 +303,16 @@ describe("loadCatalog", () => {
 
     const catalog = await loadCatalog(catalogDir, { lazySchemas: true });
     const action = catalog.actionsById.get("example.ping")!;
-    expect(Object.getOwnPropertyDescriptor(action, "inputSchema")?.get).toBeTypeOf("function");
-    // The link back to the catalog file must stay invisible to key iteration and to spread copies.
-    const [schemaSource] = Object.getOwnPropertySymbols(action);
-    expect(Object.getOwnPropertyDescriptor(action, schemaSource!)?.enumerable).toBe(false);
+    expect(action).not.toHaveProperty("inputSchema");
+    expect({ ...action }).toEqual(action);
+    expect(JSON.parse(JSON.stringify(action))).toEqual(action);
     await writeProviderFile(catalogDir, providerFixture("example", ["ping"], 2));
 
-    expect(action.inputSchema).toEqual(schemaFor("ping", 2));
-    expect(action.outputSchema).toEqual({ type: "object", properties: { ok: { type: "boolean" } } });
+    expect((await catalog.getAction(action.id))!.inputSchema).toEqual(schemaFor("ping", 2));
+    expect((await catalog.getAction(action.id))!.outputSchema).toEqual({
+      type: "object",
+      properties: { ok: { type: "boolean" } },
+    });
     expect(Object.getOwnPropertySymbols({ ...action })).toEqual([]);
   });
 
@@ -184,17 +326,17 @@ describe("loadCatalog", () => {
     const example = catalog.actionsById.get("example.ping")!;
     const remote = catalog.actionsById.get("remote.ping")!;
 
-    expect(example.inputSchema).toEqual(schemaFor("ping", 1));
+    expect((await catalog.getAction(example.id))!.inputSchema).toEqual(schemaFor("ping", 1));
     // Caching "remote" evicts "example", so the next access re-reads the edited file.
-    expect(remote.inputSchema).toEqual(schemaFor("ping", 1));
+    expect((await catalog.getAction(remote.id))!.inputSchema).toEqual(schemaFor("ping", 1));
     await writeProviderFile(catalogDir, providerFixture("example", ["ping"], 2));
-    expect(example.inputSchema).toEqual(schemaFor("ping", 2));
+    expect((await catalog.getAction(example.id))!.inputSchema).toEqual(schemaFor("ping", 2));
 
     // "example" is cached again, so a further edit stays invisible until it is evicted.
     await writeProviderFile(catalogDir, providerFixture("example", ["ping"], 3));
-    expect(example.inputSchema).toEqual(schemaFor("ping", 2));
-    expect(remote.inputSchema).toEqual(schemaFor("ping", 1));
-    expect(example.inputSchema).toEqual(schemaFor("ping", 3));
+    expect((await catalog.getAction(example.id))!.inputSchema).toEqual(schemaFor("ping", 2));
+    expect((await catalog.getAction(remote.id))!.inputSchema).toEqual(schemaFor("ping", 1));
+    expect((await catalog.getAction(example.id))!.inputSchema).toEqual(schemaFor("ping", 3));
   });
 
   it("keeps a file cached when a hit refreshes its recency", async () => {
@@ -209,18 +351,18 @@ describe("loadCatalog", () => {
     const remote = catalog.actionsById.get("remote.ping")!;
     const third = catalog.actionsById.get("third.ping")!;
 
-    expect(example.inputSchema).toEqual(schemaFor("ping", 1));
-    expect(remote.inputSchema).toEqual(schemaFor("ping", 1));
+    expect((await catalog.getAction(example.id))!.inputSchema).toEqual(schemaFor("ping", 1));
+    expect((await catalog.getAction(remote.id))!.inputSchema).toEqual(schemaFor("ping", 1));
     // Re-reading "example" makes it the most recent, so caching "third" must evict "remote".
-    expect(example.inputSchema).toEqual(schemaFor("ping", 1));
-    expect(third.inputSchema).toEqual(schemaFor("ping", 1));
+    expect((await catalog.getAction(example.id))!.inputSchema).toEqual(schemaFor("ping", 1));
+    expect((await catalog.getAction(third.id))!.inputSchema).toEqual(schemaFor("ping", 1));
     await writeProviderFile(catalogDir, providerFixture("example", ["ping"], 2));
     await writeProviderFile(catalogDir, providerFixture("remote", ["ping"], 2));
 
     // Staleness is the only way to observe which file the cache kept: "example" is still cached and
     // answers from the parse it already has, while the evicted "remote" re-reads the edited file.
-    expect(example.inputSchema).toEqual(schemaFor("ping", 1));
-    expect(remote.inputSchema).toEqual(schemaFor("ping", 2));
+    expect((await catalog.getAction(example.id))!.inputSchema).toEqual(schemaFor("ping", 1));
+    expect((await catalog.getAction(remote.id))!.inputSchema).toEqual(schemaFor("ping", 2));
   });
 
   it("caches the default number of provider files when no cache size is given", async () => {
@@ -228,18 +370,18 @@ describe("loadCatalog", () => {
     const catalogDir = await writeCatalogDir(services.map((service) => providerFixture(service, ["ping"])));
 
     const catalog = await loadCatalog(catalogDir, { lazySchemas: true });
-    const actionFor = (service: string) => catalog.actionsById.get(`${service}.ping`)!;
+    const actionFor = (service: string) => catalog.getAction(`${service}.ping`);
     // One file more than the cache holds, read oldest first, so only the first service is evicted.
     for (const service of services) {
-      expect(actionFor(service).inputSchema).toEqual(schemaFor("ping", 1));
+      expect((await actionFor(service))!.inputSchema).toEqual(schemaFor("ping", 1));
     }
     await writeProviderFile(catalogDir, providerFixture(services[0]!, ["ping"], 2));
     await writeProviderFile(catalogDir, providerFixture(services[1]!, ["ping"], 2));
 
     // The second service is checked first because re-reading the evicted first file would cache it
     // again and push the second one out in turn.
-    expect(actionFor(services[1]!).inputSchema).toEqual(schemaFor("ping", 1));
-    expect(actionFor(services[0]!).inputSchema).toEqual(schemaFor("ping", 2));
+    expect((await actionFor(services[1]!))!.inputSchema).toEqual(schemaFor("ping", 1));
+    expect((await actionFor(services[0]!))!.inputSchema).toEqual(schemaFor("ping", 2));
   });
 
   it("rejects a lazy schema cache size that is not a positive integer", async () => {
@@ -260,11 +402,11 @@ describe("loadCatalog", () => {
 
     const catalog = await loadCatalog(catalogDir, { lazySchemas: true, lazySchemaCacheFiles: 1 });
     const example = catalog.actionsById.get("example.ping")!;
-    expect(example.inputSchema).toEqual(schemaFor("ping", 1));
-    expect(catalog.actionsById.get("remote.ping")!.inputSchema).toEqual(schemaFor("ping", 1));
+    expect((await catalog.getAction(example.id))!.inputSchema).toEqual(schemaFor("ping", 1));
+    expect((await catalog.getAction("remote.ping"))!.inputSchema).toEqual(schemaFor("ping", 1));
     await writeProviderFile(catalogDir, providerFixture("example", ["pong"]));
 
-    expect(() => example.inputSchema).toThrow(
+    await expect(catalog.getAction(example.id)).rejects.toThrow(
       `Catalog action example.ping is missing from ${join(catalogDir, "example.json")}`,
     );
   });
@@ -288,6 +430,9 @@ describe("loadCatalog", () => {
       expect(JSON.stringify(store.actions)).toBe(JSON.stringify(eager.actions));
       expect([...store.actionsById.keys()]).toEqual([...eager.actionsById.keys()]);
       expect(JSON.stringify([...store.actionsById.values()])).toBe(JSON.stringify([...eager.actionsById.values()]));
+      expect(await Promise.all(store.actions.map((action) => store.getAction(action.id)))).toEqual(
+        await Promise.all(eager.actions.map((action) => eager.getAction(action.id))),
+      );
       expect(actionKeys(store)).toEqual(actionKeys(eager));
       expect(actionKeys(store)[0]).toEqual([
         "id",
@@ -297,8 +442,6 @@ describe("loadCatalog", () => {
         "operationType",
         "requiredScopes",
         "providerPermissions",
-        "inputSchema",
-        "outputSchema",
         "followUpActions",
         "asyncLifecycle",
         "execution",
@@ -323,7 +466,7 @@ describe("loadCatalog", () => {
     expect(summary?.actions[0]?.id).toBe("example.ping");
     // Nothing was cached during store construction, so the first schema access has to hit the
     // deleted file.
-    expect(() => catalog.actionsById.get("example.ping")!.inputSchema).toThrow();
+    await expect(catalog.getAction("example.ping")).rejects.toThrow();
   });
 
   it("reads only the index at startup when one is given", async () => {
@@ -340,8 +483,8 @@ describe("loadCatalog", () => {
 
     expect(catalog.providerSummariesJson).toEqual(eager.providerSummariesJson);
     const action = catalog.actionsById.get("example.ping")!;
-    expect(Object.getOwnPropertyDescriptor(action, "inputSchema")?.get).toBeTypeOf("function");
-    expect(() => action.inputSchema).toThrow(SyntaxError);
+    expect(action).not.toHaveProperty("inputSchema");
+    await expect(catalog.getAction(action.id)).rejects.toThrow(SyntaxError);
   });
 
   it("refuses an index that no longer describes the catalog files", async () => {

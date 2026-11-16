@@ -1,6 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
 import { providerUserAgent, ProviderRequestError, requiredInputString } from "../provider-runtime.ts";
@@ -13,7 +12,7 @@ type MailersendActionHandler = (input: Record<string, unknown>, context: ApiKeyP
 
 interface MailersendRequestOptions {
   path: string;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   mode: MailersendMode;
   method?: string;
   query?: Record<string, string | number | undefined>;
@@ -164,7 +163,6 @@ export async function validateMailersendCredential(
       accountId: firstDomainId ? `mailersend:domain:${firstDomainId}` : "mailersend",
       displayName: firstDomainName ?? "MailerSend API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       validationEndpoint: validationPath,
       domainCount: domains.length,

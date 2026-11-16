@@ -1,5 +1,4 @@
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord } from "../../core/cast.ts";
 import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
@@ -221,7 +220,6 @@ export async function validateTextitApiKey(input: {
   signal?: AbortSignal;
 }): Promise<{
   profile: { accountId: string; displayName: string };
-  grantedScopes: string[];
   metadata: Record<string, unknown>;
 }> {
   const workspace = await requestTextitJson({
@@ -238,7 +236,6 @@ export async function validateTextitApiKey(input: {
       accountId: typeof workspaceRecord.uuid === "string" && workspaceRecord.uuid ? workspaceRecord.uuid : "textit",
       displayName: workspaceName,
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: textitApiBaseUrl,
       validationEndpoint: "/workspace.json",
@@ -252,7 +249,7 @@ export async function validateTextitApiKey(input: {
 async function requestTextitJson(input: {
   path: string;
   method: "DELETE" | "GET" | "POST";
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   query?: Record<string, unknown>;
   body?: unknown;
 }): Promise<unknown> {

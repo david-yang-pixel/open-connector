@@ -1,14 +1,19 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
 
 import { compactObject, optionalInteger, optionalRecord, optionalString, requiredRecord } from "../../core/cast.ts";
-import { createProviderTimeout, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
+import {
+  createProviderTimeout,
+  ProviderRequestError,
+  providerUserAgent,
+  providerInputError,
+  providerResponseError,
+} from "../provider-runtime.ts";
 
 interface AccountProfile {
   providerAccountId: string;
   accountLabel: string;
   providerMetadata: Record<string, unknown>;
 }
-import { mapSurveyMonkeyProviderScopes } from "./scopes.ts";
 
 const surveyMonkeyApiBaseUrls = [
   "https://api.surveymonkey.com",
@@ -281,7 +286,7 @@ export async function validateSurveyMonkeyCredential(
   const grantedProviderScopes = readGrantedProviderScopes(user);
   return {
     profile: { accountId: profile.providerAccountId, displayName: profile.accountLabel },
-    grantedScopes: mapSurveyMonkeyProviderScopes(grantedProviderScopes),
+    grantedScopes: grantedProviderScopes,
     metadata: profile.providerMetadata,
   };
 }
@@ -441,15 +446,10 @@ function normalizeCreatedContactList(payload: unknown) {
   return requireObject(record.data ?? record, "SurveyMonkey contact list");
 }
 
-function readGrantedProviderScopes(user: Record<string, unknown>) {
+function readGrantedProviderScopes(user: Record<string, unknown>): string[] | undefined {
   const scopes = optionalRecord(user.scopes);
-  if (!scopes || !Array.isArray(scopes.granted)) {
-    throw new ProviderRequestError(502, "SurveyMonkey user response is missing scopes.granted");
-  }
-  if (scopes.granted.some((scope) => typeof scope !== "string" || !scope.trim())) {
-    throw new ProviderRequestError(502, "SurveyMonkey user response contains invalid scopes.granted");
-  }
-  return scopes.granted.map((scope) => (scope as string).trim());
+  if (!Array.isArray(scopes?.granted)) return undefined;
+  return scopes.granted.map(optionalString).filter((scope): scope is string => scope !== undefined);
 }
 
 function buildSurveyMonkeyAccountProfile(user: Record<string, unknown>, apiBaseUrl: string): AccountProfile {
@@ -549,11 +549,11 @@ function mapSurveyMonkeyError(status: number, payload: unknown, phase: SurveyMon
   }
   if (status === 403) {
     if (phase === "validate") {
-      return new ProviderRequestError(400, message);
+      return providerInputError(message);
     }
     if (errorId === "1014") return new ProviderRequestError(403, message);
     if (errorId === "1017") return new ProviderRequestError(429, message);
-    if (errorId === "1018") return new ProviderRequestError(502, message);
+    if (errorId === "1018") return providerResponseError(message);
     return new ProviderRequestError(403, message);
   }
   if (status === 400 || status === 404 || status === 422) {

@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { compactObject, optionalInteger, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
 import { providerInputError, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
@@ -56,7 +56,6 @@ export async function validateAmbientWeatherCredential(
       accountId: firstDevice?.macAddress ?? "ambient_weather",
       displayName: "Ambient Weather API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       applicationKey: context.applicationKey,
       validationEndpoint: "/v1/devices",

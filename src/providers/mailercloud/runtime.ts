@@ -1,6 +1,7 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { optionalRecord, optionalString } from "../../core/cast.ts";
 import { encodePathSegment } from "../../core/request.ts";
@@ -135,7 +136,6 @@ export async function validateMailercloudCredential(
       accountId: "mailercloud",
       displayName: "Mailercloud API Key",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: mailercloudApiBaseUrl,
       validationEndpoint: mailercloudValidationPath,

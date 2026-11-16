@@ -1,14 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "updown_io";
 const updownIoApiBaseUrl = "https://updown.io";
@@ -85,7 +81,6 @@ export const credentialValidators: CredentialValidators = {
       profile: {
         displayName: "updown.io API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: updownIoApiBaseUrl,
         validationEndpoint: "/api/checks",
@@ -96,7 +91,7 @@ export const credentialValidators: CredentialValidators = {
 };
 
 async function requestUpdownJson(input: {
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   path: string;
   phase: UpdownRequestPhase;
   method?: "GET" | "POST" | "PUT" | "DELETE";

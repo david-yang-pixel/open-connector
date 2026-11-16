@@ -1,6 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
 import {
@@ -8,6 +7,7 @@ import {
   providerUserAgent,
   requiredInputString,
   runProviderRequest,
+  providerInputError,
 } from "../provider-runtime.ts";
 
 const memberstackApiBaseUrl = "https://admin.memberstack.com";
@@ -147,7 +147,6 @@ export async function validateMemberstackCredential(
       accountId: "memberstack:secret-key",
       displayName: "Memberstack Secret Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: memberstackApiBaseUrl,
       validationEndpoint: "/members",
@@ -157,7 +156,7 @@ export async function validateMemberstackCredential(
 }
 
 async function requestMemberstackJson(input: {
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   path: string;
   method: "DELETE" | "GET" | "PATCH" | "POST";
   params?: Record<string, string | undefined>;
@@ -232,7 +231,7 @@ function createMemberstackError(status: number, payload: unknown, phase: Members
   }
 
   if (phase === "validate" && status >= 400 && status < 500) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
 
   if (phase === "execute" && status === 401) {

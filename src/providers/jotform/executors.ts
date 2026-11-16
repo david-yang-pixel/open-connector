@@ -1,12 +1,11 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalIntegerLike, optionalRecord, optionalString, requiredRecord } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   isAbortLikeError,
   providerUserAgent,
   ProviderRequestError,
@@ -18,8 +17,7 @@ const jotformApiBaseUrl = "https://api.jotform.com";
 
 type JotformRequestPhase = "validate" | "execute";
 type JotformQueryValue = string | number | undefined;
-type JotformActionContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
-type JotformActionHandler = (input: Record<string, unknown>, context: JotformActionContext) => Promise<unknown>;
+type JotformActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 
 interface JotformEnvelope {
   responseCode?: unknown;
@@ -226,7 +224,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: user.email ?? user.username,
         displayName: user.name ?? user.email ?? user.username,
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: jotformApiBaseUrl,
         validationEndpoint: "/user",

@@ -4,14 +4,14 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalInteger, optionalRecord, optionalString, requiredRecord } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   isAbortLikeError,
   providerUserAgent,
   ProviderRequestError,
@@ -178,7 +178,6 @@ async function validateLeigaCredential(context: ApiKeyProviderContext): Promise<
       accountId: firstProject ? String(firstProject.id) : undefined,
       displayName: optionalString(firstProject?.pname) ?? optionalString(firstProject?.pkey) ?? "Leiga API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: leigaApiBaseUrl,
       validationEndpoint: "/project/list",

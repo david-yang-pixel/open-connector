@@ -4,30 +4,30 @@ import type {
   ProviderProxyExecutor,
   ProxyExecutionResult,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalRawString, optionalRecord, requiredRecord } from "../../core/cast.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import {
+  createProviderProxyUrl,
+  normalizeProviderProxyHeaders,
+  readProviderProxyErrorMessage,
+  readProviderProxyResponse,
+  toProviderProxyError,
+} from "../provider-proxy.ts";
 import {
   createProviderFetch,
-  createProviderProxyUrl,
-  defineApiKeyProviderExecutors,
-  normalizeProviderProxyHeaders,
   providerInputError,
   ProviderRequestError,
   providerUserAgent,
-  readProviderProxyErrorMessage,
-  readProviderProxyResponse,
-  requireApiKeyCredential,
-  toProviderProxyError,
 } from "../provider-runtime.ts";
 
 const service = "segment";
 const segmentApiBaseUrl = "https://api.segment.io/v1";
 const segmentFetch = createProviderFetch({ skipDnsValidation: true });
 
-type SegmentActionContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
-type SegmentActionHandler = (input: Record<string, unknown>, context: SegmentActionContext) => Promise<unknown>;
+type SegmentActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 
 export const segmentActionHandlers: ProviderActionHandlers<"segment", SegmentActionHandler> = {
   identify(input, context) {
@@ -95,7 +95,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "write_key",
         displayName: "Segment Write Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: segmentApiBaseUrl,
         validationMode: "format_only",
@@ -114,7 +113,7 @@ function withWriteKey(input: Record<string, unknown>, writeKey: string): Record<
 async function requestSegment(
   endpoint: string,
   body: Record<string, unknown>,
-  context: SegmentActionContext,
+  context: ApiKeyProviderContext,
 ): Promise<Record<string, unknown>> {
   const response = await context.fetcher(`${segmentApiBaseUrl}/${endpoint}`, {
     method: "POST",

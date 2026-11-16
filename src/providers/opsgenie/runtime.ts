@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -90,9 +90,7 @@ export async function validateOpsgenieCredential(
     profile: {
       accountId: accountName || environment,
       displayName: accountName || `Opsgenie ${environment.toUpperCase()} Account`,
-      grantedScopes: [],
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl,
       environment,
