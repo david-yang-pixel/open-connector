@@ -14,8 +14,10 @@ import type { Context } from "hono";
 
 import { getConnInfo } from "@hono/node-server/conninfo";
 import { Hono } from "hono";
+import { HttpRequestError, readRequestText } from "../api/http-utils.ts";
 import { applyWellKnownRoutes } from "./as-metadata.ts";
 import { handleAuthorizeGet, handleAuthorizePost } from "./authorize-endpoint.ts";
+import { oauthRequestMaxBytes } from "./config.ts";
 import { handleRegisterPost, RegistrationError } from "./register-endpoint.ts";
 import { handleRevokePost, handleTokenPost, TokenError } from "./token-endpoint.ts";
 
@@ -111,30 +113,30 @@ export function createOAuthRoutes(options: OAuthRoutesOptions): Hono {
     if (!limiter.take("token", clientKey(context, trustProxyHeaders), tokenRate.limit, tokenRate.windowMs)) {
       return rateLimitResponse(tokenRate.windowMs);
     }
-    const form = await readForm(context);
-    if (!form) {
-      return formError(
-        context,
-        new TokenError("invalid_request", "Expected an application/x-www-form-urlencoded token request."),
-      );
-    }
-    return jsonResult(context, async () =>
-      context.json(await handleTokenPost(form, tokenDeps, context.req.header("authorization") ?? undefined)),
-    );
+    return jsonResult(context, async () => {
+      const form = await readForm(context);
+      if (!form) {
+        return formError(
+          context,
+          new TokenError("invalid_request", "Expected an application/x-www-form-urlencoded token request."),
+        );
+      }
+      return context.json(await handleTokenPost(form, tokenDeps, context.req.header("authorization") ?? undefined));
+    });
   });
 
   app.post("/oauth/mcp/revoke", async (context: Context) => {
     if (!limiter.take("revoke", clientKey(context, trustProxyHeaders), tokenRate.limit, tokenRate.windowMs)) {
       return rateLimitResponse(tokenRate.windowMs);
     }
-    const form = await readForm(context);
-    if (!form) {
-      return formError(
-        context,
-        new TokenError("invalid_request", "Expected an application/x-www-form-urlencoded revocation request."),
-      );
-    }
     return jsonResult(context, async () => {
+      const form = await readForm(context);
+      if (!form) {
+        return formError(
+          context,
+          new TokenError("invalid_request", "Expected an application/x-www-form-urlencoded revocation request."),
+        );
+      }
       await handleRevokePost(form, tokenDeps, context.req.header("authorization") ?? undefined);
       return new Response(null, { status: 200 });
     });
@@ -161,7 +163,7 @@ async function readForm(context: Context): Promise<URLSearchParams | undefined> 
   if (!contentType.startsWith("application/x-www-form-urlencoded")) {
     return undefined;
   }
-  return new URLSearchParams(await context.req.text());
+  return new URLSearchParams(await readRequestText(context, oauthRequestMaxBytes));
 }
 
 function clientKey(context: Context, trustProxyHeaders: boolean): string {
@@ -225,6 +227,9 @@ async function jsonResult(context: Context, handler: () => Promise<Response>): P
     }
     if (error instanceof RegistrationError) {
       return context.json({ error: error.code, error_description: error.message }, 400);
+    }
+    if (error instanceof HttpRequestError) {
+      return context.json({ error: "invalid_request", error_description: error.message }, error.status as 413);
     }
     throw error;
   }

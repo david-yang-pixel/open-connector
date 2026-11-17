@@ -2,7 +2,9 @@ import type { OAuthClientRecord, IOAuthClientStore, IOAuthTokenStore } from "../
 import type { OAuthServerConfig } from "./config.ts";
 import type { Context } from "hono";
 
+import { readRequestText } from "../api/http-utils.ts";
 import { ClientMetadataError, normalizeClientMetadata } from "./client-metadata.ts";
+import { oauthRequestMaxBytes } from "./config.ts";
 import { hashToken, randomToken } from "./jwks.ts";
 
 /**
@@ -34,9 +36,10 @@ export async function handleRegisterPost(context: Context, deps: RegisterDepende
   if (!contentType.startsWith("application/json")) {
     throw new RegistrationError("invalid_client_metadata", "Expected an application/json registration request.");
   }
+  const text = await readRequestText(context, oauthRequestMaxBytes);
   let body: unknown;
   try {
-    body = JSON.parse(await context.req.text());
+    body = JSON.parse(text);
   } catch {
     throw new RegistrationError("invalid_client_metadata", "The registration request body is not valid JSON.");
   }

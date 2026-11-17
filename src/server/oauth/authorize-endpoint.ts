@@ -18,10 +18,11 @@ async function jose(): Promise<typeof JoseModule> {
   return import("jose");
 }
 import { constantTimeEqual } from "../api/auth-utils.ts";
+import { HttpRequestError, readRequestText } from "../api/http-utils.ts";
 import { renderMcpConsentPage } from "../cloudflare/mcp-consent-page.ts";
 import { CimdError } from "./cimd-client.ts";
 import { redirectUriMatches } from "./client-metadata.ts";
-import { accessScope, parseScope } from "./config.ts";
+import { accessScope, oauthRequestMaxBytes, parseScope } from "./config.ts";
 import { hashToken, randomToken } from "./jwks.ts";
 import { isValidCodeChallenge } from "./pkce.ts";
 
@@ -323,7 +324,15 @@ export async function handleAuthorizePost(context: Context, deps: AuthorizeDepen
   if (!contentType.startsWith("application/x-www-form-urlencoded")) {
     return htmlError(415, "Expected a form submission.");
   }
-  const form = new URLSearchParams(await context.req.text());
+  let form: URLSearchParams;
+  try {
+    form = new URLSearchParams(await readRequestText(context, oauthRequestMaxBytes));
+  } catch (error) {
+    if (error instanceof HttpRequestError) {
+      return htmlError(error.status, error.message);
+    }
+    throw error;
+  }
   const handle = form.get("handle") ?? "";
   if (!deps.adminToken) {
     return htmlError(503, "Administrator authentication is required for MCP OAuth.");

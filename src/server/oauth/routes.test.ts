@@ -391,3 +391,49 @@ describe("rate-limit client keying", () => {
     expect(separated.keys).toEqual(["198.51.100.7", "198.51.100.8"]);
   });
 });
+
+describe("public request body limits", () => {
+  const padding = "x".repeat(70 * 1024);
+
+  it("accepts a normal registration and rejects one over 64 KiB with 413", async () => {
+    const { app } = await setup();
+    const metadata = { client_name: "Client", redirect_uris: [REDIRECT], token_endpoint_auth_method: "none" };
+    const accepted = await app.request(`${ISSUER}/oauth/mcp/register`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(metadata),
+    });
+    expect(accepted.status).toBe(201);
+
+    const rejected = await app.request(`${ISSUER}/oauth/mcp/register`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...metadata, padding }),
+    });
+    expect(rejected.status).toBe(413);
+    expect(await readJson(rejected)).toMatchObject({ error: "invalid_request" });
+  });
+
+  it("rejects oversized token and revocation forms with 413", async () => {
+    const { app } = await setup();
+    for (const path of ["/oauth/mcp/token", "/oauth/mcp/revoke"]) {
+      const response = await app.request(`${ISSUER}${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ grant_type: "authorization_code", token: "t", padding }).toString(),
+      });
+      expect(response.status).toBe(413);
+      expect(await readJson(response)).toMatchObject({ error: "invalid_request" });
+    }
+  });
+
+  it("rejects an oversized consent form with 413", async () => {
+    const { app } = await setup();
+    const response = await app.request(`${ISSUER}/oauth/mcp/authorize`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", origin: ISSUER },
+      body: new URLSearchParams({ handle: "whatever", decision: "approve", padding }).toString(),
+    });
+    expect(response.status).toBe(413);
+  });
+});

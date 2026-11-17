@@ -18,6 +18,8 @@ export interface OAuthServerConfig {
 export const defaultAccessTokenTtlSeconds: number = 3600;
 export const defaultRefreshTokenTtlSeconds: number = 30 * 86400;
 export const defaultAuthorizationCodeTtlSeconds: number = 60;
+/** Byte cap for public OAuth request bodies (registration, token, revocation, consent), read before parsing. */
+export const oauthRequestMaxBytes: number = 64 * 1024;
 
 /** The scopes this authorization server can grant; `requiredScopes` on the Workers side. */
 export const accessScope = "mcp:access" as string;
