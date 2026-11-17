@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ApiKeyProviderContext, ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ApiKeyProviderContext, ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-executors.ts";
 import type { Client } from "@modelcontextprotocol/client";
 
 import { ProtocolError, SdkError, SdkErrorCode, SdkHttpError, UnauthorizedError } from "@modelcontextprotocol/client";
@@ -51,7 +51,6 @@ export async function validateMcdonaldsCnMcpCredential(
       accountId: `mcdonalds-cn:mcp:${tokenHash}`,
       displayName: `McDonald's China MCP · ${tokenHash.slice(-6)}`,
     },
-    grantedScopes: [],
     metadata: {
       mcpEndpoint: mcdonaldsCnMcpEndpoint,
       discoveredToolCount: tools.length,
@@ -101,7 +100,7 @@ async function withMcdonaldsCnMcpClient<T>(
       transport: "streamable_http",
       fetcher: context.fetcher,
       headers,
-      redirect: "error",
+      redirect: "manual",
       signal: context.signal,
       protocolVersion: "legacy",
       mapError: mapMcdonaldsCnMcpError,

@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
 import {
@@ -8,6 +8,8 @@ import {
   isAbortLikeError,
   providerUserAgent,
   ProviderRequestError,
+  providerInputError,
+  providerResponseError,
 } from "../provider-runtime.ts";
 
 export const bitriseApiBaseUrl = "https://api.bitrise.io/v0.1";
@@ -47,7 +49,7 @@ export async function validateBitriseCredential(
   fetcher: typeof fetch,
   signal?: AbortSignal,
 ): Promise<CredentialValidationResult> {
-  const apiKey = requiredString(input.apiKey, "apiKey", (message) => new ProviderRequestError(400, message));
+  const apiKey = requiredString(input.apiKey, "apiKey", providerInputError);
   const profilePayload = await requestBitriseJson<unknown>({
     apiKey,
     path: "/me",
@@ -67,7 +69,6 @@ export async function validateBitriseCredential(
       accountId: slug ?? dataId ?? email ?? "bitrise:api_key",
       displayName: username ?? email ?? slug ?? "Bitrise API Key",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: bitriseApiBaseUrl,
       validationEndpoint: "/me",
@@ -240,7 +241,7 @@ function createBitriseError(response: Response, payload: unknown, phase: Bitrise
     return new ProviderRequestError(429, message);
   }
   if (response.status >= 500) {
-    return new ProviderRequestError(502, message);
+    return providerResponseError(message);
   }
   if (phase === "validate" && (response.status === 401 || response.status === 403)) {
     return new ProviderRequestError(response.status, message);

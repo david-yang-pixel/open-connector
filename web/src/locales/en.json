@@ -16,7 +16,9 @@
     "showMore": "Show more",
     "showing": "Showing {{shown}} of {{total}}",
     "success": "Success",
-    "unavailable": "Unavailable"
+    "unavailable": "Unavailable",
+    "cancel": "Cancel",
+    "undo": "Undo"
   },
   "brand": {
     "subtitle": "Local runtime console",
@@ -36,10 +38,11 @@
     "providers": "Providers",
     "marketplace": "Marketplace",
     "oauthApps": "OAuth Apps",
+    "oauthClients": "OAuth Clients",
     "actions": "Actions",
     "runs": "Runs",
     "access": "API Key",
-    "docs": "Docs"
+    "docs": "Connect clients"
   },
   "shell": {
     "invalidUnlockToken": "Enter a valid admin token to unlock the console.",
@@ -61,9 +64,14 @@
       "providers": {
         "title": "Providers"
       },
-      "marketplace": { "title": "Marketplace" },
+      "marketplace": {
+        "title": "Marketplace"
+      },
       "oauthApps": {
         "title": "OAuth Apps"
+      },
+      "oauthClients": {
+        "title": "OAuth Clients"
       },
       "actions": {
         "title": "Actions"
@@ -75,12 +83,16 @@
         "title": "API Key"
       },
       "resources": {
-        "title": "Resources"
+        "title": "Connect clients"
       },
       "authorize": {
         "title": "Authorize Client"
       }
-    }
+    },
+    "settings": "Settings",
+    "settingsDescription": "Manage language, appearance, connections, and runtime.",
+    "oomolKeyDescription": "Explore supported services and offers, then connect or manage your key.",
+    "notifications": "Notifications"
   },
   "unlock": {
     "token": "Admin token",
@@ -114,10 +126,26 @@
     "noRecentCallsDescription": "Run an action to see provider call counts."
   },
   "marketplace": {
+    "oneKey": {
+      "headline": "One key for AI and data services",
+      "description": "Use compatible services in this catalog with an official OOMOL key. Skip separate provider signups and setup. Pay for what you use.",
+      "getKey": "Get an OOMOL Key",
+      "haveKey": "Already have a key? Connect it",
+      "benefitsLabel": "How OOMOL Key works",
+      "benefitSetup": "Skip separate API key setup for each provider",
+      "benefitChoice": "Keep the option to use provider keys directly",
+      "benefitPricing": "Selected models have discounts; usage is metered",
+      "connectTitle": "Connect OOMOL Key",
+      "connectDescription": "Paste your official OOMOL key to verify and manage compatible services.",
+      "keyLabel": "OOMOL Key",
+      "keyHelp": "Copy your key from the OOMOL console. After connecting, manage compatible services here.",
+      "advanced": "Advanced: Marketplace source",
+      "keyPlaceholder": "Paste your official OOMOL API key"
+    },
     "default": {
       "browseDescription": "Browse available features",
-      "title": "Official apps",
-      "description": "Provided by OOMOL Marketplace. Connect an official API key to use these services.",
+      "title": "Services and actions supported by OOMOL Key",
+      "description": "Only actions compatible with this version are listed. Support for some actions does not include every feature offered by a provider.",
       "failed": "The official catalog could not be loaded. Please try again.",
       "retry": "Retry",
       "loading": "Loading official apps…",
@@ -133,7 +161,10 @@
         "kling": "30% off",
         "minimax": "20% off",
         "seedance": "10% off"
-      }
+      },
+      "supportedActions": "{{count}} supported actions",
+      "connected": "Connected",
+      "providerDetails": "View provider details"
     },
     "summary": {
       "title": "Connector Marketplace",
@@ -147,7 +178,10 @@
       "unavailable": "Unavailable",
       "auth_error": "Authentication error"
     },
-    "pricing": { "free": "Free", "metered": "Metered usage" },
+    "pricing": {
+      "free": "Free",
+      "metered": "Metered usage"
+    },
     "configuration": {
       "reconnect": "This source is not ready. Check the configuration above and validate again.",
       "title": "Configuration",
@@ -189,29 +223,81 @@
     }
   },
   "providers": {
+    "managedEmpty": {
+      "title": "No configured connections yet",
+      "description": "Connect OOMOL Key above, or open a provider in Discover connections and add your credentials."
+    },
+    "hostedAccess": {
+      "connectedCustom": "The managed source is connected. View available services under Configured connections.",
+      "intro": "Use one OOMOL key for compatible AI and data services, or connect provider keys directly.",
+      "connected": "Built-in accounts are connected. View available services under Configured connections.",
+      "connect": "Connect OOMOL Key",
+      "manage": "Manage OOMOL Key",
+      "close": "Hide settings",
+      "features": "Supported services",
+      "hideFeatures": "Collapse features",
+      "removeKey": "Delete key",
+      "removeHelp": "Delete the saved key and disable all built-in accounts? Your own provider credentials will be kept.",
+      "confirmRemove": "Confirm key deletion",
+      "hide": "Hide OOMOL Key recommendation",
+      "restore": "OOMOL Key",
+      "hiddenNotice": "Show it again from Settings ⚙️ in the top right → OOMOL Key.",
+      "hiddenTitle": "OOMOL Key hidden"
+    },
+    "managedSources": {
+      "label": "Connection source",
+      "all": "All",
+      "builtIn": "Built-in accounts",
+      "ownKey": "Own credentials"
+    },
+    "oneKey": {
+      "title": "Use OOMOL Key",
+      "description": "Access {{name}} with one OOMOL key, without configuring this provider’s API key separately.",
+      "alternative": "You can also configure a provider key below.",
+      "connect": "Connect OOMOL Key",
+      "available": "Supports OOMOL Key",
+      "builtIn": "Built-in account",
+      "connectedTitle": "Built-in account",
+      "connectedDescription": "This service can run through the built-in account provided by {{name}}."
+    },
     "catalogTitle": "Providers",
     "viewLabel": "Provider view",
-    "views": { "manage": "My connections", "discover": "Discover apps" },
+    "views": {
+      "manage": "Configured connections",
+      "discover": "Discover connections"
+    },
     "discovery": {
       "browseByTask": "Browse by task",
       "explore": "Explore apps",
       "scenarios": {
-        "ai": { "title": "AI & agents", "description": "Models, agents, search, and media generation" },
+        "ai": {
+          "title": "AI & agents",
+          "description": "Models, agents, search, and media generation"
+        },
+        "investment": {
+          "title": "Investing & trading",
+          "description": "Stocks, crypto, market data, portfolios, and trades"
+        },
         "crossBorderEcommerce": {
           "title": "E-commerce operations",
           "description": "Storefronts, orders, fulfillment, and market data"
         },
         "communication": {
-          "title": "Team collaboration",
-          "description": "Messaging, email, meetings, and notifications"
+          "title": "Collaboration & knowledge",
+          "description": "Messaging, email, meetings, docs, drives, and knowledge bases"
         },
-        "docs": { "title": "Docs & knowledge", "description": "Documents, knowledge bases, drives, and spreadsheets" },
         "productivity": {
           "title": "Projects & productivity",
           "description": "Projects, tasks, schedules, and automation"
         },
-        "marketing": { "title": "Marketing & growth", "description": "Ads, content, leads, and growth data" },
-        "dataStorage": { "title": "Data & analytics", "description": "Warehouses, databases, BI, and storage" },
+        "marketing": {
+          "title": "Marketing & growth",
+          "description": "Ads, content, leads, and growth data"
+        },
+        "dataStorage": {
+          "title": "Data & analytics",
+          "description": "Warehouses, databases, BI, and storage"
+        },
         "developer": {
           "title": "Development & cloud",
           "description": "Code, deployment, cloud services, and observability"
@@ -224,6 +310,8 @@
     "filters": {
       "all": "All",
       "connected": "Connected",
+      "oneKey": "Supports OOMOL Key",
+      "noSetup": "No setup",
       "notConnected": "Not connected",
       "oauthNeedsConfig": "OAuth needs config"
     },
@@ -304,6 +392,8 @@
       "noAuth": "No auth"
     },
     "connectionMessages": {
+      "disconnectNotice": "“{{name}}” disconnected",
+      "cloudDisconnectNotice": "The cloud account will be deleted in the background.",
       "noAuth": "This provider runs without local credentials.",
       "needsOAuthClient": "{{name}} needs a local OAuth client before it can connect.",
       "manualOAuthClient": "Connect {{name}} with a custom OAuth app.",
@@ -359,13 +449,21 @@
       "callbackUrl": "Callback URL",
       "clientId": "Client ID",
       "clientSecret": "Client Secret",
-      "storedSecretHint": "Stored secret is not shown. Enter it again when saving changes.",
+      "storedSecretHint": "Leave blank to keep the saved secret. Enter a new value to replace it.",
+      "clearSecret": "Clear saved {{name}} when saving",
       "saving": "Saving OAuth client...",
       "saved": "OAuth client saved.",
       "failed": "Failed to save OAuth client.",
       "resetting": "Resetting OAuth client...",
       "reset": "OAuth client reset.",
-      "resetFailed": "Failed to reset OAuth client."
+      "resetFailed": "Failed to reset OAuth client.",
+      "useDefaultScopes": "Use default permissions",
+      "scopeLabel": "OAuth scopes",
+      "emptyScopes": "Only the basic permissions needed to connect will be requested.",
+      "removeScope": "Remove {{scope}}",
+      "scopePlaceholder": "Add a scope",
+      "additionalScopes": "Additional permissions",
+      "advancedScopes": "Advanced settings"
     },
     "execution": {
       "executable": "Executable",
@@ -391,6 +489,75 @@
     "dialog": {
       "configureTitle": "Configure {{name}} OAuth App",
       "editTitle": "Edit {{name}} OAuth App"
+    }
+  },
+  "oauthClients": {
+    "title": "OAuth Clients",
+    "description": "Manage clients that connect to the MCP endpoint with OAuth 2.1.",
+    "newClient": "New client",
+    "emptyTitle": "No OAuth clients",
+    "emptyDescription": "Register a client to let MCP clients connect with OAuth.",
+    "clientName": "Client name",
+    "clientId": "Client ID",
+    "registration": "Registration",
+    "authMethod": "Token endpoint auth",
+    "redirectUris": "Redirect URIs",
+    "redirectUrisHint": "One URI per line. HTTPS, or HTTP for loopback only.",
+    "scopes": "Scopes",
+    "created": "Created",
+    "confidential": "Confidential",
+    "public": "Public",
+    "registrationType": {
+      "manual": "Manual",
+      "dcr": "Dynamic (DCR)",
+      "cimd": "Metadata (CIMD)"
+    },
+    "authMethodValue": {
+      "none": "Public (none)",
+      "client_secret_basic": "Basic",
+      "client_secret_post": "Post body"
+    },
+    "edit": "Edit",
+    "rotateSecret": "Rotate secret",
+    "delete": "Delete",
+    "save": "Save",
+    "create": "Create client",
+    "createDialog": {
+      "title": "New OAuth client",
+      "description": "Register a client for OAuth 2.1 authorization."
+    },
+    "editDialog": {
+      "title": "Edit {{name}}",
+      "description": "Update the client name, redirect URIs, and scopes."
+    },
+    "deleteDialog": {
+      "title": "Delete {{name}}",
+      "description": "This revokes every token issued to this client and cannot be undone.",
+      "confirm": "Delete client"
+    },
+    "secret": {
+      "title": "Client secret for {{name}}",
+      "description": "Copy this secret now.",
+      "warning": "This secret is shown only once and cannot be retrieved later.",
+      "copy": "Copy",
+      "copied": "Copied",
+      "done": "Done"
+    },
+    "toasts": {
+      "created": "Client created.",
+      "updated": "Client updated.",
+      "rotated": "Secret rotated.",
+      "deleted": "Client deleted.",
+      "saveFailed": "Could not save the client.",
+      "rotateFailed": "Could not rotate the secret.",
+      "deleteFailed": "Could not delete the client."
+    },
+    "errors": {
+      "nameRequired": "Client name is required.",
+      "redirectUriRequired": "At least one redirect URI is required.",
+      "redirectUriInvalid": "Redirect URIs must be absolute HTTPS URLs, or HTTP on loopback.",
+      "scopeInvalid": "Unsupported scope selected.",
+      "loadFailed": "Could not load OAuth clients."
     }
   },
   "actions": {
@@ -426,7 +593,10 @@
     "running": "Running",
     "runningAction": "Running action...",
     "actionFailed": "Action failed.",
-    "loadingDetails": "Loading action details..."
+    "loadingDetails": "Loading action details...",
+    "useFromClient": "Use from your client",
+    "clientExampleHelp": "Copy an example for your gateway. Choose a connection when you have more than one.",
+    "clientGuide": "Setup guide"
   },
   "runs": {
     "noRunsTitle": "No runs yet",
@@ -720,6 +890,67 @@
     "openapi": {
       "title": "OpenAPI JSON",
       "description": "Use the generated spec from scripts or tool importers."
+    },
+    "onboarding": {
+      "eyebrow": "Your gateway is ready. Connect a client.",
+      "title": "Bring your gateway to your apps and agents",
+      "description": "Choose how you want to use this self-hosted gateway. Start with one action, then explore the services you have connected.",
+      "stepAddress": "Confirm the gateway address",
+      "stepClient": "Choose a client",
+      "stepAction": "Run your first action",
+      "prepare": "Confirm your connection details",
+      "prepareHelp": "Set the address once. Every example below uses your gateway.",
+      "gatewayUrl": "Your gateway base URL",
+      "gatewayHelp": "Use an address reachable from the client. Do not append /v1 or /mcp.",
+      "urlError": "Enter a full HTTP or HTTPS URL without credentials, query parameters, or a fragment.",
+      "authLabel": "Runtime authentication",
+      "tokenAuth": "Use a Runtime Token",
+      "oauthAuth": "OAuth 2.1",
+      "noAuth": "Authentication is off",
+      "oauthHelp": "MCP clients discover the OAuth 2.1 authorization server automatically. Dynamic client registration is available if your client needs it.",
+      "oauthPkceNote": "PKCE S256 is mandatory, and the resource parameter (the MCP resource URI) must be sent on the authorize and token requests.",
+      "oauthDiscovery": "OAuth 2.1 discovery endpoints",
+      "oauthCliSdkNote": "OAuth 2.1 applies to MCP clients. The CLI and SDK examples below authenticate with Runtime Tokens, which an OAuth-only gateway rejects: set the gateway auth mode to mixed, or supply an OAuth access token for these examples.",
+      "tokenHelp": "Create a token, then replace <RUNTIME_TOKEN> in the examples. Tokens are never stored on this page.",
+      "createToken": "Create a Runtime Token",
+      "tokenDifferenceTitle": "Which key do I need?",
+      "tokenDifference": "A Runtime Token authorizes clients to call your gateway. An OOMOL Key enables hosted services inside the gateway. Provider credentials stay on the gateway.",
+      "localhostHelp": "localhost refers to the client’s own device. Use your server address when the gateway runs on another machine.",
+      "clientTitle": "Choose how you will use the gateway",
+      "clientHelp": "All three clients discover and execute the same actions. Pick the workflow that fits your client.",
+      "mcpAudience": "Agent clients",
+      "cliAudience": "Terminal and scripts",
+      "sdkAudience": "Application code",
+      "mcpTitle": "Give your agent access to the gateway",
+      "mcpHelp": "Use an MCP client that supports remote HTTP servers and Authorization headers.",
+      "mcpConfigure": "Copy the configuration into your client’s MCP server settings. Replace the token placeholder if authentication is enabled.",
+      "mcpDiscover": "Ask the agent to use search_actions, then get_action_guide to inspect the selected action.",
+      "mcpExecute": "Try execute_action with the arguments shown on the right. list_connections helps select an account.",
+      "cliTitle": "Run actions from your terminal",
+      "cliHelp": "oo connector sends requests to your own gateway. You do not need to sign in to OOMOL for these commands.",
+      "cliInstall": "Install oo on the machine that will run your commands.",
+      "cliConfigure": "Set the gateway environment variables in the same terminal. They take precedence over saved connections and hosted keys.",
+      "cliExecute": "Search for an action, read its schema, and run it with JSON input.",
+      "sdkTitle": "Call actions from your application",
+      "sdkHelp": "Use OpenConnector for a self-hosted gateway. It is a thin client; credentials and provider requests stay on the gateway.",
+      "sdkInstall": "Install the SDK in your Node.js or TypeScript project.",
+      "sdkConfigure": "If authentication is enabled, set OOMOL_CONNECT_RUNTIME_TOKEN in your application environment.",
+      "sdkExecute": "Check health, inspect the catalog, and execute the same action from code.",
+      "install": "Install the client",
+      "configure": "Connect to your gateway",
+      "firstAction": "Try hackernews.get_top_stories",
+      "copy": "Copy code",
+      "copied": "Code copied",
+      "fullGuide": "Read the complete guide",
+      "platform": "Client operating system",
+      "tokenEnv": "Runtime Token in your application environment",
+      "nextTitle": "Ready for your own workflow?",
+      "nextHelp": "Hacker News needs no provider credentials. Next, choose one of your connected services. Every action has CLI and SDK examples.",
+      "browseActions": "Explore actions",
+      "actionDetails": "View this action",
+      "moreTitle": "Protocol references",
+      "sdkRunHelp": "Save the code above as client.mjs, then run it from the same terminal.",
+      "runExample": "Run the example"
     }
   },
   "authorize": {
@@ -739,12 +970,112 @@
     "failed": "Could not complete the authorization request.",
     "revokeHint": "The token is listed under API Key, where you can change its permissions or revoke it at any time."
   },
-  "hostedPromo": {
-    "title": "Welcome to Open Connect",
-    "headline": "One key. Start creating with AI.",
-    "description": "Generate images and videos with Kling, Seedance, MiniMax, and more.",
-    "offer": "Up to 30% off selected models",
-    "cta": "Get API key",
-    "dismiss": "Dismiss and don’t show again"
+  "saas": {
+    "authorizationSettings": "Authorization settings",
+    "updateKey": "Update key",
+    "keyStored": "Project key is saved with encryption.",
+    "manageProject": "Project maintenance",
+    "errors": {
+      "title": "Operation unsuccessful",
+      "encryption": "Set OOMOL_CONNECT_ENCRYPTION_KEY and restart Connect before saving the project key. Keep the same encryption key for future starts.",
+      "origin": "Set OOMOL_CONNECT_ORIGIN to your browser’s Console address and restart. Scheme, host and port must match; localhost and 127.0.0.1 differ.",
+      "blocked": "The cloud address was blocked. Check proxy Fake-IP and DNS settings so the hostname resolves to a public IP.",
+      "dns": "Could not resolve the cloud hostname. Check DNS on the machine running Connect.",
+      "network": "Could not connect to the cloud. Check the Connect machine’s network, proxy and TLS certificates.",
+      "redirect": "The cloud redirected the request. Redirects are blocked to protect the project key. Check the cloud address.",
+      "json": "The cloud did not return valid JSON. Check the endpoint, proxy or login interception page.",
+      "size": "The cloud response exceeded the size limit. Check the cloud service logs.",
+      "timeout": "The cloud request timed out. Check the network and try again.",
+      "key": "The project key is invalid or lacks permission. Use an API key from your cloud project, not a Marketplace key.",
+      "protocol": "The cloud API response is incompatible. Check the deployed cloud and Connect versions.",
+      "notFound": "The cloud resource was not found. Check the project configuration and API deployment.",
+      "inUse": "The project is still in use. Switch default authorization methods, remove its connections and resolve pending authorization and cleanup tasks.",
+      "mismatch": "The project or authorization configuration changed. Refresh and select it again.",
+      "rateLimit": "Too many requests. Please try again later.",
+      "configuration": "The cloud project is not configured correctly. Check its key, encryption settings and Console address.",
+      "scopes": "The cloud OAuth configuration lacks required permissions. Update its scopes in the cloud.",
+      "input": "Invalid input. Check the project key or selected configuration.",
+      "session": "Your Console session has expired. Sign in and try again.",
+      "unknown": "The operation could not be completed. Try again; if it persists, check the Connect server logs."
+    },
+    "configurationId": "Configuration ID",
+    "configurationDetails": "Configuration details",
+    "settingsDescription": "Choose where new accounts are authorized and their actions run.",
+    "settingsTitle": "{{name}} authorization settings",
+    "openProjects": "Open cloud projects",
+    "project": "OOMOL cloud authorization",
+    "projectDescription": "Connect third-party accounts such as Gmail through OOMOL cloud without configuring an OAuth app locally. Actions on these connections run in the cloud.",
+    "remoteNotice": "Action inputs and results pass through OOMOL cloud. Calls may consume project credits; no spending limit is set here.",
+    "projectId": "Project ID",
+    "projectKey": "Project API key",
+    "keyHint": "Enter the API key for your OOMOL cloud project, not a Marketplace key. Saved keys are never displayed. Enter a new key to replace it.",
+    "cleanup": "Cleanup: {{pending}} pending · {{manual}} need attention",
+    "paused": "Cleanup is paused. Update the project key to resume.",
+    "save": "Save project",
+    "saving": "Saving…",
+    "saved": "Saved.",
+    "failed": "The operation failed. Try again.",
+    "remove": "Remove project",
+    "removed": "Project removed.",
+    "removeHint": "First switch service defaults to local, remove SaaS connections, and resolve pending requests and cleanup tasks. Removing this configuration does not delete the SaaS project.",
+    "confirmRemove": "Confirm removal",
+    "defaultSource": "Authorization method",
+    "local": "Local OAuth app",
+    "remote": "OOMOL cloud",
+    "sourceHint": "Applies to new connections only. Existing connections keep their source when reconnecting.",
+    "loading": "Loading…",
+    "loadFailed": "Could not load",
+    "configUnavailable": "Unavailable",
+    "configUnavailableHint": "The saved cloud configuration is unavailable. Check the cloud project and its provider configuration, then check again or choose another authorization method.",
+    "noConfigs": "No compatible cloud configurations are available. Configure a cloud project and a matching provider configuration first.",
+    "saveSource": "Save source",
+    "capabilities": "{{count}} compatible actions",
+    "proxyYes": "Proxy supported",
+    "proxyNo": "Proxy unavailable",
+    "scopes": "Scopes",
+    "pending": "Waiting for authorization. Keep the completion page open.",
+    "connected": "Connection complete.",
+    "manualResult": "Authorization could not be confirmed. Check the SaaS project before starting again.",
+    "status": {
+      "unconfigured": "Not configured",
+      "available": "Available",
+      "unavailable": "Unavailable",
+      "auth_error": "Invalid project key"
+    },
+    "retry": "Check again"
+  },
+  "customMcp": {
+    "service": "Service identifier",
+    "serviceHelp": "Lowercase letters, digits, underscores or hyphens. Cannot be changed after creation.",
+    "add": "Add MCP service",
+    "description": "Connect a remote MCP server and discover its tools.",
+    "name": "Name",
+    "endpoint": "MCP endpoint",
+    "transport": "Transport",
+    "auth": "Authentication",
+    "noAuth": "No authentication",
+    "headers": "API key / Headers",
+    "headerHelp": "Define authentication headers here. Enter their values when creating a connection.",
+    "headerName": "Header name",
+    "prefix": "Prefix (optional)",
+    "removeHeader": "Remove header",
+    "addHeader": "Add header",
+    "oauthHelp": "Leave Client ID empty to register automatically. Authorize your account after adding the service.",
+    "manualOAuth": "Set OAuth endpoints manually",
+    "issuer": "Authorization server URL",
+    "authorizationUrl": "Authorization endpoint",
+    "tokenUrl": "Token endpoint",
+    "scopes": "Scopes (space-separated)",
+    "working": "Connecting…",
+    "settings": "MCP service",
+    "save": "Save",
+    "syncConnection": "Connection for tool discovery",
+    "synced": "{{count}} tools, last synced {{time}}",
+    "notSynced": "Connect an account to discover tools.",
+    "syncFailed": "Tool discovery failed. Check the connection and endpoint, then retry.",
+    "sync": "Sync tools",
+    "disable": "Disable",
+    "enable": "Enable",
+    "delete": "Delete service"
   }
 }

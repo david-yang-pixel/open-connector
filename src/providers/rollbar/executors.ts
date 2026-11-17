@@ -1,6 +1,5 @@
 import type { CredentialValidationResult, CredentialValidators, ProviderExecutors } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { createHash } from "node:crypto";
 import {
@@ -12,7 +11,8 @@ import {
   optionalString,
   requiredString,
 } from "../../core/cast.ts";
-import { defineApiKeyProviderExecutors, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "rollbar";
 const rollbarApiBaseUrl = "https://api.rollbar.com/api/1";
@@ -125,12 +125,10 @@ export const credentialValidators: CredentialValidators = {
         accountId: projectId ? `rollbar-project-${projectId}` : `rollbar-project-token-${tokenFingerprint}`,
         displayName: projectId ? `Rollbar project ${projectId}` : `Rollbar project token ${tokenFingerprint}`,
       },
-      grantedScopes: ["rollbar.project.read"],
       metadata: compactObject({
         apiBaseUrl: rollbarApiBaseUrl,
         validationEndpoint: "/environments",
         credentialKind: "project_access_token",
-        tokenScope: "read",
         environmentCount: environments.length,
         projectId,
         defaultEnvironment: firstEnvironment?.environment,
@@ -141,7 +139,7 @@ export const credentialValidators: CredentialValidators = {
 
 async function requestRollbarJson(input: {
   path: string;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   phase: RollbarRequestPhase;
   query?: Record<string, string | string[] | undefined>;
 }): Promise<RollbarRecord> {

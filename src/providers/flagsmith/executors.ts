@@ -5,15 +5,14 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString, requiredRecord } from "../../core/cast.ts";
 import { queryParams } from "../../core/request.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   isAbortLikeError,
   providerUserAgent,
   ProviderRequestError,
@@ -122,7 +121,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "flagsmith-environment-key",
         displayName: "Flagsmith Environment Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: flagsmithApiBaseUrl,
         validationEndpoint: flagsmithValidationPath,
@@ -136,7 +134,7 @@ async function requestFlagsmithJson(input: {
   method: "GET" | "POST";
   query?: Record<string, QueryValue>;
   body?: Record<string, unknown>;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   phase: FlagsmithRequestPhase;
 }): Promise<unknown> {
   const timeout = createProviderTimeout(input.context.signal);

@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { compactObject, optionalRecord, optionalString, positiveInteger, requiredString } from "../../core/cast.ts";
@@ -59,7 +59,6 @@ export async function validateVtexCredential(input: {
       accountId: `vtex:${accountName}.${environment}`,
       displayName: `VTEX ${accountName}`,
     },
-    grantedScopes: [],
     metadata: {
       accountName,
       environment,

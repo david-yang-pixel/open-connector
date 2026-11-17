@@ -4,8 +4,8 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderRequestContext } from "../provider-runtime.ts";
 
 import {
   compactObject,
@@ -14,12 +14,9 @@ import {
   optionalString,
   optionalStringOrNull,
 } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  requiredInputString,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, requiredInputString, providerInputError } from "../provider-runtime.ts";
 
 const service = "teltel";
 const teltelApiBaseUrl = "https://api.teltel.io/v2";
@@ -130,7 +127,6 @@ export const credentialValidators: CredentialValidators = {
       profile: {
         displayName: "TelTel API Key",
       },
-      grantedScopes: [],
       metadata: {
         validationEndpoint: "/account/balance",
         apiBaseUrl: teltelApiBaseUrl,
@@ -155,7 +151,7 @@ async function getTeltelAccountBalance(context: ApiKeyProviderContext): Promise<
 async function teltelRequest<T>(input: {
   path: string;
   apiKey: string;
-  context: Pick<ApiKeyProviderContext, "fetcher" | "signal">;
+  context: ProviderRequestContext;
   phase: TeltelRequestPhase;
   method?: "GET" | "POST";
   query?: Record<string, string | number | undefined>;
@@ -223,7 +219,7 @@ function createTeltelError(response: Response, payload: unknown, phase: TeltelRe
     return new ProviderRequestError(429, message);
   }
   if (phase === "validate" && (response.status === 401 || response.status === 403)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   return new ProviderRequestError(response.status || 500, message);
 }

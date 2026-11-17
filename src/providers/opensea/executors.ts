@@ -1,15 +1,11 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { createHash } from "node:crypto";
 import { looseArray, compactObject, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "opensea";
 const openseaApiBaseUrl = "https://api.opensea.io";
@@ -190,9 +186,7 @@ export const credentialValidators: CredentialValidators = {
       profile: {
         accountId: createHash("sha256").update(input.apiKey).digest("hex").slice(0, 16),
         displayName: "OpenSea API Key",
-        grantedScopes: [],
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: openseaApiBaseUrl,
         validationEndpoint: "/api/v2/collections",
@@ -205,7 +199,7 @@ export const credentialValidators: CredentialValidators = {
 
 async function requestOpensea(input: {
   path: string;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   phase: OpenseaRequestPhase;
   query?: Record<string, unknown>;
 }): Promise<unknown> {

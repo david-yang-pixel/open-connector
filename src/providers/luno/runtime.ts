@@ -1,13 +1,13 @@
 import type { ExecutionContext } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
 import { compactObject, optionalInteger, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
 import {
   providerInputError,
   providerUserAgent,
   ProviderRequestError,
-  requireApiKeyCredential,
   requiredInputString,
 } from "../provider-runtime.ts";
 export const lunoApiBaseUrl = "https://api.luno.com";
@@ -74,7 +74,6 @@ export async function validateLuno(
   signal?: AbortSignal,
 ): Promise<{
   profile: { accountId: string; displayName: string };
-  grantedScopes: string[];
   metadata: Record<string, unknown>;
 }> {
   const keyId = requiredString(input.values.keyId, "keyId", providerInputError);
@@ -95,7 +94,6 @@ export async function validateLuno(
   const name = optionalString(first?.name);
   return {
     profile: { accountId, displayName: name ? `Luno ${name}` : `Luno ${keyId}` },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: lunoApiBaseUrl,
       validationEndpoint: "/api/1/balance",

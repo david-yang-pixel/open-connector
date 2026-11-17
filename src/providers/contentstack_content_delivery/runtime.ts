@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -87,9 +87,7 @@ export async function validateContentstackContentDeliveryCredential(
         optionalString(firstContentType?.title) ??
         optionalString(firstContentType?.uid) ??
         "Contentstack Delivery Token",
-      grantedScopes: [],
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: contentstackContentDeliveryApiBaseUrl,
       validationEndpoint: "/content_types",
@@ -366,7 +364,7 @@ function createContentstackError(status: number, payload: unknown, phase: Conten
   const message =
     extractContentstackErrorMessage(payload) ?? `Contentstack Content Delivery request failed with status ${status}`;
   if (phase === "validate" && status >= 400 && status < 500) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (status >= 400 && status < 500) {
     return new ProviderRequestError(status, message);

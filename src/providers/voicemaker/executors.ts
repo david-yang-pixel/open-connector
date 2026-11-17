@@ -1,12 +1,9 @@
-import type { CredentialValidators, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ApiKeyProviderContext, ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderExecutors, CredentialValidators, ProviderProxyExecutor } from "../../core/types.ts";
+import type { ApiKeyProviderContext, ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-executors.ts";
 
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 async function post(
   path: string,
@@ -46,11 +43,9 @@ const handlers: ProviderActionHandlers<"voicemaker", ProviderRuntimeHandler<ApiK
   },
 };
 
-export const executors: import("../../core/types.ts").ProviderExecutors = defineApiKeyProviderExecutors(
-  "voicemaker",
-  handlers,
-  { skipDnsValidation: true },
-);
+export const executors: ProviderExecutors = defineApiKeyProviderExecutors("voicemaker", handlers, {
+  skipDnsValidation: true,
+});
 export const proxy: ProviderProxyExecutor = defineProviderProxy({
   service: "voicemaker",
   baseUrl: "https://developer.voicemaker.in",
@@ -69,7 +64,6 @@ export const credentialValidators: CredentialValidators = {
       throw new ProviderRequestError(502, "Voicemaker validation response omitted voices");
     return {
       profile: { accountId: "api_key", displayName: "Voicemaker API Key" },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: "https://developer.voicemaker.in",
         validationEndpoint: "/api/v1/voice/list",

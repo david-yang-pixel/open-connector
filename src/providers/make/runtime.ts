@@ -1,5 +1,5 @@
 import type { CredentialValidationResult, ResolvedCredential } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { compactObject, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
@@ -183,7 +183,6 @@ export async function validateMakeCredential(
       accountId: userId === undefined ? "api_key" : `make:${zoneUrl}:${userId}`,
       displayName: email ?? name ?? "Make API Token",
     },
-    grantedScopes: [],
     metadata: compactObject({
       zoneUrl,
       apiBaseUrl: buildMakeApiBaseUrl(zoneUrl),

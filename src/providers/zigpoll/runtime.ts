@@ -1,6 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
 import { providerUserAgent, ProviderRequestError, requiredInputString } from "../provider-runtime.ts";
@@ -10,8 +9,7 @@ export const zigpollApiBaseUrl = "https://v1.zigpoll.com";
 type ZigpollPhase = "validate" | "execute";
 type ZigpollMethod = "GET" | "POST";
 type ZigpollQueryValue = string | number | undefined;
-type ZigpollActionContext = ApiKeyProviderContext;
-type ZigpollActionHandler = (input: Record<string, unknown>, context: ZigpollActionContext) => Promise<unknown>;
+type ZigpollActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 
 interface ZigpollRequestInput {
   path: string;
@@ -121,7 +119,6 @@ export async function validateZigpollCredential(
       accountId: userId ?? email ?? "zigpoll",
       displayName: name ?? email ?? "Zigpoll API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: zigpollApiBaseUrl,
       validationEndpoint: "/me",
@@ -133,7 +130,7 @@ export async function validateZigpollCredential(
 
 async function requestZigpollJson(
   input: ZigpollRequestInput,
-  context: Pick<ZigpollActionContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: ZigpollPhase,
 ): Promise<unknown> {
   const url = buildZigpollUrl(input.path, input.query ?? {});

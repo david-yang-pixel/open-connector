@@ -4,14 +4,14 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderRequestContext } from "../provider-runtime.ts";
 
 import { compactObject, optionalNumber, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   isAbortLikeError,
   providerInputError,
   ProviderRequestError,
@@ -28,7 +28,7 @@ type AirbrakeActionHandler = ProviderRuntimeHandler<ApiKeyProviderContext>;
 interface AirbrakeRequestInput {
   path: string;
   apiKey: string;
-  context: Pick<ApiKeyProviderContext, "fetcher" | "signal">;
+  context: ProviderRequestContext;
   phase: AirbrakeRequestPhase;
   method?: string;
   query?: Record<string, AirbrakeQueryValue>;
@@ -225,7 +225,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: firstProject?.id == null ? "airbrake-api-key" : String(firstProject.id),
         displayName: firstProject?.name ? `Airbrake: ${firstProject.name}` : "Airbrake API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: airbrakeApiBaseUrl,
         validationEndpoint: "/api/v4/projects",

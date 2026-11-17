@@ -1,5 +1,5 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { OAuthProviderContext, ProviderActionHandlers } from "../provider-runtime.ts";
+import type { OAuthProviderContext, ProviderActionHandlers } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -13,7 +13,10 @@ import {
 } from "../../core/cast.ts";
 import { compactJson, encodePathSegment } from "../../core/request.ts";
 import { microsoftGraphJson, microsoftGraphRequest } from "../outlook/microsoft-graph.ts";
-import { defineOAuthProviderExecutors, defineProviderProxy, requiredInputString } from "../provider-runtime.ts";
+import { defineOAuthProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerInputError } from "../provider-runtime.ts";
+import { requiredInputString } from "../provider-runtime.ts";
 
 const service = "outlook_calendar";
 const graphBaseUrl = "https://graph.microsoft.com/v1.0";
@@ -134,11 +137,22 @@ async function listEvents(
   context: OAuthProviderContext,
   calendarView: boolean,
 ): Promise<unknown> {
-  const nextLinkValue = optionalString(input.nextLink);
+  // Graph v1.0 tracks calendar changes through calendarView/delta only
+  // (events/delta is a beta preview); a nextLink continues the current round,
+  // a deltaLink starts the next one.
+  const followUpLink = optionalString(input.nextLink) ?? (calendarView ? optionalString(input.deltaLink) : undefined);
+  const delta = calendarView && input.delta === true;
+  if (
+    delta &&
+    !followUpLink &&
+    [input.select, input.filter, input.orderby, input.expand].some((value) => value !== undefined)
+  ) {
+    throw providerInputError("Calendar view delta does not support select, filter, orderby or expand.");
+  }
   const calendar = optionalString(input.calendarId);
   const collection = calendarView ? "calendarView" : "events";
-  const path = calendar ? `me/calendars/${encodePathSegment(calendar)}/${collection}` : `me/${collection}`;
-  const query = nextLinkValue
+  const path = `${calendar ? `me/calendars/${encodePathSegment(calendar)}/${collection}` : `me/${collection}`}${delta ? "/delta" : ""}`;
+  const query = followUpLink
     ? undefined
     : compactObject({
         ...listQuery(input),
@@ -146,7 +160,7 @@ async function listEvents(
         endDateTime: calendarView ? optionalString(input.endDateTime) : undefined,
       });
   const payload = await microsoftGraphJson<Record<string, unknown>>(
-    nextLinkValue ?? path,
+    followUpLink ?? path,
     requestOptions(
       context,
       `list ${calendarView ? "calendar view" : "events"}`,
@@ -155,7 +169,10 @@ async function listEvents(
       preferTimeZone(input),
     ),
   );
-  return listOutput(payload, "events");
+  // Rows stay raw so a delta round's `@removed` markers pass through. Only the
+  // calendar view has delta rounds, so only it reports a deltaLink.
+  const output = listOutput(payload, "events");
+  return calendarView ? { ...output, deltaLink: optionalString(payload["@odata.deltaLink"]) ?? null } : output;
 }
 
 async function getEvent(input: Record<string, unknown>, context: OAuthProviderContext): Promise<unknown> {
@@ -324,6 +341,17 @@ function allowEventNextLink(pathname: string): boolean {
     return true;
   }
   const segments = pathname.split("/").filter(Boolean);
+  // Delta links end in a trailing `delta` segment on the same three shapes,
+  // and only for calendarView: events/delta is not on Graph v1.0.
+  const delta = segments.length > 3 && segments[segments.length - 1] === "delta";
+  if (delta) {
+    segments.pop();
+  }
+  const isEventCollection = (segment: string | undefined) =>
+    segment === "calendarView" || (!delta && segment === "events");
+  if (delta && segments.length === 3 && segments[0] === "v1.0" && segments[1] === "me") {
+    return isEventCollection(segments[2]);
+  }
   if (
     segments.length === 4 &&
     segments[0] === "v1.0" &&
@@ -331,13 +359,13 @@ function allowEventNextLink(pathname: string): boolean {
     segments[2]?.startsWith("calendars('") &&
     segments[2].endsWith("')")
   ) {
-    return segments[3] === "events" || segments[3] === "calendarView";
+    return isEventCollection(segments[3]);
   }
   return (
     segments.length === 5 &&
     segments[0] === "v1.0" &&
     segments[1] === "me" &&
     segments[2] === "calendars" &&
-    (segments[4] === "events" || segments[4] === "calendarView")
+    isEventCollection(segments[4])
   );
 }

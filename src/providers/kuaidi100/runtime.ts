@@ -1,10 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type {
-  ApiKeyProviderContext,
-  ProviderActionHandlers,
-  ProviderFetch,
-  ProviderRuntimeHandler,
-} from "../provider-runtime.ts";
+import type { ApiKeyProviderContext, ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 import type { Client } from "@modelcontextprotocol/client";
 
 import { ProtocolError, SdkHttpError, UnauthorizedError } from "@modelcontextprotocol/client";
@@ -47,7 +43,6 @@ export async function validateKuaidi100Credential(
   const hash = createHash("sha256").update(apiKey).digest("hex").slice(0, 16);
   return {
     profile: { accountId: `kuaidi100:mcp:${hash}`, displayName: `Kuaidi100 · ${hash.slice(-6)}` },
-    grantedScopes: [],
     metadata: { mcpEndpoint: kuaidi100McpEndpoint, discoveredToolCount: result.tools.length },
   };
 }
@@ -167,7 +162,7 @@ function normalizeKuaidi100Output(value: unknown): Record<string, unknown> {
 }
 
 function withKuaidi100Client<T>(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: Kuaidi100Phase,
   run: (client: Client) => Promise<T>,
 ): Promise<T> {
@@ -179,7 +174,7 @@ function withKuaidi100Client<T>(
       transport: "streamable_http",
       fetcher: context.fetcher,
       headers: { responseFormat: "json", "user-agent": providerUserAgent },
-      redirect: "error",
+      redirect: "manual",
       signal: context.signal,
       mapError: (error) => mapKuaidi100McpError(error, phase),
     },

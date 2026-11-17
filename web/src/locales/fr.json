@@ -16,7 +16,9 @@
     "showMore": "Afficher plus",
     "showing": "{{shown}} sur {{total}} affichés",
     "success": "Succès",
-    "unavailable": "Indisponible"
+    "unavailable": "Indisponible",
+    "cancel": "Annuler",
+    "undo": "Annuler"
   },
   "brand": {
     "subtitle": "Console du runtime local",
@@ -36,10 +38,11 @@
     "providers": "Fournisseurs",
     "marketplace": "Marketplace",
     "oauthApps": "Apps OAuth",
+    "oauthClients": "Clients OAuth",
     "actions": "Actions",
     "runs": "Exécutions",
     "access": "API Key",
-    "docs": "Docs"
+    "docs": "Connecter des clients"
   },
   "shell": {
     "invalidUnlockToken": "Saisissez un token administrateur valide pour déverrouiller la console.",
@@ -61,9 +64,14 @@
       "providers": {
         "title": "Fournisseurs"
       },
-      "marketplace": { "title": "Marketplace" },
+      "marketplace": {
+        "title": "Marketplace"
+      },
       "oauthApps": {
         "title": "Apps OAuth"
+      },
+      "oauthClients": {
+        "title": "Clients OAuth"
       },
       "actions": {
         "title": "Actions"
@@ -75,12 +83,16 @@
         "title": "API Key"
       },
       "resources": {
-        "title": "Ressources"
+        "title": "Connecter des clients"
       },
       "authorize": {
         "title": "Autoriser le client"
       }
-    }
+    },
+    "settings": "Paramètres",
+    "settingsDescription": "Gérer la langue, l’apparence, les connexions et le runtime.",
+    "oomolKeyDescription": "Découvrez les services et les offres, puis connectez ou gérez votre clé.",
+    "notifications": "Notifications"
   },
   "unlock": {
     "token": "Token administrateur",
@@ -114,10 +126,26 @@
     "noRecentCallsDescription": "Exécutez une action pour voir les appels par fournisseur."
   },
   "marketplace": {
+    "oneKey": {
+      "headline": "Une clé pour les services IA et de données",
+      "description": "Utilisez les services compatibles du catalogue avec une clé officielle OOMOL, sans inscription ni configuration séparée. Facturation à l’usage.",
+      "getKey": "Obtenir une OOMOL Key",
+      "haveKey": "Déjà une clé ? La connecter",
+      "benefitsLabel": "Fonctionnement de OOMOL Key",
+      "benefitSetup": "Pas de clé API à configurer pour chaque fournisseur",
+      "benefitChoice": "Les clés des fournisseurs restent utilisables",
+      "benefitPricing": "Réductions sur certains modèles, facturation à l’usage",
+      "connectTitle": "Connecter OOMOL Key",
+      "connectDescription": "Collez votre clé OOMOL pour vérifier et gérer les services compatibles.",
+      "keyLabel": "OOMOL Key",
+      "keyHelp": "Copiez la clé depuis la console OOMOL. Gérez ensuite les services compatibles ici.",
+      "advanced": "Avancé : source Marketplace",
+      "keyPlaceholder": "Collez votre clé API officielle OOMOL"
+    },
     "default": {
       "browseDescription": "Parcourir les fonctions disponibles",
-      "title": "Applications officielles",
-      "description": "Proposées par OOMOL Marketplace. Connectez une clé API officielle pour les utiliser.",
+      "title": "Services et actions disponibles avec OOMOL Key",
+      "description": "Seules les actions compatibles sont affichées. Certains services ne proposent pas toutes leurs fonctions via OOMOL Key.",
       "failed": "Le catalogue officiel est indisponible. Réessayez plus tard.",
       "retry": "Réessayer",
       "loading": "Chargement des applications…",
@@ -133,7 +161,10 @@
         "kling": "−30 %",
         "minimax": "−20 %",
         "seedance": "−10 %"
-      }
+      },
+      "supportedActions": "{{count}} actions disponibles",
+      "connected": "Connecté",
+      "providerDetails": "Voir le fournisseur"
     },
     "summary": {
       "title": "Connector Marketplace",
@@ -147,7 +178,10 @@
       "unavailable": "Indisponible",
       "auth_error": "Erreur d’authentification"
     },
-    "pricing": { "free": "Gratuit", "metered": "Usage mesuré" },
+    "pricing": {
+      "free": "Gratuit",
+      "metered": "Usage mesuré"
+    },
     "configuration": {
       "reconnect": "Cette source n’est pas prête. Vérifiez la configuration ci-dessus et relancez la validation.",
       "title": "Configuration",
@@ -189,25 +223,68 @@
     }
   },
   "providers": {
+    "managedEmpty": {
+      "title": "Aucune connexion configurée",
+      "description": "Connectez OOMOL Key ci-dessus ou ouvrez un fournisseur dans Découvrir les connexions pour ajouter vos identifiants."
+    },
+    "hostedAccess": {
+      "connectedCustom": "La source gérée est connectée. Consultez les services dans les connexions configurées.",
+      "intro": "Une clé OOMOL pour les services IA et de données compatibles, ou vos propres clés fournisseur.",
+      "connected": "Les comptes intégrés sont connectés. Consultez les services dans les connexions configurées.",
+      "connect": "Connecter OOMOL Key",
+      "manage": "Gérer OOMOL Key",
+      "close": "Masquer les paramètres",
+      "features": "Services disponibles",
+      "hideFeatures": "Replier les fonctions",
+      "removeKey": "Supprimer la clé",
+      "removeHelp": "Supprimer la clé enregistrée et désactiver tous les comptes intégrés ? Vos identifiants personnels seront conservés.",
+      "confirmRemove": "Confirmer la suppression",
+      "hide": "Masquer la recommandation OOMOL Key",
+      "restore": "OOMOL Key",
+      "hiddenNotice": "Retrouvez-le dans Paramètres ⚙️ en haut à droite → OOMOL Key.",
+      "hiddenTitle": "OOMOL Key masqué"
+    },
+    "managedSources": {
+      "label": "Source de connexion",
+      "all": "Tout",
+      "builtIn": "Comptes intégrés",
+      "ownKey": "Identifiants personnels"
+    },
+    "oneKey": {
+      "title": "Utiliser OOMOL Key",
+      "description": "Accédez à {{name}} avec une seule clé OOMOL, sans configurer séparément la clé du fournisseur.",
+      "alternative": "Vous pouvez aussi configurer la clé du fournisseur ci-dessous.",
+      "connect": "Connecter OOMOL Key",
+      "available": "Compatible avec OOMOL Key",
+      "builtIn": "Compte intégré",
+      "connectedTitle": "Compte intégré",
+      "connectedDescription": "Ce service peut utiliser le compte intégré fourni par {{name}}."
+    },
     "catalogTitle": "Fournisseurs",
     "viewLabel": "Vue des fournisseurs",
-    "views": { "manage": "Mes connexions", "discover": "Découvrir des apps" },
+    "views": {
+      "manage": "Connexions configurées",
+      "discover": "Découvrir les connexions"
+    },
     "discovery": {
       "browseByTask": "Parcourir par tâche",
       "explore": "Explorer les apps",
       "scenarios": {
-        "ai": { "title": "IA et agents", "description": "Modèles, agents, recherche et génération de médias" },
+        "ai": {
+          "title": "IA et agents",
+          "description": "Modèles, agents, recherche et génération de médias"
+        },
+        "investment": {
+          "title": "Investissement et trading",
+          "description": "Actions, cryptoactifs, données de marché, portefeuilles et transactions"
+        },
         "crossBorderEcommerce": {
           "title": "Opérations e-commerce",
           "description": "Boutiques, commandes, exécution et données de marché"
         },
         "communication": {
-          "title": "Collaboration d’équipe",
-          "description": "Messagerie, e-mail, réunions et notifications"
-        },
-        "docs": {
-          "title": "Documents et connaissances",
-          "description": "Documents, bases de connaissances, drives et tableurs"
+          "title": "Collaboration et connaissances",
+          "description": "Messagerie, e-mail, réunions, documents, drives et bases de connaissances"
         },
         "productivity": {
           "title": "Projets et productivité",
@@ -221,7 +298,10 @@
           "title": "Données et analytique",
           "description": "Entrepôts, bases de données, BI et stockage"
         },
-        "developer": { "title": "Développement et cloud", "description": "Code, déploiement, cloud et observabilité" }
+        "developer": {
+          "title": "Développement et cloud",
+          "description": "Code, déploiement, cloud et observabilité"
+        }
       }
     },
     "brandNotice": "Les noms, logos et marques de tiers appartiennent à leurs propriétaires respectifs et sont affichés uniquement pour identifier les fournisseurs correspondants. Ce projet ne revendique aucun droit sur ceux-ci. Les utilisateurs qui redistribuent ou commercialisent ce projet doivent consulter les règles applicables aux marques et obtenir les autorisations nécessaires à leur usage.",
@@ -230,6 +310,8 @@
     "filters": {
       "all": "Tous",
       "connected": "Connectés",
+      "oneKey": "Compatible avec OOMOL Key",
+      "noSetup": "Sans configuration",
       "notConnected": "Non connectés",
       "oauthNeedsConfig": "OAuth à configurer"
     },
@@ -310,6 +392,8 @@
       "noAuth": "Sans auth"
     },
     "connectionMessages": {
+      "disconnectNotice": "« {{name}} » déconnecté",
+      "cloudDisconnectNotice": "Le compte cloud sera supprimé en arrière-plan.",
       "noAuth": "Ce fournisseur s’exécute sans identifiants locaux.",
       "needsOAuthClient": "{{name}} nécessite un client OAuth local avant la connexion.",
       "manualOAuthClient": "Connectez {{name}} avec une application OAuth personnalisée.",
@@ -365,13 +449,21 @@
       "callbackUrl": "URL de callback",
       "clientId": "Client ID",
       "clientSecret": "Client Secret",
-      "storedSecretHint": "Le secret enregistré n’est pas affiché. Saisissez-le à nouveau pour enregistrer les modifications.",
+      "storedSecretHint": "Laissez vide pour conserver le secret enregistré. Saisissez une nouvelle valeur pour le remplacer.",
+      "clearSecret": "Effacer {{name}} lors de l’enregistrement",
       "saving": "Enregistrement du client OAuth...",
       "saved": "Client OAuth enregistré.",
       "failed": "Échec de l’enregistrement du client OAuth.",
       "resetting": "Réinitialisation du client OAuth...",
       "reset": "Client OAuth réinitialisé.",
-      "resetFailed": "Échec de la réinitialisation du client OAuth."
+      "resetFailed": "Échec de la réinitialisation du client OAuth.",
+      "useDefaultScopes": "Utiliser les autorisations par défaut",
+      "scopeLabel": "Autorisations OAuth",
+      "emptyScopes": "Seules les autorisations de base nécessaires à la connexion seront demandées.",
+      "removeScope": "Retirer {{scope}}",
+      "scopePlaceholder": "Ajouter un scope",
+      "additionalScopes": "Autorisations supplémentaires",
+      "advancedScopes": "Paramètres avancés"
     },
     "execution": {
       "executable": "Exécutable",
@@ -397,6 +489,75 @@
     "dialog": {
       "configureTitle": "Configurer l’app OAuth {{name}}",
       "editTitle": "Modifier l’app OAuth {{name}}"
+    }
+  },
+  "oauthClients": {
+    "title": "Clients OAuth",
+    "description": "Gérez les clients qui se connectent au point de terminaison MCP avec OAuth 2.1.",
+    "newClient": "Nouveau client",
+    "emptyTitle": "Aucun client OAuth",
+    "emptyDescription": "Inscrivez un client pour que les clients MCP se connectent avec OAuth.",
+    "clientName": "Nom du client",
+    "clientId": "Identifiant client",
+    "registration": "Inscription",
+    "authMethod": "Auth du point de terminaison de jeton",
+    "redirectUris": "URIs de redirection",
+    "redirectUrisHint": "Un URI par ligne. HTTPS, ou HTTP pour la boucle locale uniquement.",
+    "scopes": "Portées",
+    "created": "Créé",
+    "confidential": "Confidentiel",
+    "public": "Public",
+    "registrationType": {
+      "manual": "Manuelle",
+      "dcr": "Dynamique (DCR)",
+      "cimd": "Métadonnées (CIMD)"
+    },
+    "authMethodValue": {
+      "none": "Public (aucune)",
+      "client_secret_basic": "Basic",
+      "client_secret_post": "Corps de la requête"
+    },
+    "edit": "Modifier",
+    "rotateSecret": "Renouveler le secret",
+    "delete": "Supprimer",
+    "save": "Enregistrer",
+    "create": "Créer le client",
+    "createDialog": {
+      "title": "Nouveau client OAuth",
+      "description": "Inscrivez un client pour l’autorisation OAuth 2.1."
+    },
+    "editDialog": {
+      "title": "Modifier {{name}}",
+      "description": "Mettez à jour le nom du client, les URIs de redirection et les portées."
+    },
+    "deleteDialog": {
+      "title": "Supprimer {{name}}",
+      "description": "Tous les jetons émis pour ce client seront révoqués. Cette action est irréversible.",
+      "confirm": "Supprimer le client"
+    },
+    "secret": {
+      "title": "Secret du client {{name}}",
+      "description": "Copiez ce secret maintenant.",
+      "warning": "Ce secret n’est affiché qu’une seule fois et ne pourra pas être récupéré plus tard.",
+      "copy": "Copier",
+      "copied": "Copié",
+      "done": "Terminé"
+    },
+    "toasts": {
+      "created": "Client créé.",
+      "updated": "Client mis à jour.",
+      "rotated": "Secret renouvelé.",
+      "deleted": "Client supprimé.",
+      "saveFailed": "Impossible d’enregistrer le client.",
+      "rotateFailed": "Impossible de renouveler le secret.",
+      "deleteFailed": "Impossible de supprimer le client."
+    },
+    "errors": {
+      "nameRequired": "Le nom du client est requis.",
+      "redirectUriRequired": "Au moins un URI de redirection est requis.",
+      "redirectUriInvalid": "Les URIs de redirection doivent être des URL HTTPS absolues, ou HTTP sur la boucle locale.",
+      "scopeInvalid": "Portée non prise en charge.",
+      "loadFailed": "Impossible de charger les clients OAuth."
     }
   },
   "actions": {
@@ -432,7 +593,10 @@
     "running": "Exécution",
     "runningAction": "Exécution de l’action...",
     "actionFailed": "Échec de l’action.",
-    "loadingDetails": "Chargement des détails de l’action…"
+    "loadingDetails": "Chargement des détails de l’action…",
+    "useFromClient": "Utiliser depuis votre client",
+    "clientExampleHelp": "Copiez un exemple pour votre passerelle. Choisissez une connexion si vous avez plusieurs comptes.",
+    "clientGuide": "Guide de connexion"
   },
   "runs": {
     "noRunsTitle": "Aucune exécution",
@@ -726,6 +890,67 @@
     "openapi": {
       "title": "JSON OpenAPI",
       "description": "Utilisez la spec générée depuis des scripts ou des importateurs d’outils."
+    },
+    "onboarding": {
+      "eyebrow": "Votre passerelle est prête. Connectez un client.",
+      "title": "Utilisez votre passerelle dans vos applications et agents",
+      "description": "Choisissez un mode de connexion à votre passerelle auto-hébergée. Exécutez une action, puis découvrez vos services connectés.",
+      "stepAddress": "Vérifier l’adresse",
+      "stepClient": "Choisir un client",
+      "stepAction": "Exécuter une action",
+      "prepare": "Vérifiez la connexion",
+      "prepareHelp": "Renseignez l’adresse une fois. Tous les exemples utilisent votre passerelle.",
+      "gatewayUrl": "URL de base de votre passerelle",
+      "gatewayHelp": "Utilisez une adresse accessible au client, sans ajouter /v1 ou /mcp.",
+      "urlError": "Saisissez une URL HTTP ou HTTPS complète, sans identifiants, paramètres ni fragment.",
+      "authLabel": "Authentification du runtime",
+      "tokenAuth": "Utiliser un Runtime Token",
+      "oauthAuth": "OAuth 2.1",
+      "noAuth": "Authentification désactivée",
+      "oauthHelp": "Les clients MCP découvrent automatiquement le serveur d’autorisation OAuth 2.1. L’inscription dynamique de clients est disponible si votre client en a besoin.",
+      "oauthPkceNote": "PKCE S256 est obligatoire, et le paramètre resource (l’URI de ressource MCP) doit être envoyé dans les requêtes authorize et token.",
+      "oauthDiscovery": "Points de terminaison de découverte OAuth 2.1",
+      "oauthCliSdkNote": "OAuth 2.1 concerne les clients MCP. Les exemples CLI et SDK ci-dessous s’authentifient avec des Runtime Tokens, qu’une passerelle en mode OAuth seul refuse : passez la passerelle en mode mixte ou fournissez un jeton d’accès OAuth pour ces exemples.",
+      "tokenHelp": "Créez un jeton et remplacez <RUNTIME_TOKEN>. Cette page ne conserve aucun jeton.",
+      "createToken": "Créer un Runtime Token",
+      "tokenDifferenceTitle": "Quelle clé utiliser ?",
+      "tokenDifference": "Le Runtime Token autorise les appels à votre passerelle. OOMOL Key active les services hébergés. Les identifiants des fournisseurs restent sur la passerelle.",
+      "localhostHelp": "localhost désigne la machine du client. Utilisez l’adresse du serveur si la passerelle est sur une autre machine.",
+      "clientTitle": "Choisissez votre mode de connexion",
+      "clientHelp": "Les trois clients découvrent et exécutent les mêmes actions. Choisissez celui qui vous convient.",
+      "mcpAudience": "Clients agents",
+      "cliAudience": "Terminal et scripts",
+      "sdkAudience": "Code applicatif",
+      "mcpTitle": "Donnez accès à la passerelle à votre agent",
+      "mcpHelp": "Utilisez un client MCP compatible avec les serveurs HTTP distants et les en-têtes Authorization.",
+      "mcpConfigure": "Copiez la configuration dans les paramètres MCP du client. Remplacez le jeton si nécessaire.",
+      "mcpDiscover": "Utilisez search_actions, puis get_action_guide pour consulter les paramètres.",
+      "mcpExecute": "Essayez execute_action avec les arguments affichés. list_connections permet de choisir un compte.",
+      "cliTitle": "Exécutez les actions dans un terminal",
+      "cliHelp": "oo connector utilise votre propre passerelle. Ces commandes ne nécessitent pas de compte OOMOL.",
+      "cliInstall": "Installez oo sur la machine qui exécutera les commandes.",
+      "cliConfigure": "Définissez les variables dans le même terminal. Elles ont priorité sur les connexions enregistrées et les clés hébergées.",
+      "cliExecute": "Recherchez une action, consultez son schéma et exécutez-la avec du JSON.",
+      "sdkTitle": "Appelez les actions depuis votre application",
+      "sdkHelp": "Utilisez OpenConnector pour votre passerelle. Le SDK est un client léger ; les identifiants et les appels aux fournisseurs restent sur la passerelle.",
+      "sdkInstall": "Installez le SDK dans votre projet Node.js ou TypeScript.",
+      "sdkConfigure": "Si l’authentification est activée, définissez OOMOL_CONNECT_RUNTIME_TOKEN dans l’environnement de l’application.",
+      "sdkExecute": "Vérifiez la connexion, consultez le catalogue et exécutez une action.",
+      "install": "Installer le client",
+      "configure": "Connecter votre passerelle",
+      "firstAction": "Essayer hackernews.get_top_stories",
+      "copy": "Copier le code",
+      "copied": "Code copié",
+      "fullGuide": "Lire le guide complet",
+      "platform": "Système du client",
+      "tokenEnv": "Jeton dans l’environnement de l’application",
+      "nextTitle": "Prêt pour votre propre workflow ?",
+      "nextHelp": "Hacker News ne nécessite pas d’identifiants fournisseur. Choisissez ensuite un service connecté : chaque action propose des exemples CLI et SDK.",
+      "browseActions": "Explorer les actions",
+      "actionDetails": "Voir cette action",
+      "moreTitle": "Références des protocoles",
+      "sdkRunHelp": "Enregistrez le code dans client.mjs et exécutez-le dans le même terminal.",
+      "runExample": "Exécuter l’exemple"
     }
   },
   "authorize": {
@@ -745,12 +970,112 @@
     "failed": "Impossible de terminer la demande d’autorisation.",
     "revokeHint": "Le jeton apparaît dans API Key, où vous pouvez modifier ses autorisations ou le révoquer à tout moment."
   },
-  "hostedPromo": {
-    "title": "Bienvenue sur Open Connect",
-    "headline": "Une clé pour créer avec l’IA",
-    "description": "Générez des images et des vidéos avec Kling, Seedance, MiniMax et d’autres modèles.",
-    "offer": "Jusqu’à −30 % sur certains modèles",
-    "cta": "Obtenir une clé API",
-    "dismiss": "Fermer et ne plus afficher"
+  "saas": {
+    "authorizationSettings": "Paramètres d’autorisation",
+    "updateKey": "Mettre à jour la clé",
+    "keyStored": "La clé du projet est enregistrée et chiffrée.",
+    "manageProject": "Maintenance du projet",
+    "errors": {
+      "title": "Opération non terminée",
+      "encryption": "Définissez OOMOL_CONNECT_ENCRYPTION_KEY et redémarrez Connect. Conservez cette clé pour les prochains démarrages.",
+      "origin": "Définissez OOMOL_CONNECT_ORIGIN sur l’adresse exacte de la Console puis redémarrez. Protocole, hôte et port doivent correspondre.",
+      "blocked": "Adresse cloud bloquée. Vérifiez Fake-IP et le DNS pour obtenir une adresse IP publique.",
+      "dns": "Résolution du domaine cloud impossible. Vérifiez le DNS de Connect.",
+      "network": "Connexion au cloud impossible. Vérifiez le réseau, le proxy et les certificats TLS de Connect.",
+      "redirect": "Redirection bloquée pour protéger la clé du projet. Vérifiez l’adresse cloud.",
+      "json": "Réponse JSON invalide. Vérifiez l’API, le proxy et les pages de connexion intermédiaires.",
+      "size": "Réponse trop volumineuse. Consultez les journaux cloud.",
+      "timeout": "Délai de connexion au cloud dépassé. Vérifiez le réseau.",
+      "key": "Clé invalide ou non autorisée. Utilisez une clé API du projet cloud, pas une clé Marketplace.",
+      "protocol": "Format API incompatible. Vérifiez les versions cloud et Connect déployées.",
+      "notFound": "Ressource cloud introuvable. Vérifiez la configuration et le déploiement API.",
+      "inUse": "Projet encore utilisé. Changez la méthode d’autorisation, supprimez les connexions et terminez les tâches en attente.",
+      "mismatch": "La configuration a changé. Actualisez puis sélectionnez-la à nouveau.",
+      "rateLimit": "Trop de requêtes. Réessayez plus tard.",
+      "configuration": "Vérifiez la clé du projet, le chiffrement et l’adresse de la Console.",
+      "scopes": "Permissions OAuth insuffisantes. Mettez à jour les autorisations dans le cloud.",
+      "input": "Entrée invalide. Vérifiez la clé ou la configuration sélectionnée.",
+      "session": "Session expirée. Reconnectez-vous à la Console.",
+      "unknown": "Opération impossible. Réessayez, puis consultez les journaux Connect si le problème persiste."
+    },
+    "configurationId": "ID de configuration",
+    "configurationDetails": "Détails de la configuration",
+    "settingsDescription": "Choisissez où autoriser les nouveaux comptes et exécuter leurs actions.",
+    "settingsTitle": "Autorisation de {{name}}",
+    "openProjects": "Ouvrir les projets cloud",
+    "project": "Autorisation via le cloud OOMOL",
+    "projectDescription": "Connectez des comptes tiers comme Gmail via le cloud OOMOL sans configurer d’application OAuth en local. Les actions sur ces connexions sont exécutées dans le cloud.",
+    "remoteNotice": "Les données envoyées et les résultats transitent par le cloud OOMOL. Les appels peuvent consommer des crédits du projet ; aucun plafond de dépenses n’est défini ici.",
+    "projectId": "Identifiant du projet",
+    "projectKey": "Clé API du projet",
+    "keyHint": "Saisissez la clé API de votre projet cloud OOMOL, pas celle du Marketplace. Les clés enregistrées ne sont jamais affichées. Saisissez une nouvelle clé pour la remplacer.",
+    "cleanup": "Nettoyage : {{pending}} en attente · {{manual}} à vérifier",
+    "paused": "Le nettoyage est suspendu. Mettez à jour la clé du projet pour le reprendre.",
+    "save": "Enregistrer le projet",
+    "saving": "Enregistrement…",
+    "saved": "Enregistré.",
+    "failed": "Échec de l’opération. Réessayez.",
+    "remove": "Retirer la configuration",
+    "removed": "Configuration retirée.",
+    "removeHint": "Rétablissez les sources locales par défaut, retirez les connexions SaaS et traitez les demandes et nettoyages en attente. Retirer cette configuration ne supprime pas le projet SaaS.",
+    "confirmRemove": "Confirmer le retrait",
+    "defaultSource": "Méthode d’autorisation",
+    "local": "Application OAuth locale",
+    "remote": "Cloud OOMOL",
+    "sourceHint": "S’applique uniquement aux nouvelles connexions. Les connexions existantes conservent leur source lors de la reconnexion.",
+    "loading": "Chargement…",
+    "loadFailed": "Chargement impossible",
+    "configUnavailable": "Indisponible",
+    "configUnavailableHint": "La configuration cloud enregistrée est indisponible. Vérifiez le projet cloud et la configuration du fournisseur, puis réessayez ou choisissez une autre méthode d’autorisation.",
+    "noConfigs": "Aucune configuration cloud compatible disponible. Configurez d’abord un projet cloud et le fournisseur correspondant.",
+    "saveSource": "Enregistrer la source",
+    "capabilities": "{{count}} opérations compatibles",
+    "proxyYes": "Proxy pris en charge",
+    "proxyNo": "Proxy indisponible",
+    "scopes": "Autorisations",
+    "pending": "En attente d’autorisation. Gardez la page de confirmation ouverte.",
+    "connected": "Connexion établie.",
+    "manualResult": "L’autorisation n’a pas pu être confirmée. Vérifiez le projet SaaS avant de recommencer.",
+    "status": {
+      "unconfigured": "Non configuré",
+      "available": "Disponible",
+      "unavailable": "Indisponible",
+      "auth_error": "Clé du projet invalide"
+    },
+    "retry": "Vérifier à nouveau"
+  },
+  "customMcp": {
+    "service": "Identifiant du service",
+    "serviceHelp": "Lettres minuscules, chiffres, tirets ou traits de soulignement. Non modifiable après la création.",
+    "add": "Ajouter un service MCP",
+    "description": "Connectez un serveur MCP distant pour découvrir ses outils.",
+    "name": "Nom",
+    "endpoint": "Adresse MCP",
+    "transport": "Mode de transport",
+    "auth": "Authentification",
+    "noAuth": "Sans authentification",
+    "headers": "Clé API / En-têtes",
+    "headerHelp": "Définissez les en-têtes ici. Saisissez leurs valeurs lors de la création de la connexion.",
+    "headerName": "Nom de l’en-tête",
+    "prefix": "Préfixe (facultatif)",
+    "removeHeader": "Supprimer l’en-tête",
+    "addHeader": "Ajouter un en-tête",
+    "oauthHelp": "Laissez Client ID vide pour une inscription automatique. Autorisez votre compte après l’ajout du service.",
+    "manualOAuth": "Configurer les points OAuth manuellement",
+    "issuer": "URL du serveur d’autorisation",
+    "authorizationUrl": "Point d’autorisation",
+    "tokenUrl": "Point de jeton",
+    "scopes": "Portées (séparées par des espaces)",
+    "working": "Connexion…",
+    "settings": "Service MCP",
+    "save": "Enregistrer",
+    "syncConnection": "Connexion pour découvrir les outils",
+    "synced": "{{count}} outils, dernière synchronisation {{time}}",
+    "notSynced": "Connectez un compte pour découvrir les outils.",
+    "syncFailed": "Échec de la découverte. Vérifiez la connexion et l’adresse, puis réessayez.",
+    "sync": "Synchroniser les outils",
+    "disable": "Désactiver",
+    "enable": "Activer",
+    "delete": "Supprimer le service"
   }
 }

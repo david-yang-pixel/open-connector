@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
@@ -11,11 +11,12 @@ import {
   providerUserAgent,
   ProviderRequestError,
   requiredInputString,
+  providerInputError,
+  defaultProviderRequestTimeoutMs,
 } from "../provider-runtime.ts";
 
 export const gongDefaultApiBaseUrl = "https://api.gong.io";
 
-const gongDefaultTimeoutMs = 30_000;
 const gongCredentialHelpUrl = "https://help.gong.io/docs/receive-access-to-the-api";
 
 type GongRequestPhase = "validate" | "execute";
@@ -140,7 +141,6 @@ export async function validateGongCredential(
       accountId: buildProviderAccountId(context.apiBaseUrl, context.accessKey),
       displayName: firstUserEmail ?? "Gong API",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: context.apiBaseUrl,
       validationEndpoint: "/v2/users",
@@ -159,7 +159,7 @@ async function requestGongJson(input: {
   body?: Record<string, unknown>;
   phase: GongRequestPhase;
 }): Promise<unknown> {
-  const timeout = createProviderTimeout(input.context.signal, gongDefaultTimeoutMs);
+  const timeout = createProviderTimeout(input.context.signal);
   try {
     const response = await input.context.fetcher(buildGongUrl(input.context.apiBaseUrl, input.path, input.query), {
       method: input.method,
@@ -179,7 +179,7 @@ async function requestGongJson(input: {
     if (timeout.didTimeout() || isAbortLikeError(error)) {
       throw new ProviderRequestError(
         504,
-        `Gong ${input.path} request timed out after ${gongDefaultTimeoutMs / 1000} seconds`,
+        `Gong ${input.path} request timed out after ${defaultProviderRequestTimeoutMs / 1000} seconds`,
       );
     }
 
@@ -206,7 +206,7 @@ export function normalizeGongApiBaseUrl(value: string): string {
 
   assertPublicHttpUrl(url.toString(), {
     fieldName: "apiBaseUrl",
-    createError: (message) => new ProviderRequestError(400, message),
+    createError: providerInputError,
   });
   url.search = "";
   url.hash = "";
@@ -269,10 +269,10 @@ function mapGongHttpError(status: number, message: string, phase: GongRequestPha
     return new ProviderRequestError(429, message);
   }
   if (phase === "validate" && [400, 401, 403].includes(status)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if ([400, 404].includes(status)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if ([401, 403].includes(status)) {
     return new ProviderRequestError(status, message);

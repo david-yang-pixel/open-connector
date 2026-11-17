@@ -1,7 +1,9 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
 import type { ProviderFetch } from "../provider-runtime.ts";
 
-import { defineProviderExecutors, defineProviderProxy, ProviderRequestError } from "../provider-runtime.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError } from "../provider-runtime.ts";
 import {
   createQichachaToken,
   executeQichachaAction,
@@ -38,7 +40,6 @@ export const credentialValidators: CredentialValidators = {
     requireQichachaCredentials(input.values);
     return Promise.resolve({
       profile: { accountId: input.values.appKey!, displayName: "Qichacha AppKey" },
-      grantedScopes: [],
       metadata: { validationMode: "format_only" },
     });
   },

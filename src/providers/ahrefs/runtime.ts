@@ -1,9 +1,10 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { compactObject, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
-import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
+import { providerUserAgent, ProviderRequestError, providerInputError } from "../provider-runtime.ts";
 
 export const ahrefsApiBaseUrl = "https://api.ahrefs.com/v3";
 
@@ -62,7 +63,6 @@ export async function validateAhrefsCredential(
     profile: {
       displayName: "Ahrefs API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: ahrefsApiBaseUrl,
       validationEndpoint: limitsAndUsagePath,
@@ -201,7 +201,7 @@ function createAhrefsError(status: number, payload: unknown, phase: AhrefsPhase)
   }
 
   if (phase === "validate" && (status === 401 || status === 403)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
 
   if (phase === "execute" && (status === 401 || status === 403)) {
@@ -209,7 +209,7 @@ function createAhrefsError(status: number, payload: unknown, phase: AhrefsPhase)
   }
 
   if (phase === "execute" && [400, 404, 422].includes(status)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
 
   return new ProviderRequestError(status || 500, message);

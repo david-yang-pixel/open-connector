@@ -5,17 +5,13 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
 import { compactJson, queryParams } from "../../core/request.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 
 const service = "certifier";
 const apiBaseUrl = "https://api.certifier.io/v1";
@@ -92,7 +88,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "api_key",
         displayName: "Certifier Access Token",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl,
         validationEndpoint: "/groups",
@@ -117,7 +112,7 @@ async function listCollection(
 
 async function requestCertifierJson(
   path: string,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   options: { method?: "GET" | "POST"; query?: Record<string, unknown>; body?: unknown } = {},
 ): Promise<unknown> {
   const url = new URL(path, `${apiBaseUrl}/`);

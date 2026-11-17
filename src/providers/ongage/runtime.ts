@@ -1,6 +1,7 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import {
   compactObject,
@@ -77,7 +78,6 @@ export async function validateOngageCredential(
     profile: {
       accountId: accountId === undefined ? "ongage" : String(accountId),
       displayName: accountId === undefined ? "Ongage API Key" : `Ongage Account ${accountId}`,
-      grantedScopes: [],
     },
     metadata: compactObject({
       apiBaseUrl: ongageApiBaseUrl,

@@ -5,24 +5,22 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { createHash, createHmac } from "node:crypto";
 import { compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
+import { requireCustomCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
 import {
-  createProviderFetch,
   createProviderProxyUrl,
-  defineProviderExecutors,
   normalizeProviderProxyEndpoint,
   normalizeProviderProxyHeaders,
   normalizeProviderProxyQuery,
-  ProviderRequestError,
-  providerUserAgent,
   readProviderProxyErrorMessage,
   readProviderProxyResponse,
-  requireCustomCredential,
   toProviderProxyError,
-} from "../provider-runtime.ts";
+} from "../provider-proxy.ts";
+import { createProviderFetch, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "jimeng_ai";
 const jimengAiFetch = createProviderFetch({ skipDnsValidation: true });
@@ -230,7 +228,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: `jimeng_ai:${hashCredentialId(credentials.accessKeyId)}`,
         displayName: `Jimeng AI - ${credentials.accessKeyId}`,
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: jimengApiOrigin,
         validationAction: getResultAction,

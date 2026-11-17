@@ -1,15 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-  runProviderRequest,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError, runProviderRequest } from "../provider-runtime.ts";
 
 export const ninoxApiBaseUrl = "https://api.ninox.com/v1";
 
@@ -22,7 +17,7 @@ type NinoxActionHandler = (input: Record<string, unknown>, context: ApiKeyProvid
 
 interface NinoxRequestInput {
   path: string;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   phase: NinoxPhase;
   method?: "GET" | "POST" | "DELETE";
   query?: Record<string, NinoxQueryValue>;
@@ -107,7 +102,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: firstWorkspace?.id ?? "ninox-api-key",
         displayName: firstWorkspace?.name ?? "Ninox API Token",
       },
-      grantedScopes: [],
       metadata: compactObject({
         validationEndpoint: ninoxValidationPath,
         workspaceCount: workspaces.length,

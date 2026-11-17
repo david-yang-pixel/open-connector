@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -155,7 +155,6 @@ export async function validateNylasCredential(
       accountId: firstGrantId ? `nylas:grant:${firstGrantId}` : "nylas-api-key",
       displayName: firstGrantEmail ?? firstGrantName ?? "Nylas API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: nylasApiBaseUrl,
       validationEndpoint: "/grants",

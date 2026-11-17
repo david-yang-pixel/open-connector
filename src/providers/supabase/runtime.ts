@@ -1,5 +1,5 @@
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { BearerProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { BearerProviderContext } from "../provider-executors.ts";
 
 import { createHash } from "node:crypto";
 import {
@@ -15,14 +15,9 @@ import {
   requiredString,
   stringArray,
 } from "../../core/cast.ts";
-import { jsonObject, readBoundedResponseBytes } from "../../core/request.ts";
-import {
-  providerInputError,
-  ProviderRequestError,
-  providerUserAgent,
-  readTransitFileInput,
-} from "../provider-runtime.ts";
-import { supabaseProviderScopes } from "./scopes.ts";
+import { jsonObject, readBoundedResponseBytes, storeResponseInTransit } from "../../core/request.ts";
+import { readTransitFileInput } from "../provider-files.ts";
+import { providerInputError, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 export const supabaseApiBaseUrl: string = "https://api.supabase.com/v1";
 const supabaseProjectHostSuffix = ".supabase.co";
@@ -48,7 +43,6 @@ const apiKeyTypes = new Set(["legacy", "publishable", "secret", "unknown"]);
 
 type SupabaseActionInput = Record<string, unknown>;
 type SupabaseActionHandler = (input: SupabaseActionInput, context: BearerProviderContext) => Promise<unknown>;
-type SupabaseRequestPhase = "validate" | "execute";
 
 interface SupabaseOrganizationSummary {
   id: string;
@@ -143,7 +137,6 @@ export async function validateSupabaseCredential(
   profile: {
     accountId: string;
     displayName: string;
-    grantedScopes: string[];
   };
   metadata: Record<string, unknown>;
 }> {
@@ -153,7 +146,6 @@ export async function validateSupabaseCredential(
         accessToken,
         fetcher,
         signal,
-        phase: "validate",
         path: "/organizations",
       }),
     ),
@@ -164,7 +156,6 @@ export async function validateSupabaseCredential(
     profile: {
       accountId: subject ?? buildSupabaseAccountFingerprint(organizations, accessToken),
       displayName: buildSupabaseAccountLabel(organizations),
-      grantedScopes: supabaseProviderScopes,
     },
     metadata: {
       validationEndpoint: "/organizations",
@@ -176,48 +167,6 @@ export async function validateSupabaseCredential(
           ? "organization_fingerprint"
           : "access_token_fingerprint",
     },
-  };
-}
-
-export async function validateSupabaseOAuthCredential(
-  accessToken: string,
-  fetcher: typeof fetch,
-  signal?: AbortSignal,
-): Promise<{
-  profile: {
-    accountId: string;
-    displayName: string;
-    grantedScopes: string[];
-  };
-  metadata: Record<string, unknown>;
-}> {
-  const profile = requiredRecord(
-    await requestSupabaseJson({
-      accessToken,
-      fetcher,
-      signal,
-      phase: "validate",
-      path: "/profile",
-    }),
-    "profile",
-    providerMalformedError,
-  );
-  const gotrueId = requiredString(profile.gotrue_id, "profile.gotrue_id", providerMalformedError);
-  const username = optionalString(profile.username);
-  const primaryEmail = optionalString(profile.primary_email);
-
-  return {
-    profile: {
-      accountId: gotrueId,
-      displayName: username || primaryEmail || "Supabase User",
-      grantedScopes: supabaseProviderScopes,
-    },
-    metadata: compactObject({
-      validationEndpoint: "/profile",
-      gotrueId,
-      username,
-      primaryEmail,
-    }),
   };
 }
 
@@ -596,17 +545,18 @@ async function supabaseDownloadStorageObject(
       fieldName: "Supabase Storage error response",
       createError: (message) => new ProviderRequestError(413, message),
     });
-    throw createSupabaseError(response, parseSupabaseStorageError(bytes), "execute");
+    throw createSupabaseError(response, parseSupabaseStorageError(bytes));
   }
 
   const name = optionalString(input.fileName) ?? defaultStorageObjectName(objectPath);
   const mimeType = optionalString(response.headers.get("content-type")) ?? "application/octet-stream";
-  const bytes = await readBoundedResponseBytes(response, {
-    maxBytes: context.transitFiles.maxBytes,
+  const file = await storeResponseInTransit(response, context.transitFiles, {
+    name,
+    mimeType,
     fieldName: "Supabase Storage download",
     createError: (message) => new ProviderRequestError(413, message),
+    signal: context.signal,
   });
-  const file = await context.transitFiles.create(new File([Uint8Array.from(bytes)], name, { type: mimeType }));
 
   return {
     fileId: `${bucketId}/${objectPath}`,
@@ -675,7 +625,7 @@ async function supabaseUploadStorageObject(
       fieldName: "Supabase Storage upload error response",
       createError: (message) => new ProviderRequestError(413, message),
     });
-    throw createSupabaseError(response, parseSupabaseStorageError(bytes), "execute");
+    throw createSupabaseError(response, parseSupabaseStorageError(bytes));
   }
   return {
     bucketId,
@@ -796,7 +746,6 @@ async function requestSupabaseJson(options: {
   context?: BearerProviderContext;
   fetcher?: typeof fetch;
   signal?: AbortSignal;
-  phase?: SupabaseRequestPhase;
   method?: SupabaseRequestOptions["method"];
   path: string;
   query?: SupabaseRequestOptions["query"];
@@ -841,7 +790,7 @@ async function requestSupabaseJson(options: {
   const body = await response.text().catch(() => "");
   const payload = parseJsonBody(body, options.responseMode === "optional_json");
   if (!response.ok) {
-    throw createSupabaseError(response, payload, options.phase ?? "execute");
+    throw createSupabaseError(response, payload);
   }
 
   if (payload === null && options.responseMode !== "optional_json") {
@@ -875,7 +824,7 @@ function parseJsonBody(body: string, allowEmpty: boolean): unknown {
   }
 }
 
-function createSupabaseError(response: Response, payload: unknown, phase: SupabaseRequestPhase): ProviderRequestError {
+function createSupabaseError(response: Response, payload: unknown): ProviderRequestError {
   const detail = optionalRecord(payload);
   const code = detail ? (optionalString(detail.code) ?? optionalString(detail.error)) : undefined;
   const message = detail
@@ -886,7 +835,7 @@ function createSupabaseError(response: Response, payload: unknown, phase: Supaba
     : `supabase request failed with ${response.status}`;
 
   if (response.status === 401 || response.status === 403) {
-    return new ProviderRequestError(phase === "validate" ? 400 : 401, message, detail);
+    return new ProviderRequestError(response.status, message, detail, "provider_error");
   }
   if (response.status === 429) {
     return new ProviderRequestError(429, message, detail);

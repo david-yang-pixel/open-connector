@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -169,7 +169,6 @@ export async function validateDatabricksCredential(
       accountId: profile.accountId,
       displayName: profile.displayName,
     },
-    grantedScopes: [],
     metadata: compactObject({
       host,
       validationEndpoint: currentUserPath,
@@ -186,7 +185,7 @@ export function normalizeDatabricksHost(value: string): string {
   const candidate = raw.includes("://") ? raw : `https://${raw}`;
   const url = assertPublicHttpUrl(candidate, {
     fieldName: "host",
-    createError: (message) => new ProviderRequestError(400, message),
+    createError: providerInputError,
   });
   if (url.protocol !== "https:") throw new ProviderRequestError(400, "host must use HTTPS");
   if (url.username || url.password) throw new ProviderRequestError(400, "host must not include credentials");
@@ -720,8 +719,7 @@ function parsePayload(text: string, contentType: string | null): unknown {
 
 function createDatabricksError(response: Response, payload: unknown, phase: DatabricksPhase): ProviderRequestError {
   const message = extractErrorMessage(payload) ?? response.statusText ?? "Databricks request failed";
-  if (phase === "validate" && (response.status === 401 || response.status === 403))
-    return new ProviderRequestError(400, message);
+  if (phase === "validate" && (response.status === 401 || response.status === 403)) return providerInputError(message);
   return new ProviderRequestError(response.status || 500, message, payload);
 }
 

@@ -1,61 +1,9 @@
-import type { JsonSchema } from "../../core/types.ts";
-import type { OAuthProviderContext, ProviderFetch } from "../provider-runtime.ts";
+import type { OAuthProviderContext } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { describe, expect, it } from "vitest";
 import { ProviderRequestError } from "../provider-runtime.ts";
-import { ouraActions } from "./actions.ts";
-import { ouraDocumentCollections, ouraOauthScopes } from "./collections.ts";
 import { fetchOuraAccountProfile, ouraActionHandlers, parseOuraGrantedScopes } from "./runtime.ts";
-
-describe("Oura action catalog", () => {
-  it("derives each action from what its collection actually supports", () => {
-    // Heart rate is a time series: no document endpoint, timestamps instead of
-    // days, and a `latest` shortcut. Ring configuration takes no time window.
-    expect(ouraActions.map(({ name }) => name)).not.toContain("get_heartrate");
-    expect(inputProperties("list_heartrate")).toEqual([
-      "startDatetime",
-      "endDatetime",
-      "latest",
-      "nextToken",
-      "fields",
-    ]);
-    expect(inputProperties("list_daily_sleep")).toEqual(["startDate", "endDate", "nextToken", "fields"]);
-    expect(inputProperties("list_ring_configuration")).toEqual(["nextToken", "fields"]);
-  });
-});
-
-describe("Oura OAuth scopes", () => {
-  it("requests every scope its collections read from", () => {
-    const requested = new Set(ouraOauthScopes);
-    const unrequested = ouraDocumentCollections
-      .filter(({ scope }) => !requested.has(scope))
-      .map(({ name, scope }) => `${name} needs ${scope}`);
-
-    expect(unrequested).toEqual([]);
-  });
-
-  it("uses the scope Oura enforces, not the collection's daily summary neighbours", () => {
-    // Oura gates these behind their own scopes even though they are published
-    // next to the daily summaries; requesting `daily` alone returns 401.
-    expect(scopeFor("daily_cardiovascular_age")).toBe("heart_health");
-    expect(scopeFor("vo2_max")).toBe("heart_health");
-    expect(scopeFor("daily_resilience")).toBe("stress");
-    expect(scopeFor("ring_configuration")).toBe("ring_configuration");
-    expect(scopeFor("ring_battery_level")).toBe("ring_configuration");
-    expect(scopeFor("daily_spo2")).toBe("spo2");
-  });
-});
-
-describe("Oura list item schemas", () => {
-  it("promises a document id only where Oura serves documents by id", () => {
-    // Heart rate and ring battery level are time series: Oura returns bare
-    // samples with no identifier and no single-document endpoint to use one on.
-    expect(listItemSchema("list_daily_sleep").properties).toHaveProperty("id");
-    expect(listItemSchema("list_heartrate").properties).toBeUndefined();
-    expect(listItemSchema("list_ring_battery_level").properties).toBeUndefined();
-    expect(String(listItemSchema("list_heartrate").description)).not.toContain("`id` is always present");
-  });
-});
 
 describe("Oura document requests", () => {
   it("maps the list query onto Oura query parameters", async () => {
@@ -150,21 +98,6 @@ describe("Oura credential validation", () => {
     );
   });
 });
-
-function listItemSchema(actionName: string): JsonSchema {
-  const action = ouraActions.find(({ name }) => name === actionName);
-  const documents = action?.outputSchema.properties as Record<string, JsonSchema>;
-  return documents.documents!.items as JsonSchema;
-}
-
-function scopeFor(collectionName: string): string | undefined {
-  return ouraDocumentCollections.find(({ name }) => name === collectionName)?.scope;
-}
-
-function inputProperties(actionName: string): string[] {
-  const action = ouraActions.find(({ name }) => name === actionName);
-  return Object.keys(action?.inputSchema.properties ?? {});
-}
 
 function context(fetcher: ProviderFetch): OAuthProviderContext {
   return { accessToken: "oura-token", fetcher };

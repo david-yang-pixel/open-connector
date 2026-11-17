@@ -4,7 +4,7 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -15,12 +15,14 @@ import {
   optionalString,
   rawStringOrNull,
 } from "../../core/cast.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineProviderExecutors,
-  defineProviderProxy,
   ProviderRequestError,
   providerUserAgent,
-  requireApiKeyCredential,
+  providerInputError,
+  providerResponseError,
 } from "../provider-runtime.ts";
 
 type MocoRequestPhase = "validate" | "execute";
@@ -137,7 +139,6 @@ async function validateMocoCredential(
       accountId: `moco:${account}:user:${userId}`,
       displayName: `MOCO ${account}`,
     },
-    grantedScopes: [],
     metadata: compactObject({
       account,
       apiBaseUrl,
@@ -445,21 +446,21 @@ function mapMocoError(
 ): ProviderRequestError {
   const message = extractErrorMessage(payload) ?? (response.statusText || "MOCO request failed");
   if (phase === "validate" && (response.status === 401 || response.status === 403)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (phase === "execute" && (response.status === 401 || response.status === 403)) {
     return new ProviderRequestError(401, message);
   }
   if (response.status === 404 && notFoundAsInvalidInput) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (response.status === 400 || response.status === 404 || response.status === 422) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (response.status === 429) {
     return new ProviderRequestError(429, message);
   }
-  return new ProviderRequestError(502, message);
+  return providerResponseError(message);
 }
 
 async function readResponsePayload(response: Response): Promise<unknown> {

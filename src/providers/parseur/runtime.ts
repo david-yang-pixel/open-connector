@@ -1,6 +1,5 @@
 import type { CredentialValidationResult, ProviderExecutors } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -12,16 +11,16 @@ import {
   requiredRecord,
   requiredString,
 } from "../../core/cast.ts";
-import { defineApiKeyProviderExecutors, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 export const parseurApiBaseUrl = "https://api.parseur.com";
 
-type ParseurContext = ApiKeyProviderContext;
 type QueryValue = string | number | boolean | undefined;
 
 export const parseurActionHandlers: ProviderActionHandlers<
   "parseur",
-  (input: Record<string, unknown>, context: ParseurContext) => Promise<unknown>
+  (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>
 > = {
   list_mailboxes(input, context) {
     return requestPage("/parser", input, context, normalizeMailboxPage);
@@ -65,7 +64,7 @@ export async function validateParseurCredential(
   const apiKey = requiredString(input.apiKey, "apiKey", (message) => new ProviderRequestError(401, message));
   await parseurRequest({ path: "/" }, { apiKey, fetcher });
   return {
-    profile: { accountId: "parseur_api_key", displayName: "Parseur API Key", grantedScopes: [] },
+    profile: { accountId: "parseur_api_key", displayName: "Parseur API Key" },
     metadata: { apiBaseUrl: parseurApiBaseUrl, validationEndpoint: "/" },
   };
 }
@@ -73,7 +72,7 @@ export async function validateParseurCredential(
 async function requestPage(
   path: string,
   input: Record<string, unknown>,
-  context: ParseurContext,
+  context: ApiKeyProviderContext,
   normalize: (payload: unknown) => unknown,
 ) {
   return normalize(
@@ -99,7 +98,7 @@ async function requestPage(
 
 async function parseurRequest(
   input: { path: string; query?: Record<string, QueryValue> },
-  context: Pick<ParseurContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
 ): Promise<unknown> {
   const url = new URL(input.path, parseurApiBaseUrl);
   for (const [key, value] of Object.entries(input.query ?? {})) {

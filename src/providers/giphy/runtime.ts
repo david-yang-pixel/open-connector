@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -186,7 +186,6 @@ export async function validateGiphyCredential(
       accountId: "giphy",
       displayName: "GIPHY API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       validationEndpoint: "/v1/gifs/trending",
       sampleGifId: typeof sampleGifId === "string" ? sampleGifId : undefined,

@@ -5,20 +5,21 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { createHash } from "node:crypto";
 import { compactObject, optionalNumber, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
 import { assertPublicHttpUrl, isPrivateNetworkAccessAllowed } from "../../core/request.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderFetch,
   createProviderTimeout,
-  defineProviderExecutors,
-  defineProviderProxy,
   providerUserAgent,
   ProviderRequestError,
   readProviderTextBody,
-  requireApiKeyCredential,
+  providerInputError,
 } from "../provider-runtime.ts";
 
 const service = "octopus_deploy";
@@ -183,7 +184,6 @@ export const credentialValidators: CredentialValidators = {
           optionalString(raw.EmailAddress) ??
           "Octopus Deploy API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl,
         baseUrl: apiBaseUrl,
@@ -338,10 +338,10 @@ function mapHttpError(status: number, message: string, phase: "validate" | "exec
     return new ProviderRequestError(401, message);
   }
   if (status === 401 || status === 403 || (phase === "validate" && status === 404)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (status === 400 || status === 404 || status === 422) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (status === 429) {
     return new ProviderRequestError(429, message);

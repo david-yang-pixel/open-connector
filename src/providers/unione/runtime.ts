@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { compactObject, optionalInteger, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
 import {
@@ -25,7 +25,7 @@ interface ValidateUnioneCredentialInput {
 }
 
 interface UnioneRequestOptions {
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   path: string;
   phase: UnionePhase;
   body?: Record<string, unknown>;
@@ -105,9 +105,7 @@ export async function validateUnioneCredential(
     profile: {
       accountId: projectId ? `unione:project:${projectId}` : userId !== undefined ? `unione:user:${userId}` : "unione",
       displayName: projectName ?? email ?? "UniOne API Key",
-      grantedScopes: [],
     },
-    grantedScopes: [],
     metadata: {
       validationEndpoint: unioneValidationPath,
       userId,

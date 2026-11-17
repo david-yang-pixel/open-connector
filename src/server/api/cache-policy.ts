@@ -7,16 +7,31 @@ export interface ResponseCachePolicy {
 const catalogBrowserCacheControl = "public, max-age=0, must-revalidate";
 const catalogEdgeCacheControl = "public, max-age=31536000, stale-while-revalidate=86400";
 
-export function getResponseCachePolicy(method: string, path: string, status: number): ResponseCachePolicy | undefined {
+export function getResponseCachePolicy(
+  method: string,
+  path: string,
+  status: number,
+  explicitLocale = false,
+  dynamicCatalog = false,
+): ResponseCachePolicy | undefined {
   if (isCatalogResponse(method, path) && ((status >= 200 && status < 300) || status === 304)) {
+    if (dynamicCatalog) return { cacheControl: "private, no-store", cloudflareCdnCacheControl: "no-store" };
     return {
       cacheControl: catalogBrowserCacheControl,
-      cloudflareCdnCacheControl: catalogEdgeCacheControl,
-      vary: "Authorization, Cookie, Accept-Encoding",
+      cloudflareCdnCacheControl: isProviderCatalog(path) && !explicitLocale ? "no-store" : catalogEdgeCacheControl,
+      vary: isProviderCatalog(path)
+        ? "Authorization, Cookie, Accept-Encoding, Accept-Language"
+        : "Authorization, Cookie, Accept-Encoding",
     };
   }
 
-  if (path.startsWith("/v1/connection-requests/")) return { cacheControl: "private, no-store" };
+  if (
+    path.startsWith("/v1/connection-requests/") ||
+    path === "/api/oauth/connection-requests" ||
+    path.startsWith("/api/oauth/connection-requests/") ||
+    path === "/oauth/saas/complete"
+  )
+    return { cacheControl: "private, no-store" };
 
   if (isRuntimeResponsePath(path)) {
     return { cacheControl: "no-store" };
@@ -30,14 +45,13 @@ function isCatalogResponse(method: string, path: string): boolean {
     return false;
   }
 
+  // Runtime catalogs depend on mutable configuration and access policy.
+  // Only static catalogs can use the shared edge cache.
   return (
     path === "/api/providers" ||
     /^\/api\/providers\/[^/]+$/.test(path) ||
     path === "/api/actions" ||
-    (path !== "/api/actions/search" && /^\/api\/actions\/[^/]+$/.test(path)) ||
-    path === "/v1/providers" ||
-    path === "/v1/actions" ||
-    (path !== "/v1/actions/search" && /^\/v1\/actions\/[^/]+$/.test(path))
+    (path !== "/api/actions/search" && /^\/api\/actions\/[^/]+$/.test(path))
   );
 }
 
@@ -56,4 +70,8 @@ function isRuntimeResponsePath(path: string): boolean {
     path === "/oauth" ||
     path.startsWith("/oauth/")
   );
+}
+
+function isProviderCatalog(path: string): boolean {
+  return path === "/api/providers" || /^\/api\/providers\/[^/]+$/.test(path);
 }

@@ -1,19 +1,19 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   isAbortLikeError,
   ProviderRequestError,
   providerUserAgent,
+  defaultProviderRequestTimeoutMs,
 } from "../provider-runtime.ts";
 
 const service = "apollo";
 const apolloApiBaseUrl = "https://api.apollo.io";
-const apolloDefaultRequestTimeoutMs = 30_000;
 
 type ApolloQueryValue = boolean | number | string | string[] | undefined;
 type ApolloRequestPhase = "validate" | "execute";
@@ -66,7 +66,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: usage.teamId,
         displayName: "Apollo Master API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: apolloApiBaseUrl,
         validationEndpoint: "/api/v1/usage_stats/api_usage_stats",
@@ -177,7 +176,7 @@ async function requestApolloJson(input: {
   signal?: AbortSignal;
   phase: ApolloRequestPhase;
 }): Promise<unknown> {
-  const timeoutSignal = AbortSignal.timeout(apolloDefaultRequestTimeoutMs);
+  const timeoutSignal = AbortSignal.timeout(defaultProviderRequestTimeoutMs);
   const signal = input.signal ? AbortSignal.any([input.signal, timeoutSignal]) : timeoutSignal;
   const url = new URL(input.path, apolloApiBaseUrl);
   for (const [key, value] of Object.entries(input.query ?? {})) {

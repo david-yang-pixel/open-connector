@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { compactObject, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
 import { assertPublicHttpUrl, isPrivateNetworkAccessAllowed } from "../../core/request.ts";
@@ -96,7 +96,6 @@ export async function validateBenchmarkEmailCredential(
       accountId: clientId ?? login ?? email ?? "benchmark_email",
       displayName: email ?? login ?? "Benchmark Email API Token",
     },
-    grantedScopes: [],
     metadata: compactObject({
       baseUrl,
       validationMethod: benchmarkEmailValidationMethod,
@@ -109,7 +108,7 @@ export async function validateBenchmarkEmailCredential(
 }
 
 async function requestBenchmarkEmailJson(input: {
-  context: Pick<BenchmarkEmailContext, "apiKey" | "baseUrl" | "fetcher" | "signal">;
+  context: BenchmarkEmailContext;
   phase: BenchmarkEmailRequestPhase;
   query?: Record<string, string | undefined>;
 }): Promise<unknown> {

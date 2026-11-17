@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderRequestContext, ProviderFetch } from "../provider-runtime.ts";
 
 import {
   compactObject,
@@ -87,7 +87,7 @@ export async function validateOpenHandsCredential(
   fetcher: ProviderFetch,
   signal?: AbortSignal,
 ): Promise<CredentialValidationResult> {
-  const context: Pick<ApiKeyProviderContext, "fetcher" | "signal"> = { fetcher, signal };
+  const context: ProviderRequestContext = { fetcher, signal };
   await openHandsRequest(apiKey, openHandsValidationPath, context, {
     query: { limit: 1 },
   });
@@ -96,7 +96,6 @@ export async function validateOpenHandsCredential(
       accountId: "open_hands",
       displayName: "OpenHands API Key",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: openHandsApiBaseUrl,
       validationEndpoint: openHandsValidationPath,
@@ -134,7 +133,7 @@ function buildMessageBody(input: Record<string, unknown>): Record<string, unknow
 async function openHandsRequest(
   apiKey: string,
   path: string,
-  context: Pick<ApiKeyProviderContext, "fetcher" | "signal">,
+  context: ProviderRequestContext,
   options: {
     method?: OpenHandsRequestMethod;
     query?: Record<string, unknown>;

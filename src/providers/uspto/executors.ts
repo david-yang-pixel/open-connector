@@ -1,12 +1,9 @@
-import type { CredentialValidators, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ApiKeyProviderContext, ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderExecutors, CredentialValidators, ProviderProxyExecutor } from "../../core/types.ts";
+import type { ApiKeyProviderContext, ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-executors.ts";
 
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 async function get(
   path: string,
@@ -17,7 +14,7 @@ async function get(
 ): Promise<string | null> {
   const response = await fetcher(new URL(path, "https://tsdrapi.uspto.gov"), {
     headers: { accept, "USPTO-API-KEY": apiKey, "user-agent": providerUserAgent },
-    redirect: "error",
+    redirect: "manual",
     signal,
   });
   const text = await response.text();
@@ -72,11 +69,9 @@ const handlers: ProviderActionHandlers<"uspto", ProviderRuntimeHandler<ApiKeyPro
   },
 };
 
-export const executors: import("../../core/types.ts").ProviderExecutors = defineApiKeyProviderExecutors(
-  "uspto",
-  handlers,
-  { skipDnsValidation: true },
-);
+export const executors: ProviderExecutors = defineApiKeyProviderExecutors("uspto", handlers, {
+  skipDnsValidation: true,
+});
 export const proxy: ProviderProxyExecutor = defineProviderProxy({
   service: "uspto",
   baseUrl: "https://tsdrapi.uspto.gov",
@@ -92,7 +87,6 @@ export const credentialValidators: CredentialValidators = {
     await get(validationEndpoint, "application/xml", input.apiKey, fetcher, signal);
     return {
       profile: { accountId: "api_key", displayName: "USPTO API Key" },
-      grantedScopes: [],
       metadata: { apiBaseUrl: "https://tsdrapi.uspto.gov", validationEndpoint },
     };
   },

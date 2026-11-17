@@ -167,7 +167,13 @@ describe("custom MCP OAuth", () => {
       fetcher: fetch,
       createError,
     });
-    await oauth.refreshAccessToken!({ refreshToken: "refresh-token", clientConfig, fetcher: fetch, createError });
+    await oauth.refreshAccessToken!({
+      refreshToken: "refresh-token",
+      clientConfig,
+      metadata: {},
+      fetcher: fetch,
+      createError,
+    });
 
     expect(Object.fromEntries(bodies[0]!)).toEqual({
       grant_type: "authorization_code",

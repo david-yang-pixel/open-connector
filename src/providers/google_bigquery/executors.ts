@@ -1,6 +1,6 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { OAuthProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { OAuthProviderContext } from "../provider-executors.ts";
 
 import {
   booleanString,
@@ -9,9 +9,14 @@ import {
   optionalInteger as asOptionalInteger,
   requiredRecord,
 } from "../../core/cast.ts";
-import { defineGoogleProviderExecutors, googleBearerProxyAuth, googleServiceAccountValidator } from "../google-auth.ts";
-import { googleJsonRequest, googleRequest } from "../google-runtime.ts";
-import { defineProviderProxy, ProviderRequestError } from "../provider-runtime.ts";
+import {
+  defineGoogleProviderExecutors,
+  googleBearerProxyAuth,
+  googleServiceAccountValidator,
+} from "../googledrive/runtime-auth.ts";
+import { googleJsonRequest, googleRequest } from "../googledrive/runtime-request.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError } from "../provider-runtime.ts";
 import { googleBigQueryOAuthScopes } from "./scopes.ts";
 
 const bigQueryApiBaseUrl = "https://bigquery.googleapis.com/bigquery/v2";

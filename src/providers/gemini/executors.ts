@@ -1,10 +1,11 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 import type { GeminiRuntimeContext } from "./runtime.ts";
 
 import { compactObject } from "../../core/cast.ts";
-import { defineApiKeyProviderExecutors, defineProviderProxy } from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   countGeminiTokens,
   embedGeminiContent,
@@ -69,7 +70,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "gemini-api-key",
         displayName: "Gemini API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: geminiApiBaseUrl,
         validationEndpoint: "/models",

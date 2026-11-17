@@ -1,12 +1,13 @@
 import type { QueryValue } from "../../core/request.ts";
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { optionalInteger, optionalRecord, optionalString, positiveInteger } from "../../core/cast.ts";
 import { encodePathSegment } from "../../core/request.ts";
 import { arrayPayload, firstString, objectPayload, requestJson } from "../http-json-runtime.ts";
-import { defineApiKeyProviderExecutors, defineProviderProxy, ProviderRequestError } from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError } from "../provider-runtime.ts";
 
 const service = "upsales";
 const apiBaseUrl = "https://integration.upsales.com/api/v2";
@@ -101,7 +102,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: optionalString(user.id) ?? "upsales-api-key",
         displayName: firstString(user, ["name", "email"]) ?? "Upsales API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl,
         userId: user.id,
@@ -113,7 +113,7 @@ export const credentialValidators: CredentialValidators = {
 
 function upsalesRequest(
   path: string,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   query: Record<string, QueryValue> = {},
   method = "GET",
   body?: unknown,

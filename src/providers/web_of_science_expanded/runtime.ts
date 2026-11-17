@@ -1,6 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -17,15 +16,16 @@ import {
   providerUserAgent,
   readProviderJsonBody,
   setSearchParams,
+  providerInputError,
+  providerResponseError,
 } from "../provider-runtime.ts";
 
 const webOfScienceExpandedApiBaseUrl = "https://wos-api.clarivate.com/api/wos";
 
 type WebOfScienceExpandedPhase = "validate" | "execute";
-type WebOfScienceExpandedContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
 type WebOfScienceExpandedActionHandler = (
   input: Record<string, unknown>,
-  context: WebOfScienceExpandedContext,
+  context: ApiKeyProviderContext,
 ) => Promise<unknown>;
 
 export const webOfScienceExpandedActionHandlers: ProviderActionHandlers<
@@ -82,7 +82,7 @@ export const webOfScienceExpandedActionHandlers: ProviderActionHandlers<
         query: compactObject({
           databaseId: optionalString(input.database) ?? "WOS",
           lang: normalizeLanguage(input.language),
-          uniqueId: requiredString(input.uid, "uid", (message) => new ProviderRequestError(400, message)),
+          uniqueId: requiredString(input.uid, "uid", providerInputError),
           count: String(limit),
           firstRecord: String(firstRecord),
           sortField: optionalString(input.sortField),
@@ -172,9 +172,7 @@ export async function validateWebOfScienceExpandedCredential(
     profile: {
       accountId: "web_of_science_expanded:api_key",
       displayName: "Web of Science Expanded API Key",
-      grantedScopes: [],
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiProduct: "Web of Science API Expanded",
       validationEndpoint: "/",
@@ -187,7 +185,7 @@ export async function validateWebOfScienceExpandedCredential(
 async function executeRelatedDocumentRequest(
   path: "/citing" | "/related",
   input: Record<string, unknown>,
-  context: WebOfScienceExpandedContext,
+  context: ApiKeyProviderContext,
 ) {
   validateSearchOptions(input);
   const limit = optionalInteger(input.limit) ?? 10;
@@ -199,7 +197,7 @@ async function executeRelatedDocumentRequest(
       query: compactObject({
         databaseId: database,
         lang: normalizeLanguage(input.language),
-        uniqueId: requiredString(input.uid, "uid", (message) => new ProviderRequestError(400, message)),
+        uniqueId: requiredString(input.uid, "uid", providerInputError),
         edition: optionalString(input.edition),
         publishTimeSpan: optionalString(input.publishTimeSpan),
         modifiedTimeSpan: optionalString(input.modifiedTimeSpan),
@@ -232,7 +230,7 @@ function buildSearchParams(
   return compactObject({
     databaseId: database,
     lang: normalizeLanguage(input.language),
-    usrQuery: requiredString(input.query, "query", (message) => new ProviderRequestError(400, message)),
+    usrQuery: requiredString(input.query, "query", providerInputError),
     edition: optionalString(input.edition),
     publishTimeSpan: optionalString(input.publishTimeSpan),
     loadTimeSpan: optionalString(input.loadTimeSpan),
@@ -264,7 +262,7 @@ interface WebOfScienceExpandedRequest {
 
 async function requestWebOfScienceExpandedJson(
   input: WebOfScienceExpandedRequest,
-  context: WebOfScienceExpandedContext,
+  context: ApiKeyProviderContext,
 ): Promise<unknown> {
   const timeout = createProviderTimeout(context.signal);
   try {
@@ -328,10 +326,10 @@ function createWebOfScienceExpandedError(
     return new ProviderRequestError(429, message);
   }
   if (phase === "validate" && (status === 401 || status === 403)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (phase === "validate" && status >= 400 && status < 500) {
-    return new ProviderRequestError(502, message);
+    return providerResponseError(message);
   }
   if (status === 401 || status === 403) {
     return new ProviderRequestError(status, message);
@@ -499,7 +497,7 @@ function readRecordArray(value: unknown): Record<string, unknown>[] {
 
 function requireRecordArray(value: unknown, message: string): Record<string, unknown>[] {
   if (!Array.isArray(value)) {
-    throw new ProviderRequestError(502, message);
+    throw providerResponseError(message);
   }
   return value.map((item) => requireRecord(item, message));
 }
@@ -536,7 +534,7 @@ function readOptionalStringArray(value: unknown): string[] | undefined {
 function requireRecord(value: unknown, message: string): Record<string, unknown> {
   const record = optionalRecord(value);
   if (!record) {
-    throw new ProviderRequestError(502, message);
+    throw providerResponseError(message);
   }
   return record;
 }
@@ -544,7 +542,7 @@ function requireRecord(value: unknown, message: string): Record<string, unknown>
 function readRequiredResponseString(value: unknown, message: string): string {
   const normalized = optionalString(value);
   if (!normalized) {
-    throw new ProviderRequestError(502, message);
+    throw providerResponseError(message);
   }
   return normalized;
 }

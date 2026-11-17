@@ -1,6 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { optionalBoolean, optionalNumber, optionalRecord, optionalString, stringArray } from "../../core/cast.ts";
 import {
@@ -58,7 +57,6 @@ export async function validateMailsSoCredential(
       accountId: await buildMailsSoProviderAccountId(apiKey),
       displayName: "Mails API Key",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: mailsSoApiBaseUrl,
       validationEndpoint: "/v1/validate",
@@ -72,7 +70,7 @@ async function buildMailsSoProviderAccountId(apiKey: string): Promise<string> {
 }
 
 async function requestSingleValidation(input: {
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   email: string;
   phase: MailsSoRequestPhase;
 }): Promise<unknown> {
@@ -129,7 +127,7 @@ async function requestBatch(input: {
 
 async function requestMailsSoJson(input: {
   path: string;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   phase: MailsSoRequestPhase;
   method?: "GET" | "POST";
   body?: Record<string, unknown>;
@@ -199,7 +197,7 @@ async function readMailsSoErrorMessage(response: Response): Promise<string> {
 
 function mapMailsSoError(status: number, message: string, phase: MailsSoRequestPhase): ProviderRequestError {
   if (status === 400 || status === 404) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (status === 401) {
     if (message.toLowerCase().includes("paid subscription")) {

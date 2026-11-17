@@ -1,5 +1,5 @@
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -37,7 +37,6 @@ export async function validateTinyurlCredential(
   signal?: AbortSignal,
 ): Promise<{
   profile: { accountId: string; displayName: string };
-  grantedScopes: string[];
   metadata: Record<string, unknown>;
 }> {
   await requestTinyurl(new URL(tinyurlValidationPath, tinyurlApiBaseUrl), {
@@ -53,7 +52,6 @@ export async function validateTinyurlCredential(
       accountId: "tinyurl:api_token",
       displayName: "TinyURL API Token",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: tinyurlApiBaseUrl,
       validationEndpoint: tinyurlValidationPath,

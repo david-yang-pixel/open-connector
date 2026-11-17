@@ -1,5 +1,5 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers, OAuthProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, OAuthProviderContext } from "../provider-executors.ts";
 
 import {
   optionalBoolean,
@@ -9,15 +9,15 @@ import {
   requiredRecord,
   requiredString,
 } from "../../core/cast.ts";
-import { readBoundedResponseBytes } from "../../core/request.ts";
+import { storeResponseInTransit } from "../../core/request.ts";
+import { defineOAuthProviderExecutors } from "../provider-executors.ts";
+import { readTransitFileInput } from "../provider-files.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineOAuthProviderExecutors,
-  defineProviderProxy,
   providerInputError,
   ProviderRequestError,
   providerResponseError,
   readProviderJsonBody,
-  readTransitFileInput,
   requiredInputString,
 } from "../provider-runtime.ts";
 
@@ -230,12 +230,13 @@ async function downloadFile(
     throw await boxResponseError(response, "Box file download failed");
   }
   const mimeType = response.headers.get("content-type") ?? "application/octet-stream";
-  const bytes = await readBoundedResponseBytes(response, {
-    maxBytes: context.transitFiles.maxBytes,
+  const file = await storeResponseInTransit(response, context.transitFiles, {
+    name,
+    mimeType,
     fieldName: "Box download",
     createError: (message) => new ProviderRequestError(413, message),
+    signal: context.signal,
   });
-  const file = await context.transitFiles.create(new File([Uint8Array.from(bytes)], name, { type: mimeType }));
   return { item, file };
 }
 

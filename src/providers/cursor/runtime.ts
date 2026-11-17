@@ -1,10 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type {
-  ApiKeyProviderContext,
-  ProviderActionHandlers,
-  ProviderFetch,
-  ProviderRuntimeHandler,
-} from "../provider-runtime.ts";
+import type { ApiKeyProviderContext, ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import {
   optionalBoolean,
@@ -148,7 +144,7 @@ export async function validateCursorCredential(
   try {
     const payload = await requestCursor("/teams/members", context);
     arrayPayload(payload.teamMembers, "Cursor teamMembers");
-    return { profile: { accountId: "cursor:team" }, grantedScopes: ["admin:*"] };
+    return { profile: { accountId: "cursor:team" } };
   } catch (error) {
     if (error instanceof ProviderRequestError && (error.status === 401 || error.status === 403)) {
       throw providerInputError(error.message);

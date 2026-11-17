@@ -38,6 +38,7 @@ async function joinMeeting(input: Record<string, unknown>, request: FeishuJsonRe
     method: "POST",
     path: "/vc/v1/bots/join",
     body: {
+      action: optionalString(input.action) ?? "join",
       join_type: 1,
       join_identify: { meeting_no: meetingNumber },
       password: optionalString(input.password),

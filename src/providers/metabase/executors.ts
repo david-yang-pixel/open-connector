@@ -4,15 +4,12 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderRuntimeHandler } from "../provider-executors.ts";
 import type { MetabaseContext } from "./runtime.ts";
 
-import {
-  combineProviderActionHandlers,
-  defineProviderExecutors,
-  defineProviderProxy,
-  requireApiKeyCredential,
-} from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { combineProviderActionHandlers, defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import { metabaseMcpHandlers } from "./mcp-runtime.ts";
 import { metabaseActionHandlers, normalizeMetabaseUrls, validateMetabaseCredential } from "./runtime.ts";
 

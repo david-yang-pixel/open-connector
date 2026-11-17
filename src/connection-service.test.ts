@@ -1,14 +1,21 @@
-import type { IConnectionStore, StoredConnection } from "./connection-service.ts";
+import type { IConnectionStore, StoredConnection } from "./connection-store.ts";
+import type { ProviderHttpAttempt, ProviderHttpDispatchOptions } from "./core/provider-http-dispatch.ts";
 import type { ActionExecutor, CredentialValidators, ProviderDefinition, ResolvedCredential } from "./core/types.ts";
 import type { MarketplaceService } from "./marketplace/marketplace-service.ts";
 import type { OAuthClientConfig } from "./oauth/oauth-client-config-service.ts";
+import type { IOAuthCredentialRefresher } from "./oauth/oauth-credential-refresh-service.ts";
 import type { IProviderLoader } from "./providers/provider-loader.ts";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createCatalogStore } from "./catalog-store.ts";
+import { ConnectionError } from "./connection-error.ts";
 import { ConnectionService } from "./connection-service.ts";
+import { getExecutionTimings, withExecutionTimings } from "./core/execution-timing.ts";
 import { OAuthClientConfigService } from "./oauth/oauth-client-config-service.ts";
 import { OAuthCredentialRefreshService } from "./oauth/oauth-credential-refresh-service.ts";
+import { provider as githubProvider } from "./providers/github/definition.ts";
+import { githubOAuthRuntime } from "./providers/github/oauth.ts";
+import { ProviderLoader } from "./providers/provider-loader.ts";
 import { provider as sshProvider } from "./providers/ssh/definition.ts";
 
 const hackernewsProvider: ProviderDefinition = {
@@ -141,6 +148,58 @@ afterEach(() => {
 });
 
 describe("ConnectionService", () => {
+  it("resolves connection IDs without listing other connections and rejects deleted IDs", async () => {
+    const store = new MemoryConnectionStore();
+    const credential: ResolvedCredential = {
+      authType: "api_key",
+      apiKey: "secret",
+      values: {},
+      profile: testProfile,
+      metadata: {},
+    };
+    await store.set("uptimerobot", "other", credential);
+    const stored = await store.set("uptimerobot", "work", credential);
+    const list = vi.spyOn(store, "list").mockRejectedValue(new Error("Unrelated connections must not be read."));
+    const service = createService([apiKeyProvider], { store });
+
+    await expect(service.getConnectionSummary("uptimerobot", undefined, stored.id)).resolves.toMatchObject({
+      id: stored.id,
+      connectionName: "work",
+    });
+    await expect(service.resolveConnection("uptimerobot", undefined, stored.id)).resolves.toMatchObject({
+      source: "local",
+      summary: { id: stored.id },
+      credential,
+    });
+    await expect(service.resolveConnection("uptimerobot", "other", stored.id)).rejects.toMatchObject({
+      code: "connection_not_found",
+    });
+    await store.delete("uptimerobot", "work");
+    await expect(service.resolveConnection("uptimerobot", undefined, stored.id)).rejects.toMatchObject({
+      code: "connection_not_found",
+    });
+    expect(list).not.toHaveBeenCalled();
+  });
+
+  it("batches selected services in one store read without changing unfiltered listings", async () => {
+    const store = new MemoryConnectionStore();
+    await store.set("uptimerobot", "work", {
+      authType: "api_key",
+      apiKey: "secret",
+      values: {},
+      profile: testProfile,
+      metadata: {},
+    });
+    const service = createService([apiKeyProvider, hackernewsProvider], { store });
+    const all = await service.listConnections();
+    expect(all.map((connection) => connection.service)).toEqual(["hackernews", "uptimerobot"]);
+    const list = vi.spyOn(store, "list");
+    const selected = await service.listConnections(new Set(["uptimerobot"]));
+    expect(selected).toEqual(all.filter((connection) => connection.service === "uptimerobot"));
+    expect(list).toHaveBeenCalledOnce();
+    await expect(service.listConnections(new Set())).resolves.toEqual([]);
+  });
+
   it("rejects connections for providers unavailable in the current runtime", async () => {
     const service = createService([catalogOnlyProvider]);
 
@@ -338,8 +397,11 @@ describe("ConnectionService", () => {
     });
   });
 
-  it("stores custom credential values after trimming declared fields", async () => {
-    const service = createService([customCredentialProvider]);
+  it("preserves custom credential secrets while trimming non-secret fields", async () => {
+    const validate = vi.fn(async () => ({}));
+    const service = createService([customCredentialProvider], {
+      providerLoader: new FakeProviderLoader({ customCredential: validate }),
+    });
 
     await service.connectWithCustomCredential("database", {
       values: {
@@ -348,11 +410,13 @@ describe("ConnectionService", () => {
       },
     });
 
+    expect(validate).toHaveBeenCalledWith({ values: { host: "localhost", password: " secret " } }, expect.anything());
+
     await expect(service.getCredential("database")).resolves.toMatchObject({
       authType: "custom_credential",
       values: {
         host: "localhost",
-        password: "secret",
+        password: " secret ",
       },
     });
   });
@@ -752,6 +816,78 @@ describe("ConnectionService", () => {
     await expect(service.listConnections()).resolves.toEqual([]);
   });
 
+  // Credential metadata also holds client secrets and provider-private data.
+  // The summary is a public shape, so this asserts the WHOLE object rather
+  // than the one new key: a test that only checks `oauthAuthorizationId` is
+  // present would pass just as happily if a client secret leaked beside it.
+  it("exposes only the OAuth provenance out of internal credential metadata", async () => {
+    const service = createService([oauthProvider]);
+    const summary = await service.setOAuthCredential(
+      "example",
+      {
+        authType: "oauth2",
+        accessToken: "test-access-token",
+        refreshToken: "test-refresh-token",
+        tokenType: "Bearer",
+        profile: testProfile,
+        metadata: {
+          oauthAuthorizationId: "completed-authorization",
+          oauthClientConfig: { clientId: "test-client", clientSecret: "test-client-secret" },
+          oauthClientSecretExtra: { appBearerToken: "test-app-token" },
+          providerData: "internal-only",
+        },
+      },
+      "work",
+    );
+    const expected = {
+      id: summary.id,
+      service: "example",
+      connectionName: "work",
+      authType: "oauth2",
+      configured: true,
+      status: "active",
+      virtual: false,
+      default: false,
+      profile: testProfile,
+      oauthAuthorizationId: "completed-authorization",
+    };
+
+    // Every way a caller can reach a summary, because they are separate code
+    // paths and a field added to one is not added to the others.
+    expect(JSON.parse(JSON.stringify(summary))).toEqual(expected);
+    expect(await service.getConnectionSummary("example", "work")).toEqual(expected);
+    expect(await service.listConnections()).toEqual([expected]);
+    expect(await service.listConnectionsByService("example")).toEqual([expected]);
+    expect((await service.resolveConnection("example", "work")).summary).toEqual(expected);
+  });
+
+  // Absent, not null or empty: a connection made before this existed has no
+  // provenance, and "" would read as one. The validator case is the same
+  // assertion from the other side — provenance is minted by the callback that
+  // completed consent, so a provider validator must not be able to supply it.
+  it.each([undefined, null, 42, { nested: "not-a-string" }])(
+    "omits legacy or non-string provenance, and refuses validator-supplied provenance (%#)",
+    async (oauthAuthorizationId) => {
+      const service = createService([oauthProvider], {
+        providerLoader: new FakeProviderLoader({
+          async oauth2() {
+            return { profile: testProfile, metadata: { oauthAuthorizationId: "validator-supplied-id" } };
+          },
+        }),
+      });
+      const summary = await service.setOAuthCredential("example", {
+        authType: "oauth2",
+        accessToken: "access-token",
+        tokenType: "Bearer",
+        profile: testProfile,
+        metadata: { oauthAuthorizationId },
+      });
+
+      expect(summary).not.toHaveProperty("oauthAuthorizationId");
+      expect(await service.getConnectionSummary("example")).not.toHaveProperty("oauthAuthorizationId");
+    },
+  );
+
   it("preserves the existing OAuth connection when reconnect validation fails", async () => {
     const validate = vi.fn().mockResolvedValue({ profile: testProfile });
     const service = createService([oauthProvider], {
@@ -770,7 +906,10 @@ describe("ConnectionService", () => {
     await expect(
       service.setOAuthCredential("example", { ...credential, accessToken: "replacement-token" }, "work"),
     ).rejects.toMatchObject({ code: "credential_verification_failed" });
-    await expect(service.getCredential("example", "work")).resolves.toEqual(credential);
+    await expect(service.getCredential("example", "work")).resolves.toEqual({
+      ...credential,
+      metadata: { providerAccountVerified: true, oauthAuthorizationId: undefined },
+    });
     await expect(service.listConnections()).resolves.toEqual([original]);
   });
 
@@ -869,6 +1008,84 @@ describe("ConnectionService", () => {
     );
   });
 
+  it.each([
+    [400, "invalid_grant", true],
+    [401, "invalid_grant", true],
+    [400, "invalid_client", false],
+    [429, "invalid_grant", false],
+    [503, "invalid_grant", false],
+    [0, "network_failure", false],
+  ])("reports the durable authorization state after a %s %s refresh refusal", async (status, errorCode, reauth) => {
+    const store = new MemoryConnectionStore();
+    const clientConfigs = createOAuthClientConfigs([oauthProvider]);
+    await clientConfigs.upsertConfig({ service: "example", clientId: "client-id", clientSecret: "client-secret" });
+    const service = createService([oauthProvider], {
+      store,
+      oauthCredentials: new OAuthCredentialRefreshService(clientConfigs),
+    });
+    const credential: Extract<ResolvedCredential, { authType: "oauth2" }> = {
+      authType: "oauth2",
+      accessToken: "expired-token",
+      tokenType: "Bearer",
+      refreshToken: "refresh-token",
+      expiresAt: "2026-01-01T00:00:00.000Z",
+      profile: testProfile,
+      metadata: {},
+    };
+    const stored = await store.set("example", "default", credential);
+    const fetcher = vi.fn(async () => {
+      if (!status) throw new Error("connection reset");
+      return Response.json({ error: errorCode }, { status });
+    });
+    vi.stubGlobal("fetch", fetcher);
+    await expect(service.getCredential("example")).rejects.toMatchObject({
+      code: reauth ? "oauth_reauth_required" : "oauth_token_refresh_failed",
+    });
+    await expect(service.listConnections()).resolves.toMatchObject([{ status: reauth ? "reauth_required" : "active" }]);
+    await expect(service.getManagedConnection(stored.id)).resolves.toMatchObject({
+      status: reauth ? "reauth_required" : "active",
+    });
+    if (reauth) {
+      await expect(service.getCredential("example")).rejects.toMatchObject({ code: "oauth_reauth_required" });
+      expect(fetcher).toHaveBeenCalledOnce();
+      await service.setOAuthCredential("example", {
+        ...credential,
+        accessToken: "fresh-token",
+        expiresAt: "2099-01-01T00:00:00.000Z",
+      });
+      await expect(service.getManagedConnection(stored.id)).resolves.toMatchObject({ status: "active" });
+      await expect(service.getCredential("example")).resolves.toMatchObject({ accessToken: "fresh-token" });
+    }
+  });
+
+  it("does not mark a newer authorization when an old refresh is rejected", async () => {
+    const store = new MemoryConnectionStore();
+    const credential: Extract<ResolvedCredential, { authType: "oauth2" }> = {
+      authType: "oauth2",
+      accessToken: "expired-token",
+      tokenType: "Bearer",
+      refreshToken: "refresh-token",
+      expiresAt: "2026-01-01T00:00:00.000Z",
+      profile: testProfile,
+      metadata: {},
+    };
+    const original = await store.set("example", "default", credential);
+    const service = createService([oauthProvider], {
+      store,
+      oauthCredentials: {
+        refresh: async () => {
+          await store.set("example", "default", { ...credential, accessToken: "replacement-token" });
+          throw new ConnectionError("oauth_reauth_required", "Reconnect example.");
+        },
+      },
+    });
+    await expect(service.getCredential("example")).rejects.toMatchObject({ code: "oauth_reauth_required" });
+    await expect(service.getManagedConnection(original.id)).resolves.toMatchObject({ status: "active" });
+    await expect(store.get("example", "default")).resolves.toMatchObject({
+      credential: { accessToken: "replacement-token", metadata: {} },
+    });
+  });
+
   it("shares an in-flight OAuth refresh across concurrent requests", async () => {
     const store = new MemoryConnectionStore();
     const oauthClientConfigs = createOAuthClientConfigs([oauthProvider]);
@@ -900,13 +1117,109 @@ describe("ConnectionService", () => {
     );
     vi.stubGlobal("fetch", fetcher);
 
-    const credentials = await Promise.all([service.getCredential("example"), service.getCredential("example")]);
+    const requests = await Promise.all(
+      [0, 1].map(() =>
+        withExecutionTimings(async () => ({
+          credential: await service.getCredential("example"),
+          timings: getExecutionTimings()!,
+        })),
+      ),
+    );
+    const credentials = requests.map((request) => request.credential);
 
     expect(credentials).toEqual([
       expect.objectContaining({ accessToken: "fresh-token" }),
       expect.objectContaining({ accessToken: "fresh-token" }),
     ]);
     expect(fetcher).toHaveBeenCalledOnce();
+    expect(requests[0].timings.requestId).not.toBe(requests[1].timings.requestId);
+    requests.forEach((request) => {
+      expect(request.timings.phases.oauthRefreshMs).toEqual(expect.any(Number));
+    });
+  });
+
+  it("binds OAuth refresh to the resolved stored connection identity", async () => {
+    const store = new MemoryConnectionStore();
+    const oauthClientConfigs = createOAuthClientConfigs([oauthProvider]);
+    const attempts: ProviderHttpAttempt[] = [];
+    const service = createService([oauthProvider], {
+      oauthCredentials: new OAuthCredentialRefreshService(oauthClientConfigs),
+      store,
+      providerHttpDispatch: {
+        beforeAttempt: (attempt) => {
+          attempts.push(attempt);
+          return { allow: true };
+        },
+      },
+    });
+    await oauthClientConfigs.upsertConfig({
+      service: "example",
+      clientId: "client-id",
+      clientSecret: "client-secret",
+    });
+    const original = await store.set("example", "binding-fixture", {
+      authType: "oauth2",
+      accessToken: "expired-token",
+      tokenType: "Bearer",
+      refreshToken: "refresh-token",
+      expiresAt: "2026-01-01T00:00:00.000Z",
+      profile: testProfile,
+      metadata: {},
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ access_token: "fresh-token", expires_in: 3600, token_type: "Bearer" })),
+    );
+    const target = await service.resolveConnection("example", undefined, original.id);
+    expect(attempts).toHaveLength(1);
+    expect(attempts[0]?.context).toMatchObject({
+      operation: "oauth",
+      service: "example",
+      connectionId: original.id,
+      connectionName: "binding-fixture",
+    });
+    if (target.source !== "local") throw new Error("Expected local connection");
+    expect(target.credential).toMatchObject({ accessToken: "fresh-token" });
+    expect(JSON.stringify(attempts)).not.toMatch(/expired-token|refresh-token|client-secret/);
+  });
+
+  it("keeps boolean-only adapter OAuth refresh working with admission configured", async () => {
+    const memory = new MemoryConnectionStore();
+    const store: IConnectionStore = {
+      get: memory.get.bind(memory),
+      getById: memory.getById.bind(memory),
+      getRetirementGeneration: memory.getRetirementGeneration.bind(memory),
+      setIfCurrentGeneration: memory.setIfCurrentGeneration.bind(memory),
+      set: memory.set.bind(memory),
+      updateCredential: memory.updateCredential.bind(memory),
+      delete: memory.delete.bind(memory),
+      list: memory.list.bind(memory),
+    };
+    const expired = {
+      authType: "oauth2" as const,
+      accessToken: "expired-token",
+      tokenType: "Bearer",
+      refreshToken: "refresh-token",
+      expiresAt: "2026-01-01T00:00:00.000Z",
+      profile: testProfile,
+      metadata: {},
+    };
+    const refresh = vi.fn(async () => ({ ...expired, accessToken: "fresh-token" }));
+    await store.set("example", "default", expired);
+    await expect(
+      createService([oauthProvider], { store, oauthCredentials: { refresh } }).getCredential("example"),
+    ).resolves.toMatchObject({ accessToken: "fresh-token" });
+    expect(refresh).toHaveBeenCalledOnce();
+    await store.set("example", "default", expired);
+    const guarded = createService([oauthProvider], {
+      store,
+      oauthCredentials: { refresh },
+      providerHttpDispatch: { beforeAttempt: () => ({ allow: true }) },
+    });
+    const target = await guarded.resolveConnection("example");
+    if (target.source !== "local") throw new Error("Expected local connection");
+    expect(target.credential).toMatchObject({ accessToken: "fresh-token" });
+    expect(refresh).toHaveBeenCalledTimes(2);
   });
 
   it("does not overwrite a connection recreated during OAuth refresh", async () => {
@@ -946,7 +1259,7 @@ describe("ConnectionService", () => {
       }),
     );
 
-    const execution = service.resolveForExecution("example");
+    const execution = service.resolveConnection("example");
     await refreshStarted;
     await store.delete("example", "default");
     const recreated = await store.set("example", "default", {
@@ -1021,7 +1334,7 @@ describe("ConnectionService", () => {
       }),
     );
 
-    const originalExecution = service.resolveForExecution("example");
+    const originalExecution = service.resolveConnection("example");
     await originalRefreshStarted;
     const replaced = await store.set("example", "default", {
       authType: "oauth2",
@@ -1032,7 +1345,7 @@ describe("ConnectionService", () => {
       profile: testProfile,
       metadata: {},
     });
-    const replacementExecution = service.resolveForExecution("example");
+    const replacementExecution = service.resolveConnection("example");
     await replacementRefreshStarted;
     expect(fetch).toHaveBeenCalledTimes(2);
     completeRefreshes[1]!(
@@ -1043,7 +1356,8 @@ describe("ConnectionService", () => {
       }),
     );
     const current = await replacementExecution;
-    await expect(current.getCredential("example")).resolves.toMatchObject({
+    if (current.source !== "local") throw new Error("Expected local connection");
+    expect(current.credential).toMatchObject({
       accessToken: "replacement-refreshed-token",
     });
     completeRefreshes[0]!(
@@ -1060,6 +1374,281 @@ describe("ConnectionService", () => {
     await expect(store.get("example", "default")).resolves.toMatchObject({
       id: replaced.id,
       credential: { accessToken: "replacement-refreshed-token" },
+    });
+  });
+
+  it.each(["success", "refusal"])(
+    "refreshes a new authorization with the same refresh token independently of a late %s",
+    async (outcome) => {
+      const store = new MemoryConnectionStore();
+      const expired: Extract<ResolvedCredential, { authType: "oauth2" }> = {
+        authType: "oauth2",
+        accessToken: "expired-token",
+        tokenType: "Bearer",
+        refreshToken: "reusable-refresh-token",
+        expiresAt: "2026-01-01T00:00:00.000Z",
+        profile: testProfile,
+        metadata: { oauthAuthorizationId: "authorization-1" },
+      };
+      const started = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const refresh = vi.fn(async (_service: string, credential: typeof expired) => {
+        if (credential.metadata.oauthAuthorizationId === "authorization-1") {
+          started.resolve();
+          await release.promise;
+          if (outcome === "refusal") {
+            throw new ConnectionError("oauth_reauth_required", "The previous authorization was revoked.");
+          }
+        }
+        return {
+          ...credential,
+          accessToken: `fresh-${credential.metadata.oauthAuthorizationId}`,
+          expiresAt: "2099-01-01T00:00:00.000Z",
+        };
+      });
+      const service = createService([oauthProvider], { store, oauthCredentials: { refresh } });
+      const original = await store.set("example", "default", expired);
+      const first = service.getCredential("example").catch((error: unknown) => error);
+      await started.promise;
+      const replacement = await store.set("example", "default", {
+        ...expired,
+        metadata: { oauthAuthorizationId: "authorization-2" },
+      });
+      const second = service.getCredential("example");
+
+      try {
+        await expect.poll(() => refresh.mock.calls.length).toBe(2);
+        await expect(second).resolves.toMatchObject({
+          accessToken: "fresh-authorization-2",
+          refreshToken: expired.refreshToken,
+          metadata: { oauthAuthorizationId: "authorization-2" },
+        });
+        expect(replacement.id).toBe(original.id);
+        expect(replacement.revision).not.toBe(original.revision);
+      } finally {
+        release.resolve();
+        await Promise.allSettled([first, second]);
+      }
+
+      expect(await first).toMatchObject({
+        code: outcome === "refusal" ? "oauth_reauth_required" : "connection_not_found",
+      });
+      const current = await store.get("example", "default");
+      expect(current?.credential).toMatchObject({
+        accessToken: "fresh-authorization-2",
+        refreshToken: expired.refreshToken,
+        metadata: { oauthAuthorizationId: "authorization-2" },
+      });
+      if (!current || current.source === "saas" || current.credential.authType !== "oauth2")
+        throw new Error("Expected OAuth credential");
+      expect(current.credential.metadata).not.toHaveProperty("oauthReauthRequired");
+    },
+  );
+
+  describe("rotating single-use refresh tokens", () => {
+    const expiredRotating = {
+      authType: "oauth2" as const,
+      accessToken: "expired-token",
+      tokenType: "Bearer",
+      refreshToken: "refresh-token-1",
+      expiresAt: "2026-01-01T00:00:00.000Z",
+      profile: testProfile,
+      metadata: { oauthAuthorizationId: "authorization-1" },
+    };
+
+    /** A refresher that rejects a spent refresh token, like Feishu/Lark, and can be held open. */
+    function createRotatingRefresher() {
+      const spent = new Set<string>();
+      const pending: Array<() => void> = [];
+      let started!: () => void;
+      let startedPromise = new Promise<void>((resolve) => (started = resolve));
+      let hold = true;
+      const refresh = vi.fn(
+        async (_service: string, credential: Extract<ResolvedCredential, { authType: "oauth2" }>) => {
+          const token = credential.refreshToken!;
+          if (spent.has(token)) throw new Error("The refresh token has been revoked.");
+          spent.add(token);
+          const generation = Number(token.split("-").at(-1)) + 1;
+          started();
+          if (hold) await new Promise<void>((resolve) => pending.push(resolve));
+          return {
+            ...credential,
+            accessToken: `fresh-token-${generation}`,
+            refreshToken: `refresh-token-${generation}`,
+            expiresAt: "2099-01-01T00:00:00.000Z",
+            metadata: { ...credential.metadata, refreshedAt: `generation-${generation}` },
+          };
+        },
+      );
+      return {
+        refresh,
+        started: () => startedPromise,
+        release: () => {
+          hold = false;
+          for (const resolve of pending.splice(0)) resolve();
+        },
+        rearm: () => {
+          hold = true;
+          startedPromise = new Promise<void>((resolve) => (started = resolve));
+        },
+      };
+    }
+
+    async function bumpRevision(store: IConnectionStore, metadata: Record<string, unknown>) {
+      const current = await store.get("example", "default");
+      if (!current || current.source === "saas" || current.credential.authType !== "oauth2")
+        throw new Error("Expected a local OAuth connection");
+      expect(
+        await store.updateCredential({
+          ...current,
+          credential: { ...current.credential, metadata: { ...current.credential.metadata, ...metadata } },
+        }),
+      ).toBe(true);
+      return (await store.get("example", "default"))!;
+    }
+
+    it("persists the rotated refresh token when the revision changes mid-refresh", async () => {
+      const store = new MemoryConnectionStore();
+      const refresher = createRotatingRefresher();
+      const service = createService([oauthProvider], { store, oauthCredentials: refresher });
+      await store.set("example", "default", expiredRotating);
+
+      const first = service.getCredential("example");
+      await refresher.started();
+      const bumped = await bumpRevision(store, { connectionComment: "renamed while refreshing" });
+      refresher.release();
+
+      await expect(first).resolves.toMatchObject({ accessToken: "fresh-token-2", refreshToken: "refresh-token-2" });
+      const stored = await store.get("example", "default");
+      expect(stored?.revision).not.toBe(bumped.revision);
+      expect(stored?.credential).toMatchObject({
+        accessToken: "fresh-token-2",
+        refreshToken: "refresh-token-2",
+        expiresAt: "2099-01-01T00:00:00.000Z",
+        metadata: {
+          oauthAuthorizationId: "authorization-1",
+          connectionComment: "renamed while refreshing",
+          refreshedAt: "generation-2",
+        },
+      });
+
+      // The next expiry spends the rotated token, which the provider still accepts.
+      await bumpRevision(store, {});
+      const current = (await store.get("example", "default"))!;
+      if (current.source === "saas" || current.credential.authType !== "oauth2") throw new Error("Expected OAuth");
+      await store.updateCredential({
+        ...current,
+        credential: { ...current.credential, expiresAt: expiredRotating.expiresAt },
+      });
+      await expect(service.getCredential("example")).resolves.toMatchObject({ refreshToken: "refresh-token-3" });
+      expect(refresher.refresh).toHaveBeenCalledTimes(2);
+      expect(refresher.refresh.mock.calls[1]?.[1]).toMatchObject({ refreshToken: "refresh-token-2" });
+    });
+
+    it("spends the refresh token once for concurrent callers across a revision change", async () => {
+      const store = new MemoryConnectionStore();
+      const refresher = createRotatingRefresher();
+      const service = createService([oauthProvider], { store, oauthCredentials: refresher });
+      await store.set("example", "default", expiredRotating);
+
+      const first = service.getCredential("example");
+      await refresher.started();
+      await bumpRevision(store, { connectionComment: "concurrent write" });
+      const second = service.getCredential("example");
+      refresher.release();
+
+      await expect(Promise.all([first, second])).resolves.toEqual([
+        expect.objectContaining({ refreshToken: "refresh-token-2" }),
+        expect.objectContaining({ refreshToken: "refresh-token-2" }),
+      ]);
+      expect(refresher.refresh).toHaveBeenCalledOnce();
+      await expect(store.get("example", "default")).resolves.toMatchObject({
+        credential: { refreshToken: "refresh-token-2", metadata: { connectionComment: "concurrent write" } },
+      });
+    });
+
+    it("clears a concurrent reauth mark once the refresh succeeds", async () => {
+      const store = new MemoryConnectionStore();
+      const refresher = createRotatingRefresher();
+      const service = createService([oauthProvider], { store, oauthCredentials: refresher });
+      await store.set("example", "default", expiredRotating);
+
+      const first = service.getCredential("example");
+      await refresher.started();
+      await bumpRevision(store, { oauthReauthRequired: true });
+      refresher.release();
+
+      await expect(first).resolves.toMatchObject({ refreshToken: "refresh-token-2" });
+      const stored = await store.get("example", "default");
+      expect(stored?.credential).toMatchObject({ refreshToken: "refresh-token-2" });
+      expect(stored?.credential?.authType === "oauth2" && stored.credential.metadata).not.toHaveProperty(
+        "oauthReauthRequired",
+      );
+    });
+
+    it("does not overwrite a credential a reconnect stored during the refresh", async () => {
+      const store = new MemoryConnectionStore();
+      const refresher = createRotatingRefresher();
+      const revoke = vi.fn(async (): Promise<"done"> => "done");
+      const service = createService([oauthProvider], { store, oauthCredentials: { ...refresher, revoke } });
+      const original = await store.set("example", "default", expiredRotating);
+
+      const first = service.getCredential("example");
+      await refresher.started();
+      expect(
+        await store.updateCredential({
+          ...original,
+          credential: {
+            ...expiredRotating,
+            accessToken: "reconnected-token",
+            refreshToken: "reconnected-refresh-token",
+            expiresAt: "2099-01-01T00:00:00.000Z",
+            metadata: { oauthAuthorizationId: "authorization-2" },
+          },
+        }),
+      ).toBe(true);
+      refresher.release();
+
+      await expect(first).rejects.toMatchObject({ code: "connection_not_found" });
+      expect(revoke).not.toHaveBeenCalled();
+      await expect(store.get("example", "default")).resolves.toMatchObject({
+        id: original.id,
+        credential: {
+          accessToken: "reconnected-token",
+          refreshToken: "reconnected-refresh-token",
+          metadata: { oauthAuthorizationId: "authorization-2" },
+        },
+      });
+    });
+
+    it("gives up after bounded persist attempts when the revision keeps changing", async () => {
+      const memory = new MemoryConnectionStore();
+      let updates = 0;
+      const store: IConnectionStore = {
+        get: memory.get.bind(memory),
+        getById: memory.getById.bind(memory),
+        getRetirementGeneration: memory.getRetirementGeneration.bind(memory),
+        setIfCurrentGeneration: memory.setIfCurrentGeneration.bind(memory),
+        set: memory.set.bind(memory),
+        updateCredential: async (input, refresh) => {
+          updates++;
+          // Every refresh write loses to a concurrent writer that keeps the spent credential.
+          if (refresh) await bumpRevision(memory, { racedWrites: updates });
+          return memory.updateCredential(input);
+        },
+        delete: memory.delete.bind(memory),
+        list: memory.list.bind(memory),
+      };
+      const refresher = createRotatingRefresher();
+      const revoke = vi.fn(async (): Promise<"done"> => "done");
+      refresher.release();
+      await memory.set("example", "default", expiredRotating);
+      const service = createService([oauthProvider], { store, oauthCredentials: { ...refresher, revoke } });
+
+      await expect(service.getCredential("example")).rejects.toMatchObject({ code: "connection_not_found" });
+      expect(refresher.refresh).toHaveBeenCalledOnce();
+      expect(updates).toBe(3);
+      expect(revoke).not.toHaveBeenCalled();
     });
   });
 
@@ -1136,7 +1725,7 @@ describe("ConnectionService", () => {
       metadata: {},
     });
 
-    const resolved = await service.resolveForExecution("uptimerobot");
+    const resolved = await service.resolveConnection("uptimerobot");
     const updated = await store.set("uptimerobot", "default", {
       authType: "api_key",
       apiKey: "replacement-key",
@@ -1147,10 +1736,31 @@ describe("ConnectionService", () => {
 
     expect(updated.id).toBe(original.id);
     expect(resolved.summary?.id).toBe(original.id);
-    await expect(resolved.getCredential("uptimerobot")).resolves.toMatchObject({
+    if (resolved.source !== "local") throw new Error("Expected local connection");
+    expect(resolved.credential).toMatchObject({
       apiKey: "original-key",
       profile: { accountId: "example-account" },
     });
+  });
+
+  it("preserves mutable execution credentials when admission is configured", async () => {
+    const store = new MemoryConnectionStore();
+    const credential = {
+      authType: "api_key" as const,
+      apiKey: "original-key",
+      values: { apiKey: "original-key" },
+      profile: testProfile,
+      metadata: {},
+    };
+    await store.set("uptimerobot", "default", credential);
+    const target = await createService([apiKeyProvider], {
+      store,
+      providerHttpDispatch: { beforeAttempt: () => ({ allow: true }) },
+    }).resolveConnection("uptimerobot");
+    if (target.source !== "local") throw new Error("Expected local connection");
+    expect(target.credential).toBe(credential);
+    credential.apiKey = "updated-key";
+    expect(target.credential).toMatchObject({ apiKey: "updated-key" });
   });
 
   it("resolves each service credential once per forConnection scope", async () => {
@@ -1203,11 +1813,545 @@ describe("ConnectionService", () => {
   });
 });
 
+describe("ConnectionService disconnect revocation", () => {
+  it("rejects a stale credential read that resumes after disconnect", async () => {
+    const store = new MemoryConnectionStore();
+    const credential: Extract<ResolvedCredential, { authType: "oauth2" }> = {
+      authType: "oauth2",
+      accessToken: "old-access",
+      refreshToken: "old-refresh",
+      tokenType: "Bearer",
+      expiresAt: new Date(Date.now() - 60_000).toISOString(),
+      profile: testProfile,
+      metadata: {},
+    };
+    await store.set("example", "default", credential);
+    const refresh = vi.fn(async () => ({
+      ...credential,
+      accessToken: "rotated-access",
+      refreshToken: "rotated-refresh",
+    }));
+    const service = createService([oauthProvider], {
+      store,
+      oauthCredentials: { refresh, revoke: async () => "done" },
+    });
+    const captured = Promise.withResolvers<void>();
+    const releaseRead = Promise.withResolvers<void>();
+    const get = store.get.bind(store);
+    vi.spyOn(store, "get").mockImplementationOnce(async (...args) => {
+      const snapshot = await get(...args);
+      captured.resolve();
+      await releaseRead.promise;
+      return snapshot;
+    });
+    const execution = service.getCredential("example").catch((error: unknown) => error);
+    await captured.promise;
+    await expect(service.disconnect("example", undefined, { revoke: true })).resolves.toMatchObject({
+      revoked: "done",
+    });
+    releaseRead.resolve();
+    await expect(execution).resolves.toMatchObject({ code: "connection_not_found" });
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it("blocks a new refresh while the selected connection is being deleted", async () => {
+    const store = new MemoryConnectionStore();
+    const credential: Extract<ResolvedCredential, { authType: "oauth2" }> = {
+      authType: "oauth2",
+      accessToken: "old-access",
+      refreshToken: "old-refresh",
+      tokenType: "Bearer",
+      expiresAt: new Date(Date.now() - 60_000).toISOString(),
+      profile: testProfile,
+      metadata: {},
+    };
+    await store.set("example", "default", credential);
+    const started = Promise.withResolvers<void>();
+    const releaseRefresh = Promise.withResolvers<void>();
+    const refresh = vi.fn(async () => {
+      started.resolve();
+      await releaseRefresh.promise;
+      return { ...credential, accessToken: "rotated-access", refreshToken: "rotated-refresh" };
+    });
+    const service = createService([oauthProvider], {
+      store,
+      oauthCredentials: { refresh, revoke: async () => "done" },
+    });
+    const deleting = Promise.withResolvers<void>();
+    const releaseDelete = Promise.withResolvers<void>();
+    const remove = store.delete.bind(store);
+    vi.spyOn(store, "delete").mockImplementationOnce(async (...args) => {
+      deleting.resolve();
+      await releaseDelete.promise;
+      await remove(...args);
+    });
+    const disconnect = service.disconnect("example", undefined, { revoke: true });
+    await deleting.promise;
+    const execution = service.getCredential("example").catch((error: unknown) => error);
+    await Promise.race([started.promise, execution]);
+    releaseDelete.resolve();
+    await expect(disconnect).resolves.toMatchObject({ revoked: "done", configured: false });
+    releaseRefresh.resolve();
+
+    await expect(execution).resolves.toMatchObject({ code: "connection_changed" });
+    expect(refresh).not.toHaveBeenCalled();
+    await expect(store.get("example", "default")).resolves.toBeUndefined();
+  });
+
+  it.each(["success", "failure"])("preserves a reconnection while disconnect awaits a refresh %s", async (outcome) => {
+    const store = new MemoryConnectionStore();
+    const started = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const revoke = vi.fn(async (): Promise<"done"> => "done");
+    const credential: Extract<ResolvedCredential, { authType: "oauth2" }> = {
+      authType: "oauth2",
+      accessToken: "old-access",
+      refreshToken: "old-refresh",
+      tokenType: "Bearer",
+      expiresAt: new Date(Date.now() - 60_000).toISOString(),
+      profile: testProfile,
+      metadata: { oauthAuthorizationId: "old-authorization" },
+    };
+    const service = createService([oauthProvider], {
+      store,
+      oauthCredentials: {
+        revoke,
+        async refresh() {
+          started.resolve();
+          await release.promise;
+          if (outcome === "failure") throw new ConnectionError("oauth_token_refresh_failed", "Refresh failed.");
+          return { ...credential, accessToken: "rotated-access", refreshToken: "rotated-refresh" };
+        },
+      },
+    });
+    await store.set("example", "default", credential);
+    const execution = service.getCredential("example").catch((error: unknown) => error);
+    await started.promise;
+    const selected = Promise.withResolvers<void>();
+    const get = store.get.bind(store);
+    vi.spyOn(store, "get").mockImplementationOnce(async (...args) => {
+      const stored = await get(...args);
+      selected.resolve();
+      return stored;
+    });
+    const disconnect = service.disconnect("example", undefined, { revoke: true }).catch((error: unknown) => error);
+    await selected.promise;
+    const replacement = await store.set("example", "default", {
+      ...credential,
+      accessToken: "replacement-access",
+      refreshToken: "replacement-refresh",
+      expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      metadata: { oauthAuthorizationId: "replacement-authorization" },
+    });
+    release.resolve();
+
+    await expect(disconnect).resolves.toMatchObject({ code: "connection_changed" });
+    await expect(store.get("example", "default")).resolves.toEqual(replacement);
+    expect(revoke).not.toHaveBeenCalled();
+    await expect(execution).resolves.toMatchObject({
+      code: outcome === "success" ? "connection_not_found" : "oauth_token_refresh_failed",
+    });
+  });
+
+  it.each([
+    { remainingMs: -60_000, refreshStatus: 200 },
+    { remainingMs: 30_000, refreshStatus: 200 },
+    { remainingMs: 30_000, refreshStatus: 429 },
+  ])(
+    "disconnects GitHub during a refresh ($remainingMs ms remaining, HTTP $refreshStatus)",
+    async ({ remainingMs, refreshStatus }) => {
+      const store = new MemoryConnectionStore();
+      const configs = createOAuthClientConfigs([githubProvider]);
+      await configs.upsertConfig({ service: "github", clientId: "client-id", clientSecret: "client-secret" });
+      const providerLoader = new ProviderLoader({ github: async () => ({ executors: {}, oauth: githubOAuthRuntime }) });
+      const service = createService([githubProvider], {
+        store,
+        providerLoader,
+        oauthCredentials: new OAuthCredentialRefreshService(configs, providerLoader),
+      });
+      await store.set("github", "default", {
+        authType: "oauth2",
+        accessToken: "old-access",
+        tokenType: "Bearer",
+        refreshToken: "single-use-refresh",
+        expiresAt: new Date(Date.now() + remainingMs).toISOString(),
+        profile: testProfile,
+        metadata: {},
+      });
+      const started = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      let refreshCount = 0;
+      const fetcher = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === "POST") {
+          refreshCount++;
+          if (refreshCount > 1) return Response.json({ error: "bad_refresh_token" });
+          started.resolve();
+          await release.promise;
+          return refreshStatus === 200
+            ? Response.json({ access_token: "rotated-access", refresh_token: "rotated-refresh", expires_in: 28800 })
+            : Response.json({ error: "temporarily_unavailable" }, { status: refreshStatus });
+        }
+        await expect(store.get("github", "default")).resolves.toBeUndefined();
+        const body = JSON.parse(String(init?.body));
+        const accessToken = refreshStatus === 200 ? "rotated-access" : "old-access";
+        return new Response(null, { status: body.access_token === accessToken ? 204 : 422 });
+      });
+      vi.stubGlobal("fetch", fetcher);
+      const execution = service.getCredential("github").catch((error: unknown) => error);
+      await started.promise;
+      const disconnectRead = Promise.withResolvers<void>();
+      const get = store.get.bind(store);
+      vi.spyOn(store, "get").mockImplementationOnce(async (...args) => {
+        const stored = await get(...args);
+        disconnectRead.resolve();
+        return stored;
+      });
+      const disconnect = service.disconnect("github", undefined, { revoke: true });
+      await disconnectRead.promise;
+      release.resolve();
+
+      await expect(disconnect).resolves.toMatchObject({
+        configured: false,
+        revoked: "done",
+      });
+      expect(refreshCount).toBe(1);
+      await expect(store.get("github", "default")).resolves.toBeUndefined();
+      expect(fetcher).toHaveBeenCalledTimes(2);
+      expect(fetcher.mock.calls[1]?.[1]?.method).toBe("DELETE");
+      expect(JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body))).toEqual({
+        access_token: refreshStatus === 200 ? "rotated-access" : "old-access",
+      });
+      if (refreshStatus === 200) {
+        await expect(execution).resolves.toMatchObject({
+          accessToken: "rotated-access",
+          refreshToken: "rotated-refresh",
+        });
+      } else {
+        await expect(execution).resolves.toMatchObject({ code: "oauth_token_refresh_failed" });
+      }
+    },
+  );
+
+  const revocableProvider: ProviderDefinition = {
+    ...oauthProvider,
+    service: "revocable",
+    auth: [
+      {
+        type: "oauth2",
+        authorizationUrl: "https://example.com/oauth/authorize",
+        tokenUrl: "https://example.com/oauth/token",
+        revocationUrl: "https://example.com/oauth/revoke",
+        scopes: ["read"],
+        tokenEndpointAuthMethod: "client_secret_post",
+      },
+    ],
+  };
+  const publicRevocableProvider: ProviderDefinition = {
+    ...revocableProvider,
+    service: "public_revocable",
+    auth: [{ ...revocableProvider.auth[0], tokenEndpointAuthMethod: "none" } as ProviderDefinition["auth"][number]],
+  };
+
+  async function connectRevocable(
+    provider: ProviderDefinition,
+    logger = createTestLogger(),
+    credential: Partial<Extract<ResolvedCredential, { authType: "oauth2" }>> = {},
+  ) {
+    const store = new MemoryConnectionStore();
+    const oauthClientConfigs = createOAuthClientConfigs([provider]);
+    await oauthClientConfigs.upsertConfig({
+      service: provider.service,
+      clientId: "client-id",
+      clientSecret: "client-secret",
+    });
+    const service = createService([provider], {
+      logger,
+      oauthCredentials: new OAuthCredentialRefreshService(oauthClientConfigs),
+      store,
+    });
+    await store.set(provider.service, "default", {
+      authType: "oauth2",
+      accessToken: "access-token",
+      tokenType: "Bearer",
+      refreshToken: "refresh-token",
+      profile: testProfile,
+      metadata: {},
+      ...credential,
+    });
+    return { service, store, logger };
+  }
+
+  /** Stub fetch with a typed two-argument mock so the recorded init can be read back. */
+  function stubRevocationResponse(respond: () => Response | Promise<Response>) {
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => respond());
+    vi.stubGlobal("fetch", fetcher);
+    return fetcher;
+  }
+
+  function revokeInit(fetcher: ReturnType<typeof stubRevocationResponse>): RequestInit {
+    const init = fetcher.mock.calls[0]?.[1];
+    if (!init) {
+      throw new Error("Expected one revocation request");
+    }
+    return init;
+  }
+
+  function revokeBody(fetcher: ReturnType<typeof stubRevocationResponse>): URLSearchParams {
+    const body = revokeInit(fetcher).body;
+    if (!(body instanceof URLSearchParams)) {
+      throw new Error("Expected the revocation request body to use URLSearchParams");
+    }
+    return body;
+  }
+
+  it("preserves a refresh that finishes while the disconnect credential snapshot is being read", async () => {
+    const { service, store } = await connectRevocable(revocableProvider, createTestLogger(), {
+      expiresAt: new Date(Date.now() + 30_000).toISOString(),
+    });
+    const started = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const fetcher = stubRevocationResponse(async () => {
+      started.resolve();
+      await release.promise;
+      return Response.json({ access_token: "rotated-access", refresh_token: "rotated-refresh", expires_in: 3600 });
+    });
+    const execution = service.getCredential("revocable");
+    await started.promise;
+    const get = store.get.bind(store);
+    vi.spyOn(store, "get").mockImplementationOnce(async (...args) => {
+      const snapshot = await get(...args);
+      release.resolve();
+      await execution;
+      return snapshot;
+    });
+
+    await expect(service.disconnect("revocable", undefined, { revoke: true })).rejects.toMatchObject({
+      code: "connection_changed",
+    });
+    await expect(store.get("revocable", "default")).resolves.toMatchObject({
+      credential: { accessToken: "rotated-access", refreshToken: "rotated-refresh" },
+    });
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+
+  it("preserves a replacement written after selecting the credential to revoke", async () => {
+    const { service, store } = await connectRevocable(revocableProvider);
+    const fetcher = stubRevocationResponse(() => new Response(null, { status: 200 }));
+    const remove = store.delete.bind(store);
+    let replacement: StoredConnection | undefined;
+    vi.spyOn(store, "delete").mockImplementationOnce(async (...args) => {
+      replacement = await store.set("revocable", "default", {
+        authType: "api_key",
+        apiKey: "replacement-key",
+        values: {},
+        profile: testProfile,
+        metadata: {},
+      });
+      await remove(...args);
+    });
+
+    await expect(service.disconnect("revocable", undefined, { revoke: true })).rejects.toMatchObject({
+      code: "connection_changed",
+    });
+    await expect(store.get("revocable", "default")).resolves.toEqual(replacement);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("deletes the connection before posting the refresh token once", async () => {
+    const { service, store, logger } = await connectRevocable(revocableProvider);
+    const fetcher = stubRevocationResponse(async () => {
+      await expect(store.get("revocable", "default")).resolves.toBeUndefined();
+      return new Response(null, { status: 200 });
+    });
+
+    await expect(service.disconnect("revocable", undefined, { revoke: true })).resolves.toEqual({
+      service: "revocable",
+      connectionName: "default",
+      configured: false,
+      revoked: "done",
+    });
+
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(fetcher.mock.calls[0]?.[0]).toBe("https://example.com/oauth/revoke");
+    expect(revokeInit(fetcher)).toMatchObject({
+      method: "POST",
+      redirect: "manual",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+    });
+    const body = revokeBody(fetcher);
+    expect(body.get("token")).toBe("refresh-token");
+    expect(body.get("token_type_hint")).toBe("refresh_token");
+    // The token endpoint's client authentication (client_secret_post) applies.
+    expect(body.get("client_id")).toBe("client-id");
+    expect(body.get("client_secret")).toBe("client-secret");
+    await expect(store.get("revocable", "default")).resolves.toBeUndefined();
+    expect(logger.info).toHaveBeenCalledWith(
+      { service: "revocable", connectionName: "default", revoked: "done" },
+      "oauth token revocation completed",
+    );
+  });
+
+  it("still deletes the connection when the endpoint refuses the token, and reports failed", async () => {
+    const { service, store, logger } = await connectRevocable(revocableProvider);
+    const fetcher = stubRevocationResponse(() => Response.json({ error: "invalid_token" }, { status: 400 }));
+
+    await expect(service.disconnect("revocable", undefined, { revoke: true })).resolves.toMatchObject({
+      configured: false,
+      revoked: "failed",
+    });
+
+    expect(fetcher).toHaveBeenCalledOnce();
+    await expect(store.get("revocable", "default")).resolves.toBeUndefined();
+    expect(logger.warn).toHaveBeenCalledWith(
+      {
+        service: "revocable",
+        connectionName: "default",
+        errorCode: "oauth_token_revocation_failed",
+        error: "OAuth token revocation failed (HTTP 400, invalid_token).",
+      },
+      "oauth token revocation failed",
+    );
+  });
+
+  it("still deletes the connection when the endpoint cannot be reached", async () => {
+    const { service, store } = await connectRevocable(revocableProvider);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("fetch failed");
+      }),
+    );
+
+    await expect(service.disconnect("revocable", undefined, { revoke: true })).resolves.toMatchObject({
+      configured: false,
+      revoked: "failed",
+    });
+    await expect(store.get("revocable", "default")).resolves.toBeUndefined();
+  });
+
+  it("posts the access token when the connection holds no refresh token", async () => {
+    const { service } = await connectRevocable(revocableProvider, createTestLogger(), { refreshToken: undefined });
+    const fetcher = stubRevocationResponse(() => new Response(null, { status: 200 }));
+
+    await expect(service.disconnect("revocable", undefined, { revoke: true })).resolves.toMatchObject({
+      revoked: "done",
+    });
+
+    const body = revokeBody(fetcher);
+    expect(body.get("token")).toBe("access-token");
+    expect(body.get("token_type_hint")).toBe("access_token");
+  });
+
+  it("sends no secret for a public client", async () => {
+    const { service } = await connectRevocable(publicRevocableProvider);
+    const fetcher = stubRevocationResponse(() => new Response(null, { status: 200 }));
+
+    await expect(service.disconnect("public_revocable", undefined, { revoke: true })).resolves.toMatchObject({
+      revoked: "done",
+    });
+
+    const body = revokeBody(fetcher);
+    expect(body.get("client_id")).toBe("client-id");
+    expect(body.has("client_secret")).toBe(false);
+    expect(revokeInit(fetcher).headers).not.toHaveProperty("authorization");
+  });
+
+  it.each([undefined, false])(
+    "preserves shared credentials when disconnect does not request revocation (%s)",
+    async (revoke) => {
+      const { service, store } = await connectRevocable(revocableProvider);
+      const other = await store.set("revocable", "other", {
+        authType: "oauth2",
+        accessToken: "access-token",
+        tokenType: "Bearer",
+        refreshToken: "refresh-token",
+        profile: testProfile,
+        metadata: {},
+      });
+      const fetcher = vi.fn();
+      vi.stubGlobal("fetch", fetcher);
+
+      await expect(service.disconnect("revocable", undefined, { revoke })).resolves.toEqual({
+        service: "revocable",
+        connectionName: "default",
+        configured: false,
+        revoked: "skipped",
+      });
+
+      expect(fetcher).not.toHaveBeenCalled();
+      await expect(store.get("revocable", "default")).resolves.toBeUndefined();
+      await expect(store.get("revocable", "other")).resolves.toEqual(other);
+      await expect(service.getCredential("revocable", "other")).resolves.toMatchObject({ accessToken: "access-token" });
+    },
+  );
+
+  it("reports unsupported, without any request, for a provider that declares no revocation endpoint", async () => {
+    const { service, store } = await connectRevocable(oauthProvider);
+    const fetcher = vi.fn();
+    vi.stubGlobal("fetch", fetcher);
+
+    await expect(service.disconnect("example", undefined, { revoke: true })).resolves.toEqual({
+      service: "example",
+      connectionName: "default",
+      configured: false,
+      revoked: "unsupported",
+    });
+
+    expect(fetcher).not.toHaveBeenCalled();
+    await expect(store.get("example", "default")).resolves.toBeUndefined();
+  });
+
+  it("reports unsupported for a connection that is not OAuth, and for one that is not held", async () => {
+    const service = createService([apiKeyProvider, revocableProvider]);
+    await service.connectWithApiKey("uptimerobot", { values: { apiKey: "key", accountId: "acct" } });
+    const fetcher = vi.fn();
+    vi.stubGlobal("fetch", fetcher);
+
+    await expect(service.disconnect("uptimerobot", undefined, { revoke: true })).resolves.toMatchObject({
+      configured: false,
+      revoked: "unsupported",
+    });
+    await expect(service.disconnect("revocable", undefined, { revoke: true })).resolves.toMatchObject({
+      configured: false,
+      revoked: "unsupported",
+    });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("revokes nothing when the store refuses the delete", async () => {
+    const { service, store } = await connectRevocable(revocableProvider);
+    const fetcher = stubRevocationResponse(() => new Response(null, { status: 200 }));
+    const refused = new Error("Cancel or abandon remote Trigger subscriptions before disconnecting this connection.");
+    vi.spyOn(store, "delete").mockRejectedValueOnce(refused);
+
+    await expect(service.disconnect("revocable", undefined, { revoke: true })).rejects.toBe(refused);
+
+    expect(fetcher).not.toHaveBeenCalled();
+    await expect(store.get("revocable", "default")).resolves.toMatchObject({ credential: { authType: "oauth2" } });
+    await expect(service.getCredential("revocable")).resolves.toMatchObject({ accessToken: "access-token" });
+  });
+
+  it("preserves the connection when the credential read fails before revoking disconnect", async () => {
+    const { service, store } = await connectRevocable(revocableProvider);
+    const failure = new Error("Credential read unavailable");
+    vi.spyOn(store, "get").mockRejectedValueOnce(failure);
+    const remove = vi.spyOn(store, "delete");
+    const fetcher = stubRevocationResponse(() => new Response(null, { status: 200 }));
+
+    await expect(service.disconnect("revocable", undefined, { revoke: true })).rejects.toBe(failure);
+
+    expect(remove).not.toHaveBeenCalled();
+    expect(fetcher).not.toHaveBeenCalled();
+    await expect(store.get("revocable", "default")).resolves.toMatchObject({ credential: { authType: "oauth2" } });
+  });
+});
+
 interface CreateServiceOptions {
+  providerHttpDispatch?: ProviderHttpDispatchOptions;
   logger?: ReturnType<typeof createTestLogger>;
-  oauthCredentials?: OAuthCredentialRefreshService;
+  oauthCredentials?: IOAuthCredentialRefresher;
   providerLoader?: IProviderLoader;
-  store?: MemoryConnectionStore;
+  store?: IConnectionStore;
   onConnectionDeleted?: (connectionId: string) => Promise<void>;
 }
 
@@ -1215,6 +2359,7 @@ function createService(providers: ProviderDefinition[], options: CreateServiceOp
   const catalog = createCatalogStore(providers);
 
   return new ConnectionService({
+    providerHttpDispatch: options.providerHttpDispatch,
     catalog,
     logger: options.logger,
     oauthCredentials: options.oauthCredentials,
@@ -1263,11 +2408,37 @@ class FakeProviderLoader implements IProviderLoader {
 class MemoryConnectionStore implements IConnectionStore {
   private readonly store = new Map<string, StoredConnection>();
 
+  async getById(id: string): Promise<StoredConnection | undefined> {
+    return [...this.store.values()].find((connection) => connection.id === id);
+  }
+
   async get(service: string, connectionName: string): Promise<StoredConnection | undefined> {
     return this.store.get(createConnectionKey(service, connectionName));
   }
 
-  async set(service: string, connectionName: string, credential: ResolvedCredential): Promise<StoredConnection> {
+  private readonly retirementGenerations = new Map<string, string>();
+
+  async getRetirementGeneration(service: string, connectionName: string): Promise<string> {
+    const key = JSON.stringify([service, connectionName]);
+    let generation = this.retirementGenerations.get(key);
+    if (!generation) {
+      generation = crypto.randomUUID();
+      this.retirementGenerations.set(key, generation);
+    }
+    return generation;
+  }
+
+  async setIfCurrentGeneration(
+    service: string,
+    connectionName: string,
+    credential: ResolvedCredential,
+    retirementGeneration: string,
+  ) {
+    if ((await this.getRetirementGeneration(service, connectionName)) !== retirementGeneration) return undefined;
+    return this.set(service, connectionName, credential);
+  }
+
+  async set(service: string, connectionName: string, credential: ResolvedCredential) {
     const key = createConnectionKey(service, connectionName);
     const connection = {
       id: this.store.get(key)?.id ?? crypto.randomUUID(),
@@ -1288,7 +2459,15 @@ class MemoryConnectionStore implements IConnectionStore {
     return true;
   }
 
-  async delete(service: string, connectionName: string): Promise<void> {
+  async delete(
+    service: string,
+    connectionName: string,
+    target?: Pick<StoredConnection, "id" | "revision">,
+  ): Promise<void> {
+    const current = this.store.get(createConnectionKey(service, connectionName));
+    if (target && (current?.id !== target.id || current?.revision !== target.revision))
+      throw new ConnectionError("connection_changed", "The connection changed before it could be disconnected.");
+    this.retirementGenerations.set(JSON.stringify([service, connectionName]), crypto.randomUUID());
     this.store.delete(createConnectionKey(service, connectionName));
   }
 
@@ -1320,3 +2499,31 @@ class MemoryOAuthClientConfigStore {
     return [...this.configs.values()];
   }
 }
+
+it("keeps SaaS references out of the local credential and refresh paths", async () => {
+  const store = new MemoryConnectionStore();
+  const remote: StoredConnection = {
+    source: "saas",
+    id: "remote",
+    revision: "revision",
+    service: "example",
+    connectionName: "default",
+    reference: {
+      managedProjectId: "project",
+      providerConfigId: "config",
+      externalUserId: "user",
+      connectedAccountId: "account",
+      localRequestId: "request",
+    },
+    profile: testProfile,
+    status: "active",
+    comment: null,
+  };
+  vi.spyOn(store, "get").mockResolvedValue(remote);
+  vi.spyOn(store, "list").mockResolvedValue([remote]);
+  const service = createService([oauthProvider], { store });
+  expect(await service.resolveConnection("example")).toMatchObject({ source: "saas", reference: remote.reference });
+  expect(await service.getConnectionSummary("example")).toMatchObject({ profile: testProfile, configured: true });
+  expect(await service.listAuthenticatedServices(["example"])).toContain("example");
+  await expect(service.getCredential("example")).rejects.toMatchObject({ code: "unsupported_auth_type" });
+});

@@ -4,16 +4,13 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderRequestContext } from "../provider-runtime.ts";
 
 import { compactObject, optionalInteger, optionalRecord, optionalString, requiredRecord } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 
 const service = "lumos";
 const lumosApiBaseUrl = "https://api.lumos.com";
@@ -120,7 +117,6 @@ async function validateLumosCredential(
       accountId: "api_key",
       displayName: "Lumos API Token",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: lumosApiBaseUrl,
       validationEndpoint: "/appstore/apps?page=1&size=1",
@@ -133,7 +129,7 @@ async function requestLumosJson(input: {
   apiKey: string;
   path: string;
   query?: URLSearchParams;
-  context: Pick<ApiKeyProviderContext, "fetcher" | "signal">;
+  context: ProviderRequestContext;
   phase: LumosRequestPhase;
 }): Promise<unknown> {
   const url = new URL(input.path, lumosApiBaseUrl);

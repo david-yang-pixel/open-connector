@@ -1,16 +1,16 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { optionalBoolean, optionalInteger, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   providerUserAgent,
   ProviderRequestError,
   readProviderTextBody,
   requiredInputString,
+  providerInputError,
 } from "../provider-runtime.ts";
 
 const service = "ritekit";
@@ -99,7 +99,6 @@ export const credentialValidators: CredentialValidators = {
     );
     return {
       profile: { accountId: "ritekit", displayName: "RiteKit Client ID" },
-      grantedScopes: [],
       metadata: {
         validationEndpoint: "/v1/search/trending",
         sampleTagCount: normalizeTrending(payload.tags).length,
@@ -122,7 +121,7 @@ async function requestSuggestions(
 }
 
 async function requestRiteKit(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   path: string,
   query: QueryEntry[],
   phase: RiteKitPhase = "execute",
@@ -176,8 +175,7 @@ function createError(status: number, payload: unknown, phase: RiteKitPhase): Pro
     optionalString(record?.error_description) ??
     `RiteKit request failed with status ${effectiveStatus || 500}`;
   if (effectiveStatus === 429) return new ProviderRequestError(429, message);
-  if (phase === "validate" && effectiveStatus >= 400 && effectiveStatus < 500)
-    return new ProviderRequestError(400, message);
+  if (phase === "validate" && effectiveStatus >= 400 && effectiveStatus < 500) return providerInputError(message);
   if (effectiveStatus === 401 || effectiveStatus === 403) return new ProviderRequestError(effectiveStatus, message);
   if (effectiveStatus >= 400 && effectiveStatus < 500) return new ProviderRequestError(effectiveStatus, message);
   return new ProviderRequestError(effectiveStatus >= 400 ? effectiveStatus : 502, message);

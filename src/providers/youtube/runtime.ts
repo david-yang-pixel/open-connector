@@ -1,11 +1,17 @@
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { OAuthProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { OAuthProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { randomUUID } from "node:crypto";
 import { compactObject, optionalBoolean, optionalInteger, optionalString, rawStringOrNull } from "../../core/cast.ts";
-import { assertPublicHttpUrl, readBoundedResponseBytes } from "../../core/request.ts";
-import { googleJsonRequest, googleRequest } from "../google-runtime.ts";
-import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
+import { assertPublicHttpUrl, readBoundedResponseBytes, storeResponseInTransit } from "../../core/request.ts";
+import { googleJsonRequest, googleRequest } from "../googledrive/runtime-request.ts";
+import { readTransitFileInput } from "../provider-files.ts";
+import {
+  createProviderFetch,
+  providerInputError,
+  providerUserAgent,
+  ProviderRequestError,
+} from "../provider-runtime.ts";
 
 const youtubeApiBaseUrl = "https://www.googleapis.com/youtube/v3";
 const youtubeUploadApiBaseUrl = "https://www.googleapis.com/upload/youtube/v3";
@@ -349,7 +355,8 @@ async function createCommentReply(input: Record<string, unknown>, context: Youtu
 
 async function uploadVideoFromUrl(input: Record<string, unknown>, context: YoutubeActionContext): Promise<unknown> {
   const source = await resolveStreamingUploadSource({
-    url: requireString(optionalString(input.mediaUrl), "mediaUrl is required"),
+    url: optionalString(input.mediaUrl),
+    file: input.file,
     fileName: optionalString(input.fileName),
     mimeType: optionalString(input.mimeType),
     context,
@@ -466,12 +473,13 @@ async function downloadCaption(input: Record<string, unknown>, context: YoutubeA
   const mimeType = optionalString(input.mimeType) ?? inferMimeType(response.headers.get("content-type"));
   const fileName =
     optionalString(input.fileName) ?? resolveCaptionFileName(captionId, optionalString(input.tfmt), mimeType);
-  const bytes = await readBoundedResponseBytes(response, {
-    maxBytes: context.transitFiles.maxBytes,
+  const upload = await storeResponseInTransit(response, context.transitFiles, {
+    name: fileName,
+    mimeType,
     fieldName: "YouTube caption download",
     createError: (message) => new ProviderRequestError(413, message),
+    signal: context.signal,
   });
-  const upload = await context.transitFiles.create(new File([Uint8Array.from(bytes)], fileName, { type: mimeType }));
   return {
     file: {
       id: captionId,
@@ -887,16 +895,30 @@ async function resolveUploadSource(input: {
 }
 
 async function resolveStreamingUploadSource(input: {
-  url: string;
+  url?: string;
+  file?: unknown;
   fileName?: string;
   mimeType?: string;
   context: YoutubeActionContext;
 }): Promise<StreamingUploadSource> {
-  const response = await fetchUploadSource(input.url, input.context);
+  if (Number(input.url !== undefined) + Number(input.file !== undefined) !== 1)
+    throw providerInputError("Exactly one of mediaUrl or file is required.");
+  let response: Response;
+  let sourceFileName: string;
+  if (input.url !== undefined) {
+    response = await fetchUploadSource(input.url, input.context);
+    sourceFileName = inferFileNameFromUrl(input.url);
+  } else {
+    const file = await readTransitFileInput(input.file, input.context);
+    response = new Response(file.file, {
+      headers: { "content-type": file.mimeType, "content-length": String(file.sizeBytes) },
+    });
+    sourceFileName = file.name;
+  }
   const bytes = await readYoutubeUploadSourceBytes(response);
   return {
     bytes,
-    fileName: input.fileName ?? inferFileNameFromUrl(input.url),
+    fileName: input.fileName ?? sourceFileName,
     mimeType: input.mimeType ?? inferMimeType(response.headers.get("content-type")),
     contentLength: bytes.byteLength,
   };
@@ -907,7 +929,7 @@ async function fetchUploadSource(url: string, context: YoutubeActionContext): Pr
     fieldName: "upload source URL",
     createError: (message) => new ProviderRequestError(400, message),
   });
-  const response = await context.fetcher(url, {
+  const response = await createProviderFetch({ fetch: context.fetcher })(url, {
     method: "GET",
     headers: { "user-agent": providerUserAgent },
     signal: context.signal,

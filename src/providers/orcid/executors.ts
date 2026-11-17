@@ -1,13 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { OAuthProviderContext } from "../provider-runtime.ts";
+import type { OAuthProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineOAuthProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-} from "../provider-runtime.ts";
+import { defineOAuthProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 const service = "orcid";
 const baseUrl = "https://pub.orcid.org/v3.0";
 const orcidUserInfoUrl = "https://orcid.org/oauth/userinfo";
@@ -89,7 +86,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: orcidId,
         displayName,
       },
-      grantedScopes: readGrantedScopes(input.metadata.scope),
       metadata: compactObject({
         validationEndpoint: orcidUserInfoUrl,
         orcidId,
@@ -162,7 +158,4 @@ function objectOrEmpty(value: unknown): Record<string, unknown> {
 }
 function normalize(value: string): string {
   return value.toUpperCase().replace(/^HTTPS?:\/\/ORCID\.ORG\//, "");
-}
-function readGrantedScopes(scope: unknown): string[] {
-  return optionalString(scope)?.split(/\s+/u).filter(Boolean) ?? ["openid"];
 }

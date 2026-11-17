@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 import type { ProviderFetch } from "../provider-runtime.ts";
 import type { Client } from "@modelcontextprotocol/client";
 
@@ -10,7 +10,12 @@ import { createHash } from "node:crypto";
 import { optionalRecord, optionalString } from "../../core/cast.ts";
 import { assertPublicHttpUrl, isPrivateNetworkAccessAllowed } from "../../core/request.ts";
 import { withMcpClient } from "../mcp-client.ts";
-import { ProviderRequestError, providerUserAgent, requiredInputString } from "../provider-runtime.ts";
+import {
+  ProviderRequestError,
+  providerUserAgent,
+  requiredInputString,
+  defaultProviderRequestTimeoutMs,
+} from "../provider-runtime.ts";
 
 export interface ExcalidrawMcpContext {
   endpoint: URL;
@@ -31,7 +36,6 @@ type ExcalidrawMcpToolResult = {
   toolResult?: unknown;
 };
 const defaultEndpoint = "https://mcp.excalidraw.com";
-const requestTimeoutMs = 30_000;
 
 export const excalidrawMcpActionHandlers: ProviderActionHandlers<"excalidraw_mcp", ExcalidrawMcpActionHandler> = {
   read_me(_input, context) {
@@ -78,7 +82,6 @@ export async function validateExcalidrawCredential(
       accountId: `excalidraw_mcp:mcp:${endpointHash}`,
       displayName: `Excalidraw MCP · ${context.endpoint.host}`,
     },
-    grantedScopes: [],
     metadata: {
       mcpEndpoint: endpointId,
       discoveredToolCount: discoveredTools.length,
@@ -120,7 +123,7 @@ export async function callExcalidrawMcpTool(
         arguments: args,
       },
       {
-        timeout: requestTimeoutMs,
+        timeout: defaultProviderRequestTimeoutMs,
         signal: context.signal,
       },
     ),
@@ -134,7 +137,7 @@ async function listExcalidrawMcpTools(context: ExcalidrawMcpContext): Promise<st
     client.listTools(
       {},
       {
-        timeout: requestTimeoutMs,
+        timeout: defaultProviderRequestTimeoutMs,
         signal: context.signal,
       },
     ),

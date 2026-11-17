@@ -4,17 +4,18 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineProviderExecutors,
-  defineProviderProxy,
   providerUserAgent,
   ProviderRequestError,
   readProviderTextBody,
-  requireApiKeyCredential,
+  providerResponseError,
 } from "../provider-runtime.ts";
 
 const detrackApiBaseUrl = "https://app.detrack.com/api/v2";
@@ -107,7 +108,6 @@ export const credentialValidators: CredentialValidators = {
       profile: {
         displayName: "Detrack API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: detrackApiBaseUrl,
         validationEndpoint: "/dn/jobs",
@@ -452,7 +452,7 @@ function createDetrackError(response: Response, payload: unknown, phase: Detrack
     return new ProviderRequestError(429, message);
   }
   if (response.status >= 500) {
-    return new ProviderRequestError(502, message);
+    return providerResponseError(message);
   }
   if (phase === "validate") {
     return new ProviderRequestError(response.status || 400, message);
@@ -504,21 +504,21 @@ function requireDetrackEnvelope(value: unknown) {
 function requireObject(value: unknown, message: string) {
   const object = optionalRecord(value);
   if (!object) {
-    throw new ProviderRequestError(502, message);
+    throw providerResponseError(message);
   }
   return object;
 }
 
 function requireArray(value: unknown, message: string) {
   if (!Array.isArray(value)) {
-    throw new ProviderRequestError(502, message);
+    throw providerResponseError(message);
   }
   return value;
 }
 
 function requireNumber(value: unknown, message: string) {
   if (typeof value !== "number") {
-    throw new ProviderRequestError(502, message);
+    throw providerResponseError(message);
   }
   return value;
 }

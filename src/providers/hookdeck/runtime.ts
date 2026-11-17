@@ -1,5 +1,5 @@
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean, optionalRecord, optionalString } from "../../core/cast.ts";
 import { createProviderTimeout, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
@@ -130,7 +130,6 @@ export async function validateHookdeckCredential(
   options: { fetcher: typeof fetch; signal?: AbortSignal },
 ): Promise<{
   profile: { accountId: string; displayName: string };
-  grantedScopes: string[];
   metadata: Record<string, unknown>;
 }> {
   const payload = await hookdeckGetJson(
@@ -152,7 +151,6 @@ export async function validateHookdeckCredential(
       accountId: optionalString(firstSource?.id) ?? "api_key",
       displayName: firstSource ? `Hookdeck: ${String(firstSource.name)}` : "Hookdeck API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: `${hookdeckApiBaseUrl}${hookdeckApiPrefix}`,
       apiVersion: hookdeckApiVersion,

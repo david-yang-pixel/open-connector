@@ -1,16 +1,18 @@
 import type { CredentialValidationResult, ProviderExecutors, TransitFileWriter } from "../../core/types.ts";
-import type { ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import { compactObject, optionalString, requiredString } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors, mapProviderActionSources } from "../provider-executors.ts";
+import { readTransitFileInput } from "../provider-files.ts";
 import {
-  defineApiKeyProviderExecutors,
-  mapProviderActionSources,
   ProviderRequestError,
   providerUserAgent,
-  readTransitFileInput,
+  providerInputError,
+  providerResponseError,
+  defaultProviderRequestTimeoutMs,
 } from "../provider-runtime.ts";
 
 const pushoverApiBaseUrl = "https://api.pushover.net";
@@ -18,7 +20,6 @@ export const pushoverVersionedApiBaseUrl: string = `${pushoverApiBaseUrl}/1`;
 const pushoverIconBaseUrl = `${pushoverApiBaseUrl}/icons`;
 const pushoverRealtimeUrl = "wss://client.pushover.net/push";
 const pushoverUserAgent = providerUserAgent;
-const pushoverDefaultTimeoutMs = 30_000;
 const pushoverDefaultRealtimeTimeoutSeconds = 60;
 const pushoverMaxRealtimeTimeoutSeconds = 300;
 const pushoverMaxAttachmentBytes = 5 * 1024 * 1024;
@@ -58,10 +59,6 @@ type TransitAttachmentInput = {
   name?: string;
   mimeType?: string;
 };
-
-function pushoverError(_code: string, message: string, status = 500, details?: unknown): ProviderRequestError {
-  return new ProviderRequestError(status, message, details);
-}
 
 function createTimeoutSignal(input: { timeoutMs: number }): {
   signal: AbortSignal;
@@ -189,7 +186,7 @@ export async function validatePushoverCredential(
   input: Record<string, string>,
   fetcher: typeof fetch,
 ): Promise<CredentialValidationResult> {
-  const apiKey = requiredString(input.apiKey, "apiKey", (message) => new ProviderRequestError(400, message));
+  const apiKey = requiredString(input.apiKey, "apiKey", providerInputError);
   const appLimits = await requestPushoverJson({
     path: "/apps/limits.json",
     query: {
@@ -220,9 +217,7 @@ export async function validatePushoverCredential(
     profile: {
       accountId: buildPushoverProviderAccountId(apiKey),
       displayName: "Pushover Application",
-      grantedScopes: [],
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: pushoverVersionedApiBaseUrl,
       validationEndpoint: "/apps/limits.json",
@@ -407,7 +402,7 @@ async function getPushoverAppIconImage(input: PushoverActionInput, fetcher: type
     icon: string;
   };
   const iconUrl = `${pushoverIconBaseUrl}/${encodeURIComponent(parsed.icon)}.png`;
-  const timeout = createTimeoutSignal({ timeoutMs: pushoverDefaultTimeoutMs });
+  const timeout = createTimeoutSignal({ timeoutMs: defaultProviderRequestTimeoutMs });
   try {
     const response = await fetcher(iconUrl, {
       method: "GET",
@@ -417,12 +412,11 @@ async function getPushoverAppIconImage(input: PushoverActionInput, fetcher: type
       signal: timeout.signal,
     });
     if (!response.ok) {
-      throw pushoverError(
-        response.status === 404 ? "invalid_input" : "provider_error",
+      throw new ProviderRequestError(
+        response.status === 404 ? 400 : 502,
         response.status === 404
           ? `unknown pushover icon: ${parsed.icon}`
           : `pushover icon request failed with ${response.status} ${response.statusText}`.trim(),
-        response.status === 404 ? 400 : 502,
       );
     }
 
@@ -766,7 +760,7 @@ async function assignPushoverLicense(input: PushoverActionInput, fetcher: typeof
     os?: string;
   };
   if (!parsed.user && !parsed.email) {
-    throw pushoverError("invalid_input", "user or email is required", 400);
+    throw providerInputError("user or email is required");
   }
   const appToken = resolveAppToken(input, parsed.token);
   const payload = await requestPushoverJson({
@@ -983,7 +977,7 @@ async function listenPushoverClientWebsocket(input: PushoverActionInput) {
     timeout?: number;
   };
   if (typeof globalThis.WebSocket !== "function") {
-    throw pushoverError("provider_not_configured", "WebSocket is unavailable in this runtime");
+    throw new ProviderRequestError(500, "WebSocket is unavailable in this runtime");
   }
 
   const timeoutSeconds = Math.min(
@@ -1043,7 +1037,7 @@ async function listenPushoverClientWebsocket(input: PushoverActionInput) {
     });
 
     socket.addEventListener("error", () => {
-      settleReject(pushoverError("provider_error", "pushover realtime websocket connection failed", 502));
+      settleReject(providerResponseError("pushover realtime websocket connection failed"));
     });
 
     socket.addEventListener("close", () => {
@@ -1071,7 +1065,7 @@ async function requestPushoverJson(input: {
     url.searchParams.set(key, value);
   }
 
-  const timeout = createTimeoutSignal({ timeoutMs: input.timeoutMs ?? pushoverDefaultTimeoutMs });
+  const timeout = createTimeoutSignal({ timeoutMs: input.timeoutMs ?? defaultProviderRequestTimeoutMs });
   try {
     const response = await input.fetcher(url.toString(), {
       method: input.method ?? "GET",
@@ -1082,7 +1076,7 @@ async function requestPushoverJson(input: {
     const text = await response.text();
     const payload = parseJsonObject(text);
     if (!payload) {
-      throw pushoverError("provider_error", `pushover request returned a non-JSON response from ${input.path}`, 502);
+      throw providerResponseError(`pushover request returned a non-JSON response from ${input.path}`);
     }
 
     const status = readOptionalInteger(payload.status);
@@ -1103,13 +1097,12 @@ async function requestPushoverJson(input: {
       throw error;
     }
     if (timeout.didTimeout) {
-      throw pushoverError(
-        "provider_error",
-        `pushover request timed out after ${(input.timeoutMs ?? pushoverDefaultTimeoutMs) / 1000} seconds`,
+      throw new ProviderRequestError(
         504,
+        `pushover request timed out after ${(input.timeoutMs ?? defaultProviderRequestTimeoutMs) / 1000} seconds`,
       );
     }
-    throw pushoverError("provider_error", error instanceof Error ? error.message : "pushover request failed", 502);
+    throw providerResponseError(error instanceof Error ? error.message : "pushover request failed");
   } finally {
     timeout.cleanup();
   }
@@ -1141,32 +1134,28 @@ function normalizePushoverRequestError(input: {
       : `pushover request failed with ${input.response.status}`);
 
   if (input.response.status === 429) {
-    return pushoverError("rate_limited", message, 429);
+    return new ProviderRequestError(429, message);
   }
 
   if (input.phase === "validate") {
-    return pushoverError("invalid_input", message, 400);
+    return providerInputError(message);
   }
 
   if (isCredentialProblem(input.payload, input.response.status, input.credentialKind)) {
     if (input.credentialKind === "client_secret" || input.credentialKind === "public") {
-      return pushoverError("invalid_input", message, 400);
+      return providerInputError(message);
     }
     if (input.tokenSource === "connection") {
-      return pushoverError("credential_expired", message);
+      return new ProviderRequestError(500, message);
     }
-    return pushoverError("invalid_input", message, 400);
+    return providerInputError(message);
   }
 
   if (input.response.status >= 400 && input.response.status < 500) {
-    return pushoverError("invalid_input", message, 400);
+    return providerInputError(message);
   }
 
-  return pushoverError(
-    "provider_error",
-    errors[0] ?? input.rawBody ?? message,
-    input.response.status >= 500 ? 502 : 500,
-  );
+  return new ProviderRequestError(input.response.status >= 500 ? 502 : 500, errors[0] ?? input.rawBody ?? message);
 }
 
 function isCredentialProblem(payload: Record<string, unknown>, status: number, credentialKind: PushoverCredentialKind) {
@@ -1198,7 +1187,7 @@ function resolveAppToken(input: PushoverActionInput, override?: string): Pushove
     };
   }
   return {
-    token: requiredString(input.apiKey, "apiKey", (message) => new ProviderRequestError(400, message)),
+    token: requiredString(input.apiKey, "apiKey", providerInputError),
     source: "connection",
   };
 }
@@ -1213,10 +1202,8 @@ function resolveTeamToken(input: PushoverActionInput, override?: string): Pushov
   }
   const connectedToken = readOptionalString(input.values?.teamToken);
   if (!connectedToken) {
-    throw pushoverError(
-      "invalid_input",
+    throw providerInputError(
       "team token is required; provide input.token or configure Team API Token in the provider connection",
-      400,
     );
   }
   return {
@@ -1234,11 +1221,7 @@ async function resolvePushoverAttachment(input: {
   const hasTransitAttachment = input.attachment != null;
   const hasInlineAttachment = Boolean(input.attachmentBase64 || input.attachmentType);
   if (hasTransitAttachment && hasInlineAttachment) {
-    throw pushoverError(
-      "invalid_input",
-      "provide either attachment or attachment_base64/attachment_type, not both",
-      400,
-    );
+    throw providerInputError("provide either attachment or attachment_base64/attachment_type, not both");
   }
 
   if (input.attachment) {
@@ -1253,7 +1236,7 @@ async function resolvePushoverAttachment(input: {
     return undefined;
   }
   if (!input.attachmentBase64 || !input.attachmentType) {
-    throw pushoverError("invalid_input", "attachment_base64 and attachment_type are required together", 400);
+    throw providerInputError("attachment_base64 and attachment_type are required together");
   }
   const bytes = decodeBase64Attachment(input.attachmentBase64);
   ensureAttachmentSize(bytes, "attachment");
@@ -1266,7 +1249,7 @@ async function resolvePushoverAttachment(input: {
 
 function ensureAttachmentSize(bytes: Uint8Array, name: string) {
   if (bytes.byteLength > pushoverMaxAttachmentBytes) {
-    throw pushoverError("invalid_input", `${name} exceeds the 5MB Pushover attachment limit`, 400);
+    throw providerInputError(`${name} exceeds the 5MB Pushover attachment limit`);
   }
 }
 
@@ -1276,11 +1259,11 @@ function decodeBase64Attachment(value: string) {
   try {
     bytes = Buffer.from(normalized, "base64");
   } catch {
-    throw pushoverError("invalid_input", "attachment_base64 must be valid base64", 400);
+    throw providerInputError("attachment_base64 must be valid base64");
   }
 
   if (bytes.byteLength === 0 || bytes.toString("base64") !== normalized.replace(/\s+/g, "")) {
-    throw pushoverError("invalid_input", "attachment_base64 must be valid base64", 400);
+    throw providerInputError("attachment_base64 must be valid base64");
   }
 
   return Uint8Array.from(bytes);
@@ -1439,7 +1422,7 @@ function readIdentifierString(preferred: unknown, fallback: unknown) {
   }
   const fallbackString = normalizeUnknownString(fallback);
   if (!fallbackString) {
-    throw pushoverError("provider_error", "pushover response is missing an identifier", 502);
+    throw providerResponseError("pushover response is missing an identifier");
   }
   return fallbackString;
 }
@@ -1469,7 +1452,7 @@ function normalizeUnknownString(value: unknown) {
 function readRequiredString(payload: Record<string, unknown>, key: string) {
   const value = normalizeUnknownString(payload[key]);
   if (!value) {
-    throw pushoverError("provider_error", `pushover response is missing ${key}`, 502);
+    throw providerResponseError(`pushover response is missing ${key}`);
   }
   return value;
 }
@@ -1486,7 +1469,7 @@ function readNullableString(value: unknown) {
 function readRequiredInteger(payload: Record<string, unknown>, key: string) {
   const value = readOptionalInteger(payload[key]);
   if (value == null) {
-    throw pushoverError("provider_error", `pushover response is missing ${key}`, 502);
+    throw providerResponseError(`pushover response is missing ${key}`);
   }
   return value;
 }
@@ -1532,7 +1515,7 @@ function readBooleanLike(value: unknown) {
       return false;
     }
   }
-  throw pushoverError("provider_error", "pushover response is missing a boolean value", 502);
+  throw providerResponseError("pushover response is missing a boolean value");
 }
 
 function readStringArray(value: unknown) {

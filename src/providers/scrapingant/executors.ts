@@ -4,8 +4,8 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderRequestContext } from "../provider-runtime.ts";
 
 import {
   compactObject,
@@ -16,18 +16,19 @@ import {
   optionalString,
   requiredString,
 } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   ProviderRequestError,
   providerUserAgent,
   requiredInputString,
+  providerInputError,
+  defaultProviderRequestTimeoutMs,
 } from "../provider-runtime.ts";
 
 const service = "scrapingant";
 const scrapingantApiOrigin = "https://api.scrapingant.com";
 const scrapingantApiBaseUrl = `${scrapingantApiOrigin}/v2`;
-const scrapingantDefaultTimeoutMs = 30_000;
 
 type ScrapingantPhase = "validate" | "execute";
 type ScrapingantActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
@@ -39,7 +40,7 @@ interface ScrapingantRequestInput {
   headers?: Record<string, string>;
   body?: string;
   timeoutMs?: number;
-  context: Pick<ApiKeyProviderContext, "fetcher" | "signal">;
+  context: ProviderRequestContext;
   phase: ScrapingantPhase;
 }
 
@@ -75,7 +76,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "scrapingant",
         displayName: "ScrapingAnt API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: scrapingantApiBaseUrl,
         validationEndpoint: "/usage",
@@ -205,8 +205,8 @@ function buildScrapingantBody(input: Record<string, unknown>): string | undefine
 function buildConnectorTimeoutMs(input: Record<string, unknown>): number {
   const timeoutSeconds = optionalInteger(input.timeout);
   return timeoutSeconds === undefined
-    ? scrapingantDefaultTimeoutMs
-    : Math.max(scrapingantDefaultTimeoutMs, timeoutSeconds * 1000 + 10_000);
+    ? defaultProviderRequestTimeoutMs
+    : Math.max(defaultProviderRequestTimeoutMs, timeoutSeconds * 1000 + 10_000);
 }
 
 function resolveScrapingantMethod(input: Record<string, unknown>): string {
@@ -215,7 +215,7 @@ function resolveScrapingantMethod(input: Record<string, unknown>): string {
 
 async function requestScrapingantJson(input: ScrapingantRequestInput): Promise<unknown> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), input.timeoutMs ?? scrapingantDefaultTimeoutMs);
+  const timeout = setTimeout(() => controller.abort(), input.timeoutMs ?? defaultProviderRequestTimeoutMs);
   const signal = mergeAbortSignals(controller.signal, input.context.signal);
   try {
     const response = await input.context.fetcher(buildScrapingantUrl(input.path, input.query), {
@@ -371,13 +371,13 @@ function createScrapingantError(status: number, payload: unknown, phase: Scrapin
     return new ProviderRequestError(429, message);
   }
   if (phase === "validate" && status >= 400 && status < 500) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (phase === "execute" && status === 403) {
     return new ProviderRequestError(403, message);
   }
   if (phase === "execute" && (status === 400 || status === 404 || status === 405 || status === 422)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   return new ProviderRequestError(status || 500, message);
 }

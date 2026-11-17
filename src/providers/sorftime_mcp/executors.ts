@@ -1,26 +1,20 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ApiKeyProviderContext, ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ApiKeyProviderContext, ProviderActionHandlers } from "../provider-executors.ts";
 import type { Client } from "@modelcontextprotocol/client";
 
 import { ProtocolError, SdkHttpError, UnauthorizedError } from "@modelcontextprotocol/client";
 import { createHash } from "node:crypto";
 import { optionalRecord } from "../../core/cast.ts";
 import { withMcpClient } from "../mcp-client.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  mapProviderActionHandlers,
-  ProviderRequestError,
-  providerUserAgent,
-  requiredInputString,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors, mapProviderActionHandlers } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent, requiredInputString } from "../provider-runtime.ts";
 import { sorftimeMcpActions } from "./actions.ts";
 import { buildSorftimeMcpCall, normalizeSorftimeMcpResult, sorftimeMcpEndpoint } from "./runtime.ts";
 
 const service = "sorftime_mcp";
 const requestTimeoutMs = 60_000;
-type SorftimeContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
-type SorftimeHandler = (input: Record<string, unknown>, context: SorftimeContext) => Promise<unknown>;
+type SorftimeHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 
 const handlers: ProviderActionHandlers<"sorftime_mcp", SorftimeHandler> = mapProviderActionHandlers(
   service,
@@ -58,7 +52,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: `sorftime-mcp:${hash}`,
         displayName: `Sorftime MCP · ${hash.slice(-6)}`,
       },
-      grantedScopes: [],
       metadata: { mcpEndpoint: sorftimeMcpEndpoint, discoveredToolCount: tools.length },
     };
   },
@@ -69,7 +62,7 @@ export const proxy: ProviderProxyExecutor = defineProviderProxy({
   baseUrl: sorftimeMcpEndpoint,
   auth: { type: "api_key_authorization", prefix: "Bearer " },
   skipDnsValidation: true,
-  redirect: "error",
+  redirect: "manual",
   timeoutMs: requestTimeoutMs,
   allowedEndpoint(endpoint) {
     const url = new URL(endpoint, sorftimeMcpEndpoint);
@@ -81,7 +74,7 @@ export const proxy: ProviderProxyExecutor = defineProviderProxy({
   },
 });
 
-async function listTools(context: SorftimeContext): Promise<unknown[]> {
+async function listTools(context: ApiKeyProviderContext): Promise<unknown[]> {
   return withSorftimeClient(context, async (client) => {
     const result = await client.listTools({}, { timeout: requestTimeoutMs, signal: context.signal });
     return result.tools.map((tool) => ({
@@ -94,7 +87,7 @@ async function listTools(context: SorftimeContext): Promise<unknown[]> {
 }
 
 async function callTool(
-  context: SorftimeContext,
+  context: ApiKeyProviderContext,
   name: string,
   argumentsInput: Record<string, unknown>,
 ): Promise<unknown> {
@@ -103,7 +96,7 @@ async function callTool(
   );
 }
 
-function withSorftimeClient<T>(context: SorftimeContext, run: (client: Client) => Promise<T>): Promise<T> {
+function withSorftimeClient<T>(context: ApiKeyProviderContext, run: (client: Client) => Promise<T>): Promise<T> {
   return withMcpClient(
     {
       endpoint: new URL(sorftimeMcpEndpoint),
@@ -113,7 +106,7 @@ function withSorftimeClient<T>(context: SorftimeContext, run: (client: Client) =
         authorization: `Bearer ${context.apiKey}`,
         "user-agent": providerUserAgent,
       },
-      redirect: "error",
+      redirect: "manual",
       signal: context.signal,
       mapError: mapSorftimeError,
     },

@@ -4,18 +4,18 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
 import { compactObject, optionalInteger, optionalRawString, optionalRecord } from "../../core/cast.ts";
+import { requireCustomCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineProviderExecutors,
-  defineProviderProxy,
   providerUserAgent,
   ProviderRequestError,
   readProviderTextBody,
-  requireCustomCredential,
   requiredResponseRecord,
 } from "../provider-runtime.ts";
 
@@ -361,7 +361,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: context.accountId,
         displayName: accountLabel,
       },
-      grantedScopes: [],
       metadata: compactObject({
         email,
         company,

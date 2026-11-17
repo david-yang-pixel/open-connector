@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
@@ -312,7 +312,6 @@ export async function validateGtmetrixCredential(
       accountId: `gtmetrix:api_key:${createHash("sha256").update(apiKey).digest("hex").slice(0, 16)}`,
       displayName: "GTmetrix API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: gtmetrixApiBaseUrl,
       validationEndpoint: "/status",

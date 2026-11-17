@@ -2,14 +2,12 @@ import type { ActionDefinition, JsonSchema } from "../../core/types.ts";
 
 import { s } from "../../core/json-schema.ts";
 import { defineProviderAction } from "../../core/provider-definition.ts";
-
+import { deepseekWebActions } from "./web-actions.ts";
 const service = "deepseek";
-
 const jsonValue = s.unknown("Any JSON value accepted by the DeepSeek API.");
 const jsonObject = s.record(jsonValue, { description: "A JSON object passed through to the DeepSeek API." });
 const modelName = s.stringEnum("The DeepSeek model identifier.", ["deepseek-chat", "deepseek-reasoner"]);
 const noInput = s.object("No input parameters are required for this action.", {});
-
 const chatMessage = s.looseObject(
   {
     role: s.stringEnum("The role of the message author.", ["system", "user", "assistant", "tool"]),
@@ -21,7 +19,6 @@ const chatMessage = s.looseObject(
   },
   { description: "A message in the OpenAI-compatible chat completion request." },
 );
-
 const chatTool = s.looseObject(
   {
     type: s.literal("function", { description: "The tool type. Must be function." }),
@@ -37,7 +34,6 @@ const chatTool = s.looseObject(
   },
   { description: "An OpenAI-compatible tool definition." },
 );
-
 const chatToolChoice = s.anyOf("The tool selection policy for the chat completion request.", [
   s.stringEnum("A predefined tool selection strategy for the request.", ["none", "auto", "required"]),
   s.looseObject(
@@ -48,7 +44,6 @@ const chatToolChoice = s.anyOf("The tool selection policy for the chat completio
     { description: "A tool choice that forces one specific function tool." },
   ),
 ]);
-
 const chatCompletionInput = s.object(
   "The input payload for the OpenAI-compatible chat completion action.",
   {
@@ -104,12 +99,10 @@ const chatCompletionInput = s.object(
     ],
   },
 );
-
 const anthropicContent = s.anyOf("Message content as plain text or structured blocks.", [
   s.string("Plain text content."),
   s.array("Structured content blocks.", jsonObject),
 ]);
-
 const anthropicMessageInput = s.object(
   "The input payload for the Anthropic-compatible message action.",
   {
@@ -145,7 +138,6 @@ const anthropicMessageInput = s.object(
     optional: ["stop_sequences", "stream", "system", "temperature", "thinking", "tool_choice", "tools", "top_p"],
   },
 );
-
 const modelOutput = s.looseObject(
   {
     id: s.string("The model identifier."),
@@ -154,7 +146,6 @@ const modelOutput = s.looseObject(
   },
   { description: "A DeepSeek model summary." },
 );
-
 const balanceOutput = s.looseObject(
   {
     currency: s.string("The currency code for the balance."),
@@ -164,8 +155,8 @@ const balanceOutput = s.looseObject(
   },
   { description: "A balance entry returned by the DeepSeek balance API." },
 );
-
 export const deepseekActions: ActionDefinition[] = [
+  ...deepseekWebActions,
   defineProviderAction(service, {
     name: "list_models",
     operationType: "read",

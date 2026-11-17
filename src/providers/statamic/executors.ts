@@ -1,11 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   providerInputError,
   ProviderRequestError,
   providerUserAgent,
@@ -103,7 +102,6 @@ export const credentialValidators: CredentialValidators = {
           ? `Statamic: ${optionalString(firstSite?.name)}`
           : "Statamic API Token",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: statamicApiBaseUrl,
         validationEndpoint: "/sites",
@@ -118,7 +116,7 @@ export const credentialValidators: CredentialValidators = {
 async function requestStatamicJson(input: {
   path: string;
   method: "GET" | "POST" | "PATCH" | "DELETE";
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   phase: StatamicPhase;
   body?: Record<string, unknown>;
 }): Promise<Record<string, unknown>> {

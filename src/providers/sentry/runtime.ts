@@ -1,12 +1,10 @@
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { OAuthProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { OAuthProviderContext } from "../provider-executors.ts";
 
-import { compactObject, looseArray, optionalRawString, rawStringOrNull } from "../../core/cast.ts";
+import { compactObject, looseArray, optionalRawString, optionalStringArray, rawStringOrNull } from "../../core/cast.ts";
 import { ProviderRequestError } from "../provider-runtime.ts";
-import { sentryProviderScopes } from "./scopes.ts";
 
 export const sentryApiBaseUrl: string = "https://sentry.io/api/0/";
-const sentryCurrentUserUrl = `${sentryApiBaseUrl}users/me/`;
 
 type SentryJsonResponse = {
   payload: unknown;
@@ -86,8 +84,9 @@ export async function validateSentryCredential(
   grantedScopes: string[];
   metadata: Record<string, unknown>;
 }> {
-  const { payload } = await requestSentryJson(accessToken, sentryCurrentUserUrl, fetcher, {}, "validate");
-  const user = asRecord(payload);
+  const { payload } = await requestSentryJson(accessToken, sentryApiBaseUrl, fetcher, {}, "validate");
+  const payloadRecord = asRecord(payload);
+  const user = asRecord(payloadRecord?.user);
   if (!user) {
     throw new ProviderRequestError(502, "sentry current user payload is invalid");
   }
@@ -102,9 +101,9 @@ export async function validateSentryCredential(
       accountId: userId,
       displayName,
     },
-    grantedScopes: sentryProviderScopes,
+    grantedScopes: optionalStringArray(asRecord(payloadRecord?.auth)?.scopes) ?? [],
     metadata: compactObject({
-      validationEndpoint: "/users/me/",
+      validationEndpoint: "/",
       userId,
       username: optionalRawString(user.username),
       email: optionalRawString(user.email),

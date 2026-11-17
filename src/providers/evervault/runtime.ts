@@ -1,15 +1,15 @@
 import type { ExecutionContext } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import { optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
 import {
   createProviderTimeout,
   providerInputError,
   providerUserAgent,
   ProviderRequestError,
-  requireApiKeyCredential,
 } from "../provider-runtime.ts";
 
 export const evervaultApiBaseUrl = "https://api.evervault.com";
@@ -52,7 +52,6 @@ export async function validateEvervault(
   signal?: AbortSignal,
 ): Promise<{
   profile: { accountId: string; displayName: string };
-  grantedScopes: string[];
   metadata: Record<string, unknown>;
 }> {
   const context = {
@@ -65,7 +64,6 @@ export async function validateEvervault(
   const fingerprint = createHash("sha256").update(context.apiKey).digest("hex").slice(0, 16);
   return {
     profile: { accountId: `evervault:${context.appId}:key:${fingerprint}`, displayName: `Evervault ${context.appId}` },
-    grantedScopes: [],
     metadata: { appId: context.appId, apiBaseUrl: evervaultApiBaseUrl, validationEndpoint: "/encrypt" },
   };
 }
@@ -117,7 +115,7 @@ function mapError(response: Response, payload: unknown, phase: "validate" | "exe
     optionalString(record?.title) ??
     `Evervault request failed with status ${response.status}`;
   if (response.status === 429) return new ProviderRequestError(429, message);
-  if (phase === "validate" && response.status < 500) return new ProviderRequestError(400, message);
+  if (phase === "validate" && response.status < 500) return providerInputError(message);
   if (response.status === 401) return new ProviderRequestError(401, message);
   if (response.status === 403) return new ProviderRequestError(403, message);
   return new ProviderRequestError(response.status < 500 ? 400 : 502, message);

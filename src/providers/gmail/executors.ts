@@ -1,48 +1,131 @@
+import type { ProviderErrorCode } from "../../core/provider-error-codes.ts";
 import type {
   CredentialValidators,
   ExecutionContext,
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { GmailDraftResource, GmailMessageResource, GmailThreadResource } from "./message.ts";
+import type { IntegrationDefinition } from "../../triggers/common/integration.ts";
+import type { PollDefinition } from "../../triggers/common/poll.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { GmailDraftResource, GmailMessageResource, GmailReplyHeaders, GmailThreadResource } from "./message.ts";
 
-import { googleBearerProxyAuth, googleServiceAccountValidator, resolveGoogleAccessToken } from "../google-auth.ts";
+import { format as schemaFormat } from "@cfworker/json-schema";
 import {
-  defineProviderExecutors,
-  defineProviderProxy,
+  looseArray,
+  optionalBoolean,
+  optionalNumberLike,
+  optionalRawString,
+  optionalRecord,
+  optionalString,
+} from "../../core/cast.ts";
+import { encodePathSegment } from "../../core/request.ts";
+import {
+  googleBearerProxyAuth,
+  googleServiceAccountValidator,
+  resolveGoogleAccessToken,
+} from "../googledrive/runtime-auth.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import {
+  providerInputError,
   ProviderRequestError,
+  providerResponseError,
+  readProviderErrorTextBody,
   readProviderJsonBody,
+  readRetryAfterSeconds,
+  requiredInputString,
+  requiredResponseRecord,
+  runProviderRequest,
+  providerRequestErrorCode,
+  withRetryAfterSeconds,
 } from "../provider-runtime.ts";
+import { decodeGmailAttachment } from "./attachment-stream.ts";
+import { gmailMaxMimeBytes } from "./limits.ts";
 import {
+  assertMatchingReplySubject,
   buildRecipients,
-  encodeMimeMessage,
-  extractBodyContent,
-  firstAddress,
   normalizeGmailMessage,
   normalizeMessageId,
   normalizeThreadId,
-  parseAddressList,
   readHeader,
   resolveReplyHeaders,
   summarizeGmailMessage,
 } from "./message.ts";
+import { readGmailAttachments } from "./mime-attachments.ts";
+import { decodeMimeSubject, encodeMimeMessage, readMimeReplyHeaders, updateMimeMessage } from "./mime.ts";
 import { gmailOAuthScopes } from "./scopes.ts";
+import { gmailMessageReceived } from "./trigger-on-message-received.ts";
 
 const service = "gmail";
+
 const gmailApiBaseUrl = "https://gmail.googleapis.com/gmail/v1";
 const detailHydrationBatchSize = 10;
+// Hydration fans out one detail request per listed id, which can exceed Gmail's per-user quota.
+// The retry below keeps hydrated rows and paces the rest instead of discarding the page.
+// Six attempts let the backoff climb 1, 2, 4, 8, 16 s (about 31 s of waiting per message at most),
+// long enough for the moving average to drain, without retrying one message forever.
+const hydrationMaxAttempts = 6;
+
+const hydrationBaseBackoffMs = 1_000;
+// Total time one action may spend waiting out rate limits. It stays well below the few minutes a
+// caller typically allows one action call, so a persistent limit still comes back as rate_limited
+// (which the caller can pace) rather than as a client-side timeout.
+const hydrationRetryBudgetMs = 120_000;
+// Attachments may reach Gmail's 25 MB cap, and the base64 JSON envelope is a third larger again;
+// the default 30 s request budget covers fetch, decode, and disk write, so give this transfer longer.
+const attachmentDownloadTimeoutMs = 120_000;
+
 const defaultFetchEmailsMaxResults = 20;
 
 interface ActionContext {
   userId: string;
   accessToken: string;
   fetcher: typeof fetch;
+  transitFiles?: ExecutionContext["transitFiles"];
+  signal?: AbortSignal;
+}
+
+interface DraftReplyTarget {
+  threadId: string;
+  headers: GmailReplyHeaders;
+}
+
+interface DraftReplyInput {
+  threadId?: string;
+  replyToMessageId?: string;
 }
 
 type ActionHandler = (input: Record<string, unknown>, context: ActionContext) => Promise<unknown>;
 
 export const gmailActionHandlers: ProviderActionHandlers<typeof service, ActionHandler> = {
+  async download_attachment(input, context) {
+    const { transitFiles, fetcher, accessToken } = context;
+    if (!transitFiles?.createFromStream) {
+      throw new ProviderRequestError(
+        400,
+        "Gmail attachment downloads require a streaming transit file backend (filesystem).",
+      );
+    }
+    const messageId = requiredInputString(input.messageId, "messageId");
+    const attachmentId = requiredInputString(input.attachmentId, "attachmentId");
+    const userId = optionalString(input.userId) ?? context.userId;
+    const url = `${gmailUserUrl(userId, "messages")}/${encodePathSegment(messageId)}/attachments/${encodePathSegment(attachmentId)}?fields=data,size`;
+    return runProviderRequest(
+      { signal: context.signal, label: "Gmail attachment", timeoutMs: attachmentDownloadTimeoutMs },
+      async (signal) => {
+        const response = await fetcher(url, { headers: { authorization: `Bearer ${accessToken}` }, signal });
+        await assertGmailResponse(response);
+        if (!response.body) throw new ProviderRequestError(502, "Gmail attachment response has no body");
+        return transitFiles.createFromStream!({
+          body: decodeGmailAttachment(response.body, transitFiles.maxBytes),
+          name: optionalString(input.fileName) ?? "attachment",
+          mimeType: optionalString(input.mimeType) ?? "application/octet-stream",
+          signal,
+        });
+      },
+    );
+  },
   async search_threads(input, { userId, accessToken, fetcher }) {
     const output = await listThreads(input, userId, accessToken, fetcher);
     return {
@@ -52,11 +135,11 @@ export const gmailActionHandlers: ProviderActionHandlers<typeof service, ActionH
       })),
     };
   },
-  list_threads(input, { userId, accessToken, fetcher }) {
-    return listThreads(input, userId, accessToken, fetcher);
+  list_threads(input, { userId, accessToken, fetcher, signal }) {
+    return listThreads(input, userId, accessToken, fetcher, signal);
   },
-  fetch_emails(input, { userId, accessToken, fetcher }) {
-    return fetchEmails(input, userId, accessToken, fetcher);
+  fetch_emails(input, { userId, accessToken, fetcher, signal }) {
+    return fetchEmails(input, userId, accessToken, fetcher, signal);
   },
   async get_message(input, { userId, accessToken, fetcher }) {
     const message = await getMessageResource(userId, normalizeMessageId(input.messageId), accessToken, fetcher, "full");
@@ -80,31 +163,29 @@ export const gmailActionHandlers: ProviderActionHandlers<typeof service, ActionH
   get_profile(_input, { userId, accessToken, fetcher }) {
     return getProfile(userId, accessToken, fetcher);
   },
-  send_email(input, { userId, accessToken, fetcher }) {
-    return sendEmail(input, userId, accessToken, fetcher);
+  send_email(input, context) {
+    return sendEmail(input, context);
   },
-  async reply_email(input, { userId, accessToken, fetcher }) {
-    const output = await replyToMessage(input, userId, accessToken, fetcher);
-    return { messageId: output.messageId };
+  reply_email(input, context) {
+    return replyToMessage(input, context);
   },
-  reply_to_thread(input, { userId, accessToken, fetcher }) {
-    return replyToThread(input, userId, accessToken, fetcher);
+  reply_to_thread(input, context) {
+    return replyToThread(input, context);
   },
-  async create_draft(input, { userId, accessToken, fetcher }) {
-    const output = await createEmailDraft(input, userId, accessToken, fetcher);
-    return { draftId: output.draftId };
+  create_draft(input, context) {
+    return createEmailDraft(input, context);
   },
-  create_email_draft(input, { userId, accessToken, fetcher }) {
-    return createEmailDraft(input, userId, accessToken, fetcher);
+  create_email_draft(input, context) {
+    return createEmailDraft(input, context);
   },
-  list_drafts(input, { userId, accessToken, fetcher }) {
-    return listDrafts(input, userId, accessToken, fetcher);
+  list_drafts(input, { userId, accessToken, fetcher, signal }) {
+    return listDrafts(input, userId, accessToken, fetcher, signal);
   },
   get_draft(input, { userId, accessToken, fetcher }) {
     return getDraft(input, userId, accessToken, fetcher);
   },
-  update_draft(input, { userId, accessToken, fetcher }) {
-    return updateDraft(input, userId, accessToken, fetcher);
+  update_draft(input, context) {
+    return updateDraft(input, context);
   },
   send_draft(input, { userId, accessToken, fetcher }) {
     return sendDraft(input, userId, accessToken, fetcher);
@@ -212,7 +293,13 @@ export const executors: ProviderExecutors = defineProviderExecutors<ActionContex
       fetcher,
       signal: context.signal,
     });
-    return { userId: "me", accessToken: resolved.accessToken, fetcher };
+    return {
+      userId: "me",
+      accessToken: resolved.accessToken,
+      fetcher,
+      transitFiles: context.transitFiles,
+      signal: context.signal,
+    };
   },
 });
 
@@ -220,6 +307,7 @@ export const proxy: ProviderProxyExecutor = defineProviderProxy({
   service,
   baseUrl: gmailApiBaseUrl,
   auth: googleBearerProxyAuth(gmailOAuthScopes),
+  readError: readGmailError,
 });
 
 export const credentialValidators: CredentialValidators = {
@@ -235,7 +323,13 @@ export const credentialValidators: CredentialValidators = {
   customCredential: googleServiceAccountValidator(service, gmailOAuthScopes),
 };
 
-async function fetchEmails(input: Record<string, unknown>, userId: string, accessToken: string, fetcher: typeof fetch) {
+async function fetchEmails(
+  input: Record<string, unknown>,
+  userId: string,
+  accessToken: string,
+  fetcher: typeof fetch,
+  signal?: AbortSignal,
+) {
   const detail = trimmedString(input.detail) || "summary";
   const url = new URL(gmailUserUrl(userId, "messages"));
   const query = trimmedString(input.query);
@@ -274,8 +368,10 @@ async function fetchEmails(input: Record<string, unknown>, userId: string, acces
 
   const includeFullMessage = detail === "full";
   const format = includeFullMessage ? "full" : "metadata";
-  const hydrated = await hydrateInBatches(messages, (message) =>
-    getMessageResource(userId, message.id, accessToken, fetcher, format),
+  const hydrated = await hydrateInBatches(
+    messages,
+    (message) => getMessageResource(userId, message.id, accessToken, fetcher, format),
+    signal,
   );
 
   return {
@@ -314,7 +410,13 @@ async function fetchMessagesByThreadId(
   };
 }
 
-async function listThreads(input: Record<string, unknown>, userId: string, accessToken: string, fetcher: typeof fetch) {
+async function listThreads(
+  input: Record<string, unknown>,
+  userId: string,
+  accessToken: string,
+  fetcher: typeof fetch,
+  signal?: AbortSignal,
+) {
   const url = new URL(gmailUserUrl(userId, "threads"));
   const query = trimmedString(input.query);
   if (query) {
@@ -335,8 +437,10 @@ async function listThreads(input: Record<string, unknown>, userId: string, acces
   const threads = payload.threads ?? [];
 
   if (input.verbose === true) {
-    const hydrated = await hydrateInBatches(threads, (thread) =>
-      getThreadResource(userId, thread.id, accessToken, fetcher, "full"),
+    const hydrated = await hydrateInBatches(
+      threads,
+      (thread) => getThreadResource(userId, thread.id, accessToken, fetcher, "full"),
+      signal,
     );
     return {
       threads: hydrated.map((thread) => ({
@@ -361,7 +465,9 @@ async function listThreads(input: Record<string, unknown>, userId: string, acces
   };
 }
 
-async function sendEmail(input: Record<string, unknown>, userId: string, accessToken: string, fetcher: typeof fetch) {
+async function sendEmail(input: Record<string, unknown>, context: ActionContext) {
+  const { userId, accessToken, fetcher } = context;
+  const attachments = await readGmailAttachments(input.attachments, context);
   const recipients = buildRecipients(input);
   const response = await fetchJson<{ id: string; threadId?: string }>(
     gmailUserUrl(userId, "messages", "send"),
@@ -374,32 +480,29 @@ async function sendEmail(input: Record<string, unknown>, userId: string, accessT
           to: recipients.to,
           cc: recipients.cc,
           bcc: recipients.bcc,
-          subject: trimmedString(input.subject),
-          body: trimmedString(input.body) || trimmedString(input.messageBody),
+          subject: optionalRawString(input.subject),
+          body: optionalRawString(input.body) ?? optionalRawString(input.messageBody),
           isHtml: input.isHtml === true,
-          from: trimmedString(input.fromEmail),
+          from: optionalRawString(input.fromEmail),
+          attachments,
         }),
       }),
     },
   );
 
-  return { messageId: response.id };
+  return { messageId: response.id, threadId: optionalString(response.threadId) };
 }
 
-async function replyToThread(
-  input: Record<string, unknown>,
-  userId: string,
-  accessToken: string,
-  fetcher: typeof fetch,
-) {
+async function replyToThread(input: Record<string, unknown>, context: ActionContext) {
+  const { userId, accessToken, fetcher } = context;
+  const attachments = await readGmailAttachments(input.attachments, context);
   const thread = await getThreadResource(userId, normalizeThreadId(input.threadId), accessToken, fetcher, "full");
-  const target = thread.messages?.at(-1);
-  if (!target) {
-    throw new ProviderRequestError(400, "thread has no messages");
-  }
+  const target = latestReplyMessage(thread);
 
   const recipients = buildRecipients(input);
   const replyHeaders = resolveReplyHeaders(target);
+  const subject = optionalRawString(input.subject) ?? replyHeaders.subject;
+  assertMatchingReplySubject(subject, replyHeaders.subject);
   const response = await sendThreadMessage(
     userId,
     accessToken,
@@ -409,79 +512,140 @@ async function replyToThread(
       to: recipients.to.length > 0 ? recipients.to : [replyHeaders.to],
       cc: recipients.cc,
       bcc: recipients.bcc,
-      subject: replyHeaders.subject,
-      body: trimmedString(input.messageBody) || trimmedString(input.body),
+      subject,
+      body: optionalRawString(input.messageBody) ?? optionalRawString(input.body),
       isHtml: input.isHtml === true,
+      from: optionalRawString(input.fromEmail),
       inReplyTo: replyHeaders.inReplyTo,
       references: replyHeaders.references,
+      attachments,
     }),
   );
 
-  return { messageId: response.id, threadId: response.threadId ?? thread.id };
+  return { messageId: response.id, threadId: optionalString(response.threadId) };
 }
 
-async function replyToMessage(
-  input: Record<string, unknown>,
-  userId: string,
-  accessToken: string,
-  fetcher: typeof fetch,
-) {
+async function replyToMessage(input: Record<string, unknown>, context: ActionContext) {
+  const { userId, accessToken, fetcher } = context;
+  const to = Object.hasOwn(input, "to") ? requiredInputString(input.to, "to") : undefined;
+  if (to !== undefined && !schemaFormat.email!(to)) {
+    throw providerInputError("to must be a valid email address");
+  }
+  const recipients = buildRecipients({ to });
+  const attachments = await readGmailAttachments(input.attachments, context);
   const message = await getMessageResource(userId, normalizeMessageId(input.messageId), accessToken, fetcher, "full");
+  const threadId = optionalString(message.threadId);
+  if (!threadId) throw providerResponseError("Gmail reply target is missing its threadId");
+  const requestedThreadId = optionalString(input.threadId);
+  if (requestedThreadId && normalizeThreadId(requestedThreadId) !== threadId) {
+    throw providerInputError("threadId must match the reply target message's threadId");
+  }
   const replyHeaders = resolveReplyHeaders(message);
-  const threadId = normalizeThreadId(message.threadId || input.threadId);
   const response = await sendThreadMessage(
     userId,
     accessToken,
     fetcher,
     threadId,
     encodeMimeMessage({
-      to: [replyHeaders.to],
+      to: to !== undefined ? recipients.to : [replyHeaders.to],
       subject: replyHeaders.subject,
-      body: trimmedString(input.body),
+      body: optionalRawString(input.body),
+      isHtml: input.isHtml === true,
       inReplyTo: replyHeaders.inReplyTo,
       references: replyHeaders.references,
+      attachments,
     }),
   );
 
   return {
     messageId: response.id,
-    threadId: response.threadId ?? normalizeThreadId(input.threadId),
+    threadId: optionalString(response.threadId),
   };
 }
 
-async function createEmailDraft(
-  input: Record<string, unknown>,
-  userId: string,
-  accessToken: string,
-  fetcher: typeof fetch,
-) {
+async function createEmailDraft(input: Record<string, unknown>, context: ActionContext) {
+  const { userId, accessToken, fetcher } = context;
+  const attachments = await readGmailAttachments(input.attachments, context);
   const recipients = buildRecipients(input);
+  const replyTarget = await resolveDraftReplyTarget(
+    {
+      threadId: optionalString(input.threadId),
+      replyToMessageId: optionalString(input.replyToMessageId),
+    },
+    context,
+  );
+  const subject = optionalRawString(input.subject) ?? replyTarget?.headers.subject;
+  if (replyTarget && subject !== undefined) {
+    assertMatchingReplySubject(subject, replyTarget.headers.subject);
+  }
+  const hasRecipients = ["to", "recipientEmail", "extraRecipients"].some((name) => Object.hasOwn(input, name));
   const payload = await fetchJson<GmailDraftResource>(gmailUserUrl(userId, "drafts"), accessToken, fetcher, {
     method: "POST",
     body: JSON.stringify({
       message: {
         raw: encodeMimeMessage({
-          to: recipients.to,
+          to: hasRecipients ? recipients.to : replyTarget ? [replyTarget.headers.to] : [],
           cc: recipients.cc,
           bcc: recipients.bcc,
-          subject: trimmedString(input.subject),
-          body: trimmedString(input.body) || trimmedString(input.messageBody),
+          subject,
+          body: optionalRawString(input.body) ?? optionalRawString(input.messageBody),
           isHtml: input.isHtml === true,
-          from: trimmedString(input.fromEmail),
+          from: optionalRawString(input.fromEmail),
+          inReplyTo: replyTarget?.headers.inReplyTo,
+          references: replyTarget?.headers.references,
+          attachments,
         }),
-        threadId: trimmedString(input.threadId) ? normalizeThreadId(input.threadId) : undefined,
+        threadId: replyTarget?.threadId,
       },
     }),
   });
 
   return {
     draftId: payload.id,
-    messageId: payload.message?.id ?? "",
-    threadId: payload.message?.threadId ?? "",
+    messageId: optionalString(payload.message?.id),
+    threadId: optionalString(payload.message?.threadId),
   };
 }
 
-async function listDrafts(input: Record<string, unknown>, userId: string, accessToken: string, fetcher: typeof fetch) {
+async function resolveDraftReplyTarget(
+  input: DraftReplyInput,
+  context: ActionContext,
+): Promise<DraftReplyTarget | undefined> {
+  const threadId = input.threadId ? normalizeThreadId(input.threadId) : undefined;
+  if (!threadId && !input.replyToMessageId) return undefined;
+  const { userId, accessToken, fetcher } = context;
+  const message = input.replyToMessageId
+    ? await getMessageResource(userId, input.replyToMessageId, accessToken, fetcher, "full")
+    : latestReplyMessage(await getThreadResource(userId, threadId!, accessToken, fetcher, "full"));
+  const resolvedThreadId = optionalString(message.threadId);
+  if (!resolvedThreadId) throw providerResponseError("Gmail reply target is missing its threadId");
+  if (threadId && threadId !== resolvedThreadId) {
+    throw providerInputError("threadId must match the reply target message's threadId");
+  }
+  return { threadId: resolvedThreadId, headers: resolveReplyHeaders(message) };
+}
+
+function latestReplyMessage(thread: GmailThreadResource): GmailMessageResource {
+  let latest: GmailMessageResource | undefined;
+  let latestTimestamp: number | undefined;
+  for (const message of thread.messages ?? []) {
+    if (message.labelIds?.includes("DRAFT")) continue;
+    const timestamp = optionalNumberLike(message.internalDate);
+    if (latestTimestamp !== undefined && (timestamp === undefined || timestamp < latestTimestamp)) continue;
+    latest = message;
+    latestTimestamp = timestamp;
+  }
+  if (!latest) throw providerInputError("thread has no non-draft messages to reply to");
+  return latest;
+}
+
+async function listDrafts(
+  input: Record<string, unknown>,
+  userId: string,
+  accessToken: string,
+  fetcher: typeof fetch,
+  signal?: AbortSignal,
+) {
   const url = new URL(gmailUserUrl(userId, "drafts"));
   if (input.pageToken != null) {
     url.searchParams.set("pageToken", String(input.pageToken));
@@ -497,8 +661,10 @@ async function listDrafts(input: Record<string, unknown>, userId: string, access
   const drafts = payload.drafts ?? [];
 
   if (input.verbose === true) {
-    const hydrated = await hydrateInBatches(drafts, (draft) =>
-      getDraftResource(userId, draft.id, accessToken, fetcher, "full"),
+    const hydrated = await hydrateInBatches(
+      drafts,
+      (draft) => getDraftResource(userId, draft.id, accessToken, fetcher, "full"),
+      signal,
     );
     return {
       drafts: hydrated.map((draft) => ({
@@ -513,8 +679,8 @@ async function listDrafts(input: Record<string, unknown>, userId: string, access
     drafts: drafts.map((draft) => ({
       id: draft.id,
       message: {
-        messageId: draft.message?.id ?? "",
-        threadId: draft.message?.threadId ?? "",
+        messageId: optionalString(draft.message?.id),
+        threadId: optionalString(draft.message?.threadId),
       },
     })),
     nextPageToken: payload.nextPageToken ?? null,
@@ -536,41 +702,59 @@ async function getDraft(input: Record<string, unknown>, userId: string, accessTo
   };
 }
 
-async function updateDraft(input: Record<string, unknown>, userId: string, accessToken: string, fetcher: typeof fetch) {
+async function updateDraft(input: Record<string, unknown>, context: ActionContext) {
+  const { userId, accessToken, fetcher } = context;
+  const attachments = await readGmailAttachments(input.attachments, context);
   const draftId = normalizeMessageId(input.draftId);
-  const existing = await getDraftResource(userId, draftId, accessToken, fetcher, "full");
-  const headers = existing.message.payload?.headers ?? [];
-  const nextRecipients = buildRecipients(input);
-  const recipients = buildRecipients({
-    to: nextRecipients.to.length > 0 ? nextRecipients.to : parseAddressList(readHeader(headers, "To")),
-    cc: nextRecipients.cc.length > 0 ? nextRecipients.cc : parseAddressList(readHeader(headers, "Cc")),
-    bcc: nextRecipients.bcc.length > 0 ? nextRecipients.bcc : parseAddressList(readHeader(headers, "Bcc")),
+  const existing = requiredResponseRecord(
+    await getDraftResource(userId, draftId, accessToken, fetcher, "raw"),
+    "Gmail draft",
+  );
+  const existingMessage = requiredResponseRecord(existing.message, "Gmail draft message");
+  const originalRaw = optionalRawString(existingMessage.raw);
+  if (!originalRaw) throw providerResponseError("Gmail draft response is missing its raw MIME message");
+  const recipients = buildRecipients(input);
+  const existingThreadId = optionalString(existingMessage.threadId);
+  const requestedThreadId = optionalString(input.threadId);
+  const normalizedThreadId = requestedThreadId ? normalizeThreadId(requestedThreadId) : undefined;
+  const replyToMessageId = optionalString(input.replyToMessageId);
+  const rebuildReply = Boolean(replyToMessageId || (normalizedThreadId && normalizedThreadId !== existingThreadId));
+  const replyTarget = rebuildReply
+    ? await resolveDraftReplyTarget({ threadId: normalizedThreadId, replyToMessageId }, context)
+    : undefined;
+  const subject = optionalRawString(input.subject) ?? replyTarget?.headers.subject;
+  if (subject !== undefined) {
+    if (replyTarget) {
+      assertMatchingReplySubject(subject, replyTarget.headers.subject);
+    } else {
+      const currentHeaders = readMimeReplyHeaders(originalRaw);
+      if (currentHeaders.inReplyTo || currentHeaders.references) {
+        assertMatchingReplySubject(subject, decodeMimeSubject(currentHeaders.encodedSubject));
+      }
+    }
+  }
+  const threadId = replyTarget?.threadId ?? existingThreadId;
+  const raw = updateMimeMessage(originalRaw, {
+    to: ["to", "recipientEmail", "extraRecipients"].some((name) => Object.hasOwn(input, name))
+      ? recipients.to
+      : undefined,
+    cc: Object.hasOwn(input, "cc") ? recipients.cc : undefined,
+    bcc: Object.hasOwn(input, "bcc") ? recipients.bcc : undefined,
+    subject,
+    body: optionalRawString(input.body) ?? optionalRawString(input.messageBody),
+    isHtml: optionalBoolean(input.isHtml),
+    from: optionalRawString(input.fromEmail),
+    inReplyTo: replyTarget?.headers.inReplyTo,
+    references: replyTarget?.headers.references,
+    attachments,
   });
-
-  const existingBody = extractBodyContent(existing.message.payload ?? null);
-  const subject = trimmedString(input.subject) || readHeader(headers, "Subject");
-  const body = Object.hasOwn(input, "body")
-    ? trimmedString(input.body)
-    : Object.hasOwn(input, "messageBody")
-      ? trimmedString(input.messageBody)
-      : existingBody.body;
-  const isHtml = typeof input.isHtml === "boolean" ? input.isHtml : existingBody.isHtml;
-  const threadId = trimmedString(input.threadId) || existing.message.threadId;
 
   const payload = await fetchJson<GmailDraftResource>(gmailUserUrl(userId, "drafts", draftId), accessToken, fetcher, {
     method: "PUT",
     body: JSON.stringify({
       id: draftId,
       message: {
-        raw: encodeMimeMessage({
-          to: recipients.to,
-          cc: recipients.cc,
-          bcc: recipients.bcc,
-          subject,
-          body,
-          isHtml,
-          from: trimmedString(input.fromEmail) || firstAddress(readHeader(headers, "From")),
-        }),
+        raw,
         threadId: threadId ? normalizeThreadId(threadId) : undefined,
       },
     }),
@@ -578,8 +762,8 @@ async function updateDraft(input: Record<string, unknown>, userId: string, acces
 
   return {
     draftId: payload.id,
-    messageId: payload.message?.id ?? "",
-    threadId: payload.message?.threadId ?? "",
+    messageId: optionalString(payload.message?.id),
+    threadId: optionalString(payload.message?.threadId),
   };
 }
 
@@ -598,7 +782,7 @@ async function sendDraft(input: Record<string, unknown>, userId: string, accessT
 
   return {
     messageId: payload.id,
-    threadId: payload.threadId ?? null,
+    threadId: optionalString(payload.threadId) ?? null,
   };
 }
 
@@ -966,6 +1150,15 @@ async function getDraftResource(
 ) {
   const url = new URL(gmailUserUrl(userId, "drafts", draftId));
   url.searchParams.set("format", format);
+  if (format === "raw") {
+    // Raw MIME includes all files. Bound the encoded envelope without the small JSON default.
+    const response = await sendGmailRequest(url.toString(), accessToken, fetcher);
+    return (await readProviderJsonBody(response, {
+      emptyBody: null,
+      invalidJsonMessage: "Gmail raw draft response must be valid JSON",
+      maxBytes: Math.ceil((gmailMaxMimeBytes * 4) / 3) + 64 * 1024,
+    })) as GmailDraftResource;
+  }
   return fetchJson<GmailDraftResource>(url.toString(), accessToken, fetcher);
 }
 
@@ -998,17 +1191,101 @@ function normalizeThread(thread: GmailThreadResource) {
   };
 }
 
+/**
+ * Hydrate every item, in order, or fail the whole call: a caller advances its page cursor on
+ * success, so a partial page must never look complete.
+ *
+ * Items run in batches of up to `detailHydrationBatchSize`. A per-user rate limit on one item
+ * keeps every row already hydrated and requeues only the limited items; the batch width halves
+ * (down to 1) and the next batch waits out `Retry-After` or an exponential, jittered backoff.
+ * Each clean batch widens the next one by a single item again. When an item runs out of
+ * attempts, or the next wait would overrun the action's retry budget, the rate-limit error
+ * with the longest `Retry-After` is thrown unchanged, so the action still reports `rate_limited`.
+ * Any other error rejects immediately, exactly like the plain batch it replaces.
+ */
 async function hydrateInBatches<T, TResult>(
   items: T[],
   hydrate: (item: T) => Promise<TResult>,
-  batchSize = detailHydrationBatchSize,
-) {
-  const hydrated: TResult[] = [];
-  for (let index = 0; index < items.length; index += batchSize) {
-    const batch = items.slice(index, index + batchSize);
-    hydrated.push(...(await Promise.all(batch.map((item) => hydrate(item)))));
+  signal?: AbortSignal,
+): Promise<TResult[]> {
+  const hydrated = new Array<TResult>(items.length);
+  const attempts = new Array<number>(items.length).fill(0);
+  const deadline = Date.now() + hydrationRetryBudgetMs;
+  let pending = items.map((_item, index) => index);
+  let width = detailHydrationBatchSize;
+  while (pending.length > 0) {
+    const batch = pending.slice(0, width);
+    const outcomes = await Promise.all(
+      batch.map(async (index) => {
+        attempts[index]! += 1;
+        try {
+          hydrated[index] = await hydrate(items[index]!);
+          return undefined;
+        } catch (error) {
+          if (isRetryableGmailRateLimit(error)) return error;
+          throw error;
+        }
+      }),
+    );
+    const limited = batch.filter((_index, position) => outcomes[position] !== undefined);
+    pending = [...limited, ...pending.slice(batch.length)];
+    if (limited.length === 0) {
+      width = Math.min(detailHydrationBatchSize, width + 1);
+      continue;
+    }
+
+    // Surface the error carrying the longest Retry-After so the caller can pace the connection.
+    const pacingError = outcomes
+      .filter((error) => error !== undefined)
+      .reduce((longest, error) => (gmailRetryAfterMs(error) > gmailRetryAfterMs(longest) ? error : longest));
+    const attempt = Math.max(...limited.map((index) => attempts[index]!));
+    if (attempt >= hydrationMaxAttempts) throw pacingError;
+    const delayMs = hydrationRetryDelayMs(attempt, gmailRetryAfterMs(pacingError));
+    if (Date.now() + delayMs > deadline) throw pacingError;
+    width = Math.max(1, Math.floor(width / 2));
+    await sleepFor(delayMs, signal);
   }
   return hydrated;
+}
+
+/**
+ * A rate limit worth waiting out inside this action: whatever the runtime reports as `rate_limited`
+ * (any 429, and the 403 rate-limit reasons `readGmailError` labels), except an exhausted daily or
+ * project quota, which stays `rate_limited` but does not recover within one action.
+ */
+function isRetryableGmailRateLimit(error: unknown): error is GmailRequestError {
+  return (
+    error instanceof GmailRequestError && !error.quotaExhausted && providerRequestErrorCode(error) === "rate_limited"
+  );
+}
+
+function gmailRetryAfterMs(error: GmailRequestError) {
+  return (optionalNumberLike(optionalRecord(error.details)?.retryAfterSeconds) ?? 0) * 1_000;
+}
+
+/** Honour the upstream `Retry-After` when present, else equal-jitter exponential backoff. */
+function hydrationRetryDelayMs(attempt: number, retryAfterMs: number) {
+  if (retryAfterMs > 0) return retryAfterMs;
+  const backoffMs = hydrationBaseBackoffMs * 2 ** (attempt - 1);
+  return backoffMs + Math.random() * (backoffMs / 2);
+}
+
+function sleepFor(delayMs: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal!.reason);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, delayMs);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 function buildLabelPayload(input: Record<string, unknown>) {
@@ -1114,33 +1391,51 @@ async function assertGmailResponse(response: Response): Promise<void> {
     return;
   }
 
-  const text = await response.text().catch(() => "");
-  const message = readGmailErrorMessage(text) || `gmail request failed with ${response.status}`;
-  if (response.status === 400) {
-    throw new ProviderRequestError(400, message);
-  }
-  if (response.status === 401 || response.status === 403) {
-    throw new ProviderRequestError(response.status, message);
-  }
-  if (response.status === 429) {
-    throw new ProviderRequestError(429, message);
-  }
-
-  throw new ProviderRequestError(response.status, message);
+  throw await readGmailError(response);
 }
 
-function readGmailErrorMessage(text: string): string {
-  if (!text) {
-    return "";
-  }
+// Gmail answers both of these with a 403, which would otherwise read as an authorization failure.
+// Per-user rate limits clear within seconds; exhausted daily or project quotas do not.
+const gmailRateLimitReasons = new Set(["rateLimitExceeded", "userRateLimitExceeded"]);
 
+const gmailExhaustedQuotaReasons = new Set(["dailyLimitExceeded", "quotaExceeded"]);
+
+/** A Gmail API failure that also records whether the upstream reason was an exhausted quota. */
+class GmailRequestError extends ProviderRequestError {
+  readonly quotaExhausted: boolean;
+
+  constructor(
+    status: number,
+    message: string,
+    details: unknown,
+    code: ProviderErrorCode | undefined,
+    quotaExhausted: boolean,
+  ) {
+    super(status, message, details, code);
+    this.quotaExhausted = quotaExhausted;
+  }
+}
+
+async function readGmailError(response: Response): Promise<ProviderRequestError> {
+  const text = await readProviderErrorTextBody(response, "gmail error response");
+  let error: Record<string, unknown> | undefined;
   try {
-    const payload = JSON.parse(text) as { error?: { message?: string } | string };
-    if (typeof payload.error === "string") {
-      return payload.error;
-    }
-    return payload.error?.message ?? text;
+    error = optionalRecord(optionalRecord(JSON.parse(text))?.error);
   } catch {
-    return text;
+    // A malformed response must not expose its raw body or change status classification.
   }
+  const reasons = looseArray(error?.errors).flatMap((entry) => optionalString(optionalRecord(entry)?.reason) ?? []);
+  const quotaExhausted = reasons.some((reason) => gmailExhaustedQuotaReasons.has(reason));
+  const rateLimited =
+    response.status === 403 && (quotaExhausted || reasons.some((reason) => gmailRateLimitReasons.has(reason)));
+  const retryAfterSeconds = rateLimited ? readRetryAfterSeconds(response.headers) : undefined;
+  return new GmailRequestError(
+    response.status,
+    optionalString(error?.message) ?? `gmail request failed with ${response.status}`,
+    retryAfterSeconds === undefined ? withRetryAfterSeconds(response) : { retryAfterSeconds },
+    rateLimited ? "rate_limited" : undefined,
+    quotaExhausted,
+  );
 }
+
+export const triggers: readonly (IntegrationDefinition | PollDefinition)[] = [gmailMessageReceived];

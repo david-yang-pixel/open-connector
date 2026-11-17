@@ -1,6 +1,6 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -10,18 +10,18 @@ import {
   optionalString,
   requiredString,
 } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   isAbortLikeError,
   providerInputError,
   ProviderRequestError,
   providerUserAgent,
+  defaultProviderRequestTimeoutMs,
 } from "../provider-runtime.ts";
 
 const service = "healthchecks_io";
 const healthchecksIoApiBaseUrl = "https://healthchecks.io/api/v3";
-const healthchecksIoDefaultRequestTimeoutMs = 30_000;
 
 type HealthchecksIoPhase = "validate" | "execute";
 type HealthchecksIoMethod = "GET" | "POST" | "DELETE";
@@ -195,7 +195,6 @@ export const credentialValidators: CredentialValidators = {
       profile: {
         displayName: "Healthchecks.io API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: healthchecksIoApiBaseUrl,
         validationEndpoint: "/checks/",
@@ -216,7 +215,7 @@ async function requestHealthchecksIoJson(input: {
   body?: Record<string, unknown>;
   emptyBody?: boolean;
 }): Promise<unknown> {
-  const timeoutSignal = AbortSignal.timeout(healthchecksIoDefaultRequestTimeoutMs);
+  const timeoutSignal = AbortSignal.timeout(defaultProviderRequestTimeoutMs);
   const signal = input.context.signal ? AbortSignal.any([input.context.signal, timeoutSignal]) : timeoutSignal;
 
   try {

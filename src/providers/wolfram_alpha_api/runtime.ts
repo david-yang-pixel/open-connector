@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
 import {
@@ -9,6 +9,7 @@ import {
   providerUserAgent,
   ProviderRequestError,
   requiredInputString,
+  providerInputError,
 } from "../provider-runtime.ts";
 
 export const wolframAlphaApiBaseUrl = "https://api.wolframalpha.com";
@@ -105,7 +106,6 @@ export async function validateWolframAlphaApiCredential(
       accountId: "wolfram_alpha_appid",
       displayName: "Wolfram|Alpha AppID",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: wolframAlphaApiBaseUrl,
       validationEndpoint: wolframAlphaQueryRecognizerUrl,
@@ -223,12 +223,12 @@ function createWolframAlphaError(status: number, body: string, phase: WolframAlp
   const message = body.trim() || `Wolfram|Alpha request failed with ${status || 500}`;
   if (phase === "validate") {
     if (status === 400 || status === 401 || status === 403 || looksLikeCredentialError(message)) {
-      return new ProviderRequestError(400, message);
+      return providerInputError(message);
     }
     if (status === 429) return new ProviderRequestError(429, message);
     return new ProviderRequestError(status || 500, message);
   }
-  if (status === 400 || status === 501) return new ProviderRequestError(400, message);
+  if (status === 400 || status === 501) return providerInputError(message);
   if (status === 401 || status === 403 || looksLikeCredentialError(message))
     return new ProviderRequestError(401, message);
   if (status === 429) return new ProviderRequestError(429, message);

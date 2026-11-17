@@ -7,18 +7,21 @@ import type {
 } from "../../core/types.ts";
 
 import { compactObject, optionalNumber, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
 import {
-  createProviderFetch,
   createProviderProxyUrl,
-  defineProviderExecutors,
   normalizeProviderProxyHeaders,
-  providerUserAgent,
-  ProviderRequestError,
   readProviderProxyErrorMessage,
   readProviderProxyResponse,
-  requireApiKeyCredential,
-  requiredInputString,
   toProviderProxyError,
+} from "../provider-proxy.ts";
+import {
+  createProviderFetch,
+  providerUserAgent,
+  ProviderRequestError,
+  requiredInputString,
+  providerInputError,
 } from "../provider-runtime.ts";
 
 const service = "autoblogger";
@@ -135,7 +138,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: dashboardEmail,
         displayName: dashboardEmail,
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: autobloggerApiBaseUrl,
         validationEndpoint: articlesPath,
@@ -278,7 +280,7 @@ async function readAutobloggerPayload(response: Response): Promise<unknown> {
 function createAutobloggerError(status: number, payload: unknown, phase: "validate" | "execute"): ProviderRequestError {
   const message = readErrorMessage(payload) ?? `autoblogger request failed with ${status}`;
   if (status === 400 || status === 404) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   } else if (status === 401 || looksLikeAuthError(payload)) {
     return new ProviderRequestError(phase === "validate" ? 401 : 400, message);
   } else if (status === 402 || status === 429) {
@@ -304,7 +306,7 @@ function readErrorMessage(payload: unknown): string | undefined {
 }
 
 function readDashboardEmail(value: unknown): string {
-  return requiredString(value, "dashboardEmail", (message) => new ProviderRequestError(400, message));
+  return requiredString(value, "dashboardEmail", providerInputError);
 }
 
 function requiredResponseString(value: unknown, fieldName: string): string {

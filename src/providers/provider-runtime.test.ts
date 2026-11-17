@@ -1,21 +1,31 @@
 import type { ExecutionContext, ResolvedCredential } from "../core/types.ts";
-import type { ProviderActionHandlers, ProviderActionSources } from "./provider-runtime.ts";
+import type { ProviderActionHandlers, ProviderActionSources } from "./provider-executors.ts";
 
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { isPrivateNetworkAccessAllowed, setPrivateNetworkAccessAllowed } from "../core/request.ts";
+import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
+import { withProviderNetworkPolicy } from "../core/provider-network-policy.ts";
+import { isPrivateNetworkAccessAllowed } from "../core/request.ts";
 import {
-  createProviderTimeout,
-  createProviderProxyUrl,
   defineOAuthProviderExecutors,
   defineProviderExecutors,
+  mapProviderActionSources,
+} from "./provider-executors.ts";
+import { downloadUploadSource, uploadProviderUrlToTransitFile } from "./provider-files.ts";
+import {
+  createProviderProxyUrl,
   defineProviderProxy,
+  providerProxyEndpointPrefixes,
+  readProviderProxyErrorMessage,
+  readProviderProxyResponse,
+} from "./provider-proxy.ts";
+import {
+  createProviderTimeout,
   isAbortLikeError,
   isAbortSignalError,
-  mapProviderActionSources,
   providerFetch,
   providerInputError,
   ProviderRequestError,
   providerResponseError,
+  readProviderErrorTextBody,
   readProviderJson,
   requiredInputString,
   requiredResponseRecord,
@@ -25,19 +35,14 @@ import {
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  setPrivateNetworkAccessAllowed(false);
 });
 
 describe("ProviderRequestError", () => {
-  it("keeps provider error codes on the shared request error", () => {
-    const error = new ProviderRequestError(429, "Provider quota exhausted", { retryAfter: 30 }, "rate_limited");
-
-    expect(error).toMatchObject({
-      status: 429,
-      message: "Provider quota exhausted",
-      details: { retryAfter: 30 },
-      code: "rate_limited",
-    });
+  it("restricts explicit codes to the provider vocabulary", () => {
+    expectTypeOf<ConstructorParameters<typeof ProviderRequestError>[3]>().toEqualTypeOf<
+      "authorization_failed" | "insufficient_credit" | "invalid_input" | "provider_error" | "rate_limited" | undefined
+    >();
+    expectTypeOf<ProviderRequestError["code"]>().toEqualTypeOf<ConstructorParameters<typeof ProviderRequestError>[3]>();
   });
 });
 
@@ -45,12 +50,57 @@ describe("toProviderExecutionError", () => {
   it("prefers an explicit provider error code over status inference", () => {
     expect(
       toProviderExecutionError(
-        new ProviderRequestError(402, "Provider credit exhausted", undefined, "insufficient_credit"),
+        new ProviderRequestError(402, "Provider credit exhausted", { balance: 0 }, "insufficient_credit"),
         "failed",
       ),
     ).toMatchObject({
-      error: { code: "insufficient_credit" },
+      error: {
+        code: "insufficient_credit",
+        message: "Provider credit exhausted",
+        details: { status: 402, details: { balance: 0 } },
+      },
     });
+  });
+
+  it("refines a generic provider error at an upstream rate limit without overriding a specific code", () => {
+    expect(
+      toProviderExecutionError(new ProviderRequestError(429, "Slow down", undefined, "provider_error"), "failed"),
+    ).toMatchObject({
+      error: { code: "rate_limited", message: "Slow down", details: { status: 429 } },
+    });
+    expect(
+      toProviderExecutionError(
+        new ProviderRequestError(429, "Credits exhausted", undefined, "insufficient_credit"),
+        "failed",
+      ).error?.code,
+    ).toBe("insufficient_credit");
+    expect(
+      toProviderExecutionError(new ProviderRequestError(401, "Keyless request", undefined, "provider_error"), "failed")
+        .error?.code,
+    ).toBe("provider_error");
+  });
+
+  it("infers insufficient_credit from a bare upstream 402", () => {
+    expect(toProviderExecutionError(new ProviderRequestError(402, "Payment required"), "failed")).toMatchObject({
+      error: { code: "insufficient_credit", message: "Payment required", details: { status: 402 } },
+    });
+    expect(
+      toProviderExecutionError(new ProviderRequestError(402, "Payment required", undefined, "provider_error"), "failed")
+        .error?.code,
+    ).toBe("insufficient_credit");
+    expect(
+      toProviderExecutionError(new ProviderRequestError(402, "Payment required", undefined, "invalid_input"), "failed")
+        .error?.code,
+    ).toBe("invalid_input");
+  });
+
+  it("maps an upstream redirect status to a provider error rather than invalid input", () => {
+    expect(toProviderExecutionError(new ProviderRequestError(302, "redirected"), "failed").error?.code).toBe(
+      "provider_error",
+    );
+    expect(toProviderExecutionError(new ProviderRequestError(404, "missing"), "failed").error?.code).toBe(
+      "invalid_input",
+    );
   });
 
   it("maps unknown exceptions to a generic internal error", () => {
@@ -82,6 +132,239 @@ describe("readProviderJson", () => {
       message: "provider request failed",
     });
   });
+});
+
+describe("readProviderProxyResponse", () => {
+  it.each(["hello", "中文 café", '{"value":1}', "�"])(
+    "preserves valid UTF-8 without Content-Type as text: %s",
+    async (data) => {
+      const result = await readProviderProxyResponse(new Response(new TextEncoder().encode(data)));
+      expect(result.data).toBe(data);
+      expect(result).not.toHaveProperty("bodyEncoding");
+    },
+  );
+
+  it("preserves binary bytes without Content-Type", async () => {
+    const bytes = new Uint8Array([0xff, 0x80]);
+    const result = await readProviderProxyResponse(new Response(bytes));
+    expect(result.bodyEncoding).toBe("base64");
+    expect(Buffer.from(result.data as string, "base64")).toEqual(Buffer.from(bytes));
+  });
+
+  it.each(["application/x-ndjson", "Application/X-Ndjson; charset=utf-8"])(
+    "preserves NDJSON text for %s",
+    async (contentType) => {
+      const data = '{"value":"中文"}\n{"value":2}\n';
+      const result = await readProviderProxyResponse(new Response(data, { headers: { "content-type": contentType } }));
+      expect(result.data).toBe(data);
+      expect(result).not.toHaveProperty("bodyEncoding");
+    },
+  );
+
+  it.each(["application/json", "Application/Problem+Json; charset=utf-8"])(
+    "parses JSON media types for %s",
+    async (contentType) => {
+      const result = await readProviderProxyResponse(
+        new Response('{"value":1}', { headers: { "content-type": contentType } }),
+      );
+      expect(result.data).toEqual({ value: 1 });
+    },
+  );
+
+  it.each([
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "Application/Vnd.Openxmlformats-Officedocument.Wordprocessingml.Document ; charset=binary",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ])("preserves binary OpenXML bytes for %s", async (contentType) => {
+    // Synthetic ZIP-like bytes with invalid UTF-8, not a real Office document.
+    const bytes = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x00, 0xff, 0x80, 0xc3, 0x28]);
+    const headers = { "content-type": contentType, "x-request-id": "synthetic-download" };
+
+    const result = await readProviderProxyResponse(new Response(bytes, { status: 206, headers }));
+
+    expect(result).toEqual({ status: 206, headers, bodyEncoding: "base64", data: expect.any(String) });
+    expect(Buffer.from(result.data as string, "base64")).toEqual(Buffer.from(bytes));
+  });
+
+  it.each([
+    "Application/XML ; charset=UTF-8",
+    "application/xml-external-parsed-entity; charset=UTF-8",
+    "Application/XML-DTD ; charset=UTF-8",
+    "Image/SVG+XML ; charset=UTF-8",
+  ])("keeps XML responses as text for %s", async (contentType) => {
+    const data = "<root>café</root>";
+    const headers = { "content-type": contentType };
+
+    await expect(readProviderProxyResponse(new Response(data, { headers }))).resolves.toEqual({
+      status: 200,
+      headers,
+      data,
+    });
+  });
+});
+
+describe("readProviderProxyErrorMessage", () => {
+  it("keeps a bounded proxy error body", async () => {
+    await expect(
+      readProviderProxyErrorMessage(new Response('{"error":"nope"}', { status: 502 }), "provider request failed"),
+    ).resolves.toBe('{"error":"nope"}');
+  });
+
+  it("falls back when the proxy error body exceeds the shared error cap", async () => {
+    await expect(
+      readProviderProxyErrorMessage(new Response("x".repeat(65 * 1024), { status: 502 }), "provider request failed"),
+    ).resolves.toBe("provider request failed");
+  });
+});
+
+/** A response whose body fails as soon as it is read. */
+function abortingErrorResponse(): Response {
+  return new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.error(new DOMException("The operation was aborted.", "AbortError"));
+      },
+    }),
+    { status: 502 },
+  );
+}
+
+describe("readProviderErrorTextBody", () => {
+  it("rethrows an abort raised while reading an error body", async () => {
+    await expect(readProviderErrorTextBody(abortingErrorResponse(), "provider error response")).rejects.toMatchObject({
+      name: "AbortError",
+    });
+  });
+
+  it("keeps swallowing a non-abort read failure", async () => {
+    const response = new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.error(new Error("stream broken"));
+        },
+      }),
+      { status: 502 },
+    );
+
+    await expect(readProviderErrorTextBody(response, "provider error response")).resolves.toBe("");
+  });
+
+  it("reports a timeout when reading an error body is aborted", async () => {
+    await expect(
+      runProviderRequest({ label: "provider" }, async () => readProviderJson(abortingErrorResponse(), "provider")),
+    ).rejects.toMatchObject({ status: 504, message: "provider request timed out" });
+  });
+});
+
+describe("uploadProviderUrlToTransitFile", () => {
+  it("maps an aborted transit download to a timeout", async () => {
+    const fetcher = vi.fn(async () => {
+      throw new DOMException("The operation was aborted.", "AbortError");
+    });
+
+    await expect(
+      uploadProviderUrlToTransitFile(
+        { url: "https://files.example.com/report.pdf", name: "report.pdf", source: "Example" },
+        { fetcher, transitFiles: { maxBytes: 1024 } as never, signal: undefined },
+      ),
+    ).rejects.toMatchObject({ status: 504, message: "Example transit download timed out" });
+  });
+
+  it("maps an abort raised while reading the transit body to a timeout", async () => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.error(new DOMException("The operation was aborted.", "AbortError"));
+            },
+          }),
+          { status: 200 },
+        ),
+    );
+
+    await expect(
+      uploadProviderUrlToTransitFile(
+        { url: "https://files.example.com/report.pdf", name: "report.pdf", source: "Example" },
+        { fetcher, transitFiles: { maxBytes: 1024 } as never, signal: undefined },
+      ),
+    ).rejects.toMatchObject({ status: 504, message: "Example transit download timed out" });
+  });
+
+  it("maps a custom abort reason from an error-body read to a timeout", async () => {
+    const reason = new Error("runtime shutting down");
+    const controller = new AbortController();
+    controller.abort(reason);
+    const fetcher = vi.fn(
+      async () =>
+        new Response(
+          new ReadableStream({
+            start(streamController) {
+              streamController.error(reason);
+            },
+          }),
+          { status: 500 },
+        ),
+    );
+
+    await expect(
+      uploadProviderUrlToTransitFile(
+        { url: "https://files.example.com/report.pdf", name: "report.pdf", source: "Example" },
+        { fetcher, transitFiles: { maxBytes: 1024 } as never, signal: controller.signal },
+      ),
+    ).rejects.toMatchObject({ status: 504, message: "Example transit download timed out" });
+  });
+
+  it("cancels a pending error-body read through the caller signal", async () => {
+    const reason = new Error("runtime shutting down");
+    const controller = new AbortController();
+    const reading = Promise.withResolvers<void>();
+    const fetcher = vi.fn(
+      async () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            pull() {
+              reading.resolve();
+            },
+          }),
+          { status: 500 },
+        ),
+    );
+    const pending = uploadProviderUrlToTransitFile(
+      { url: "https://files.example.com/report.pdf", name: "report.pdf", source: "Example" },
+      { fetcher, transitFiles: { maxBytes: 1024 } as never, signal: controller.signal },
+    );
+
+    await reading.promise;
+    controller.abort(reason);
+
+    await expect(pending).rejects.toMatchObject({ status: 504, message: "Example transit download timed out" });
+  }, 1_000);
+
+  it("aborts the transit body read through the caller signal", async () => {
+    const controller = new AbortController();
+    const reading = Promise.withResolvers<void>();
+    const fetcher = vi.fn(
+      async () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            pull() {
+              reading.resolve();
+            },
+          }),
+          { status: 200 },
+        ),
+    );
+    const pending = uploadProviderUrlToTransitFile(
+      { url: "https://files.example.com/report.pdf", name: "report.pdf", source: "Example" },
+      { fetcher, transitFiles: { maxBytes: 1024 } as never, signal: controller.signal },
+    );
+
+    await reading.promise;
+    controller.abort();
+
+    await expect(pending).rejects.toMatchObject({ status: 504, message: "Example transit download timed out" });
+  }, 1_000);
 });
 
 describe("defineProviderExecutors", () => {
@@ -366,6 +649,34 @@ describe("createProviderProxyUrl", () => {
     );
   });
 
+  it("rejects encoded traversal that a path-prefixed base URL and an endpoint prefix check would both miss", () => {
+    const allowed = providerProxyEndpointPrefixes("/api");
+    for (const endpoint of ["/api/..%2F..%2F..%2Fv3/users", "/api/..%2f..%2fv3", "/api/%2e%2e%2Fv3", "/api/..%5Cv3"]) {
+      expect(allowed(endpoint)).toBe(true);
+      expect(() => createProviderProxyUrl("https://rancher.example.com/k8s/clusters/c-1/", endpoint)).toThrow(
+        "endpoint must not contain path traversal segments",
+      );
+    }
+  });
+
+  it("rejects encoded traversal and malformed encoding in allowed absolute endpoints", () => {
+    const origins = ["https://uploads.example.com"];
+    for (const endpoint of [
+      "https://uploads.example.com/files/..%2F..%2Fadmin",
+      "https://uploads.example.com/files/%zz",
+    ]) {
+      expect(() => createProviderProxyUrl("https://api.example.com/v1/", endpoint, undefined, origins)).toThrow(
+        "endpoint must not contain path traversal segments",
+      );
+    }
+  });
+
+  it("keeps an encoded slash inside a legitimate segment verbatim", () => {
+    expect(
+      createProviderProxyUrl("https://gitlab.example.com/api/v4/", "/projects/group%2Fproject/issues").toString(),
+    ).toBe("https://gitlab.example.com/api/v4/projects/group%2Fproject/issues");
+  });
+
   it("keeps a scheme-like segment with an authority below the base instead of switching origin", () => {
     expect(createProviderProxyUrl("https://api.example.com/v1/", "/custom://evil.example/x").toString()).toBe(
       "https://api.example.com/v1/custom://evil.example/x",
@@ -398,6 +709,102 @@ function stubFetchSequence(responses: Response[]): Array<{ url: string; init: Re
   return calls;
 }
 
+describe("defineProviderProxy per-connection transport", () => {
+  function jsonTransport(...responses: Response[]): ReturnType<typeof vi.fn<typeof fetch>> {
+    return vi.fn<typeof fetch>(async () => responses.shift() ?? new Response("{}", { status: 200 }));
+  }
+
+  it("sends the request and auth through the transport the connection selects", async () => {
+    const platformCalls = stubFetchSequence([]);
+    const transport = jsonTransport();
+    const proxy = defineProviderProxy({
+      service: "test_service",
+      baseUrl: "https://api.example.com/v1/",
+      auth: { type: "bearer" },
+      transport: async () => transport,
+    });
+
+    const result = await proxy({ method: "GET", endpoint: "/items" }, executionContext);
+
+    expect(result.ok).toBe(true);
+    expect(platformCalls).toHaveLength(0);
+    expect(String(transport.mock.calls[0]![0])).toBe("https://api.example.com/v1/items");
+    expect(new Headers(transport.mock.calls[0]![1]!.headers).has("authorization")).toBe(true);
+  });
+
+  it("falls back to the shared egress fetch when the connection selects none", async () => {
+    const platformCalls = stubFetchSequence([new Response("{}", { status: 200 })]);
+    const proxy = defineProviderProxy({
+      service: "test_service",
+      baseUrl: "https://api.example.com/v1/",
+      auth: { type: "bearer" },
+      transport: async () => undefined,
+    });
+
+    await expect(proxy({ method: "GET", endpoint: "/items" }, executionContext)).resolves.toMatchObject({ ok: true });
+    expect(platformCalls).toHaveLength(1);
+  });
+
+  it("keeps the egress guard over the transport, including redirects", async () => {
+    const transport = jsonTransport(new Response(null, { status: 302, headers: { location: "http://10.0.0.5/" } }));
+    const proxy = defineProviderProxy({
+      service: "test_service",
+      baseUrl: "https://api.example.com/v1/",
+      auth: { type: "bearer" },
+      transport: async () => transport,
+    });
+    const privateProxy = defineProviderProxy({
+      service: "test_service",
+      baseUrl: "http://10.0.0.5/",
+      auth: { type: "bearer" },
+      transport: async () => transport,
+    });
+
+    const redirected = await proxy({ method: "GET", endpoint: "/items" }, executionContext);
+    const direct = await privateProxy({ method: "GET", endpoint: "/items" }, executionContext);
+
+    expect(redirected).toMatchObject({ ok: false, error: { message: expect.stringContaining("private or reserved") } });
+    expect(direct).toMatchObject({ ok: false, error: { message: expect.stringContaining("private or reserved") } });
+    expect(transport).toHaveBeenCalledTimes(1);
+  });
+
+  it("applies the private-network opt-in to the transport", async () => {
+    const transport = jsonTransport();
+    const proxy = defineProviderProxy({
+      service: "test_service",
+      baseUrl: "http://10.0.0.5/",
+      auth: { type: "bearer" },
+      allowPrivateNetwork: isPrivateNetworkAccessAllowed,
+      transport: async () => transport,
+    });
+
+    const blocked = await proxy({ method: "GET", endpoint: "/items" }, executionContext);
+    const allowed = await withProviderNetworkPolicy({ allowPrivateNetwork: true }, () =>
+      proxy({ method: "GET", endpoint: "/items" }, executionContext),
+    );
+
+    expect(blocked.ok).toBe(false);
+    expect(allowed.ok).toBe(true);
+    expect(transport).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a transport the connection cannot build as the proxy's error", async () => {
+    const proxy = defineProviderProxy({
+      service: "test_service",
+      baseUrl: "https://api.example.com/v1/",
+      auth: { type: "bearer" },
+      transport: async () => {
+        throw new ProviderRequestError(400, "bad certificate");
+      },
+    });
+
+    await expect(proxy({ method: "GET", endpoint: "/items" }, executionContext)).resolves.toMatchObject({
+      ok: false,
+      error: { code: "invalid_input", message: "bad certificate" },
+    });
+  });
+});
+
 describe("provider egress SSRF guard", () => {
   it("does not fetch when a proxy endpoint escapes its provider origin", async () => {
     const calls = stubFetchSequence([]);
@@ -413,6 +820,20 @@ describe("provider egress SSRF guard", () => {
     if (result.ok) throw new Error("expected failure");
     expect(result.error.message).toBe("endpoint must be a relative path");
     expect(calls).toHaveLength(0);
+  });
+
+  it("classifies a bare upstream 402 from a proxy as insufficient_credit", async () => {
+    const calls = stubFetchSequence([new Response("payment required", { status: 402 })]);
+    const proxy = defineProviderProxy({
+      service: "test_service",
+      baseUrl: "https://api.example.com/v1/",
+      auth: { type: "bearer" },
+    });
+
+    const result = await proxy({ method: "GET", endpoint: "/items" }, executionContext);
+
+    expect(calls).toHaveLength(1);
+    expect(result).toMatchObject({ ok: false, error: { code: "insufficient_credit", details: { status: 402 } } });
   });
 
   it("keeps Z-API-style path rewrites on the provider origin", async () => {
@@ -738,14 +1159,62 @@ describe("provider egress SSRF guard", () => {
       service: "test_service",
       baseUrl: "https://api.example.com",
       auth: { type: "none" },
-      redirect: "error",
+      redirect: "manual",
       timeoutMs: 60_000,
     });
 
     const result = await proxy({ method: "GET", endpoint: "/items" }, executionContext);
 
     expect(result.ok).toBe(true);
-    expect(calls[0]?.init?.redirect).toBe("error");
+    expect(calls[0]?.init?.redirect).toBe("manual");
+  });
+
+  it("rejects an unfollowed redirect under the manual redirect policy", async () => {
+    const calls = stubFetchSequence([
+      new Response("Found. Redirecting to https://attacker.example/collect", {
+        status: 302,
+        headers: { location: "https://attacker.example/collect" },
+      }),
+    ]);
+    const proxy = defineProviderProxy({
+      service: "test_service",
+      baseUrl: "https://api.example.com",
+      auth: { type: "api_key_header", name: "x-api-key" },
+      redirect: "manual",
+    });
+
+    const result = await proxy({ method: "GET", endpoint: "/items" }, executionContext);
+
+    expect(result).toMatchObject({ ok: false, error: { code: "provider_error", details: { status: 302 } } });
+    expect(JSON.stringify(result)).not.toContain("attacker.example");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toBe("https://api.example.com/items");
+    expect(new Headers(calls[0]?.init?.headers).get("x-api-key")).toBe("test-key");
+  });
+
+  it("keeps an unfollowed redirect away from a provider error parser", async () => {
+    stubFetchSequence([
+      new Response(JSON.stringify({ error: { message: "https://attacker.example/collect" } }), {
+        status: 302,
+        headers: { location: "https://attacker.example/collect", "content-type": "application/json" },
+      }),
+    ]);
+    const readError = vi.fn(
+      async (response: Response) => new ProviderRequestError(response.status, await response.text()),
+    );
+    const proxy = defineProviderProxy({
+      service: "test_service",
+      baseUrl: "https://api.example.com",
+      auth: { type: "none" },
+      redirect: "manual",
+      readError,
+    });
+
+    const result = await proxy({ method: "GET", endpoint: "/items" }, executionContext);
+
+    expect(result).toMatchObject({ ok: false, error: { code: "provider_error" } });
+    expect(JSON.stringify(result)).not.toContain("attacker.example");
+    expect(readError).not.toHaveBeenCalled();
   });
 
   it("enforces a provider-specific proxy response byte cap", async () => {
@@ -762,6 +1231,28 @@ describe("provider egress SSRF guard", () => {
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected failure");
     expect(result.error).toMatchObject({ code: "invalid_input", details: { status: 413 } });
+  });
+
+  it("keeps an oversized proxy error body as a provider error", async () => {
+    stubFetchSequence([
+      new Response("upstream failure", { status: 500, headers: { "content-length": String(21 * 1024 * 1024) } }),
+    ]);
+    const proxy = defineProviderProxy({
+      service: "test_service",
+      baseUrl: "https://api.example.com",
+      auth: { type: "none" },
+    });
+
+    const result = await proxy({ method: "GET", endpoint: "/items" }, executionContext);
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: {
+        code: "provider_error",
+        details: { status: 500 },
+        message: "provider request failed with HTTP 500",
+      },
+    });
   });
 
   it.each(["text", [], 1])("rejects a non-object JSON auth body: %j", async (body) => {
@@ -1007,13 +1498,13 @@ describe("provider egress SSRF guard", () => {
       },
       createContext: (_context, fetcher) => ({ fetcher }),
     });
-    setPrivateNetworkAccessAllowed(true);
+    return withProviderNetworkPolicy({ allowPrivateNetwork: true }, async () => {
+      const result = await executors["test_service.probe"]!({}, executionContext);
 
-    const result = await executors["test_service.probe"]!({}, executionContext);
-
-    expect(result.ok).toBe(false);
-    expect(result.error?.message).toContain("must not target private or reserved IP addresses");
-    expect(calls).toHaveLength(0);
+      expect(result.ok).toBe(false);
+      expect(result.error?.message).toContain("must not target private or reserved IP addresses");
+      expect(calls).toHaveLength(0);
+    });
   });
 
   it("reaches private targets for opted-in executors once the deployment enables the flag", async () => {
@@ -1028,12 +1519,12 @@ describe("provider egress SSRF guard", () => {
       createContext: (_context, fetcher) => ({ fetcher }),
       allowPrivateNetwork: isPrivateNetworkAccessAllowed,
     });
-    setPrivateNetworkAccessAllowed(true);
+    return withProviderNetworkPolicy({ allowPrivateNetwork: true }, async () => {
+      const result = await executors["test_service.probe"]!({}, executionContext);
 
-    const result = await executors["test_service.probe"]!({}, executionContext);
-
-    expect(result.ok).toBe(true);
-    expect(calls.map((call) => call.url)).toEqual(["http://10.0.0.5:8123/api/"]);
+      expect(result.ok).toBe(true);
+      expect(calls.map((call) => call.url)).toEqual(["http://10.0.0.5:8123/api/"]);
+    });
   });
 
   it("keeps the opt-in gated on the deployment flag and never unblocks loopback", async () => {
@@ -1050,12 +1541,13 @@ describe("provider egress SSRF guard", () => {
 
     const calls = stubFetchSequence([]);
     const disabled = await executors["test_service.probe"]!({ url: "http://10.0.0.5:8123/api/" }, executionContext);
-    setPrivateNetworkAccessAllowed(true);
-    const loopback = await executors["test_service.probe"]!({ url: "http://127.0.0.1:8123/api/" }, executionContext);
+    return withProviderNetworkPolicy({ allowPrivateNetwork: true }, async () => {
+      const loopback = await executors["test_service.probe"]!({ url: "http://127.0.0.1:8123/api/" }, executionContext);
 
-    expect(disabled.ok).toBe(false);
-    expect(loopback.ok).toBe(false);
-    expect(calls).toHaveLength(0);
+      expect(disabled.ok).toBe(false);
+      expect(loopback.ok).toBe(false);
+      expect(calls).toHaveLength(0);
+    });
   });
 });
 
@@ -1280,4 +1772,23 @@ describe("provider runtime fetch", () => {
     });
     expect(nativeFetchThis).toBeUndefined();
   });
+});
+
+it("rejects a private source before fetching even with an injected fetcher", async () => {
+  const fetcher = vi.fn<typeof fetch>();
+  await expect(
+    downloadUploadSource({ url: "http://127.0.0.1/private", fieldName: "fileUrl", fetcher }),
+  ).rejects.toThrow();
+  expect(fetcher).not.toHaveBeenCalled();
+});
+it("limits streamed bytes and preserves the media type", async () => {
+  const fetcher = vi.fn<typeof fetch>(
+    async () => new Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "image/png" } }),
+  );
+  const options = { url: "https://1.1.1.1/file", fieldName: "fileUrl", fetcher };
+  expect(await downloadUploadSource({ ...options, maximumBytes: 3 })).toEqual({
+    bytes: new Uint8Array([1, 2, 3]),
+    contentType: "image/png",
+  });
+  await expect(downloadUploadSource({ ...options, maximumBytes: 2 })).rejects.toThrow();
 });

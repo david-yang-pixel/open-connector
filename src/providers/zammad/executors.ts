@@ -1,15 +1,11 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { assertPublicHttpUrl, isPrivateNetworkAccessAllowed } from "../../core/request.ts";
-import {
-  createProviderFetch,
-  defineProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-  requireApiKeyCredential,
-} from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { createProviderFetch, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 interface Context {
   baseUrl: string;
   apiKey: string;
@@ -187,7 +183,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: userId === undefined ? `zammad:${new URL(resolvedBaseUrl).host}` : `zammad:user:${userId}`,
         displayName,
       },
-      grantedScopes: [],
       metadata: {
         baseUrl: resolvedBaseUrl,
         apiBaseUrl: resolvedBaseUrl,

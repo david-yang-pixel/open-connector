@@ -1,9 +1,10 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
-import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
+import { ProviderRequestError, providerUserAgent, providerInputError } from "../provider-runtime.ts";
 
 export const byteformsApiBaseUrl = "https://api.forms.bytesuite.io";
 const validationPath = "/api/form";
@@ -49,7 +50,6 @@ export async function validateByteformsCredential(
       accountId: "byteforms:api_key",
       displayName: "ByteForms API Key",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: byteformsApiBaseUrl,
       validationEndpoint: validationPath,
@@ -173,7 +173,7 @@ async function createByteformsError(response: Response, mode: ByteformsMode): Pr
   const message = await readByteformsErrorMessage(response);
 
   if (mode === "validate" && (response.status === 401 || response.status === 403)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   return new ProviderRequestError(response.status, message);
 }

@@ -1,6 +1,7 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ProviderFetch, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import {
   compactObject,
@@ -83,7 +84,6 @@ export async function validateBigCommerceCredential(
       accountId: `big_commerce:${storeHash}`,
       displayName: `BigCommerce ${storeHash}`,
     },
-    grantedScopes: [],
     metadata: compactObject({
       storeHash,
       apiBaseUrl,

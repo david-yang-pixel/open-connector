@@ -4,7 +4,7 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -15,15 +15,14 @@ import {
   recordOrEmpty,
 } from "../../core/cast.ts";
 import { encodePathSegment } from "../../core/request.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors, mapProviderActionSources } from "../provider-executors.ts";
+import { defineProviderProxy, providerProxyEndpointPrefixes } from "../provider-proxy.ts";
 import {
-  defineProviderExecutors,
-  defineProviderProxy,
-  mapProviderActionSources,
-  providerProxyEndpointPrefixes,
   ProviderRequestError,
   providerUserAgent,
-  requireApiKeyCredential,
   runProviderRequest,
+  providerInputError,
 } from "../provider-runtime.ts";
 
 const service = "semantic_scholar";
@@ -333,7 +332,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "api_key",
         displayName: "Semantic Scholar API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         validationEndpoint: "/paper/search",
         firstPaperId: optionalRawString(firstPaperRecord?.paperId),
@@ -423,7 +421,7 @@ function createSemanticScholarError(status: number, payload: unknown, phase: Sem
   }
 
   if (phase === "validate" && status >= 400 && status < 500) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
 
   if (phase === "execute" && (status === 401 || status === 403)) {

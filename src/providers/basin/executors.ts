@@ -1,15 +1,11 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-  requireApiKeyCredential,
-} from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "basin";
 const basinApiBaseUrl = "https://usebasin.com";
@@ -240,7 +236,6 @@ export const credentialValidators: CredentialValidators = {
       profile: {
         displayName: "Basin API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: basinApiBaseUrl,
         validationEndpoint: basinValidationPath,
@@ -303,7 +298,7 @@ function pickWebhookFields(input: Record<string, unknown>): Record<string, unkno
 }
 
 async function requestBasinJson(input: {
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   path: string;
   mode: BasinMode;
   method?: string;
@@ -322,7 +317,7 @@ async function requestBasinJson(input: {
 }
 
 async function basinFetch(input: {
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   path: string;
   method?: string;
   query?: Record<string, BasinQueryValue>;

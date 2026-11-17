@@ -1,23 +1,23 @@
 import type { CredentialValidators, ExecutionContext, ProviderExecutors } from "../../core/types.ts";
 import type { ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 import type { ProviderFetch } from "../provider-runtime.ts";
 import type { MondayActionHandler } from "./runtime-common.ts";
 
+import { requireBearerCredential } from "../provider-credentials.ts";
 import {
-  createProviderFetch,
-  createProviderProxyUrl,
   combineProviderActionHandlers,
   defineProviderExecutors,
   mapProviderActionSources,
+} from "../provider-executors.ts";
+import {
+  createProviderProxyUrl,
   normalizeProviderProxyHeaders,
-  ProviderRequestError,
-  providerUserAgent,
   readProviderProxyErrorMessage,
   readProviderProxyResponse,
-  requireBearerCredential,
   toProviderProxyError,
-} from "../provider-runtime.ts";
+} from "../provider-proxy.ts";
+import { createProviderFetch, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 import { mondayAutomationActionHandlers } from "./runtime-automation.ts";
 import { mondayCollaborationActionHandlers } from "./runtime-collaboration.ts";
 import { mondayApiUrl, mondayApiVersion, validateMondayCredential } from "./runtime-common.ts";
@@ -26,7 +26,6 @@ import { mondayEnterpriseActionHandlers } from "./runtime-enterprise.ts";
 import { mondayFormsActionHandlers } from "./runtime-forms.ts";
 import { mondayItemActionHandlers } from "./runtime-items.ts";
 import { mondayStructureActionHandlers } from "./runtime-structure.ts";
-import { getMondayAuthorizationScopes, parseMondayScopeString } from "./scopes.ts";
 
 const service = "monday";
 const mondayFetch = createProviderFetch({ skipDnsValidation: true });
@@ -115,9 +114,6 @@ export const credentialValidators: CredentialValidators = {
     return validateMondayCredential({ apiKey: input.apiKey }, fetcher);
   },
   async oauth2(input, { fetcher }) {
-    const grantedScopes = parseMondayScopeString(input.metadata.scope);
-    return validateMondayCredential({ apiKey: input.accessToken }, fetcher, {
-      grantedScopes: grantedScopes.length > 0 ? grantedScopes : getMondayAuthorizationScopes(),
-    });
+    return validateMondayCredential({ apiKey: input.accessToken }, fetcher);
   },
 };

@@ -1,7 +1,9 @@
 import type { ProviderDefinition } from "../../core/types.ts";
 
 import { gmailActions } from "./actions.ts";
-import { gmailOAuthScopes } from "./scopes.ts";
+import { gmailAuthorizableScopes } from "./scopes.ts";
+import { snapshot as triggerSnapshot0_0 } from "./trigger-on-message-received.definition.ts";
+import { triggerPermissions } from "./trigger-permissions.ts";
 
 const service = "gmail";
 
@@ -18,7 +20,8 @@ export const provider: ProviderDefinition = {
       type: "oauth2",
       authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth",
       tokenUrl: "https://oauth2.googleapis.com/token",
-      scopes: gmailOAuthScopes,
+      revocationUrl: "https://oauth2.googleapis.com/revoke",
+      scopes: gmailAuthorizableScopes,
       tokenEndpointAuthMethod: "client_secret_post",
       authorizationParams: {
         access_type: "offline",
@@ -56,4 +59,6 @@ export const provider: ProviderDefinition = {
   ],
   homepageUrl: "https://mail.google.com",
   actions: gmailActions,
+  triggers: [triggerSnapshot0_0],
+  triggerPermissions,
 };

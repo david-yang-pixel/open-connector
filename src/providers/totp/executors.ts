@@ -4,9 +4,10 @@ import type {
   ExecutionContext,
   ProviderExecutors,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
-import { defineProviderExecutors, requireCustomCredential } from "../provider-runtime.ts";
+import { requireCustomCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
 import { generateTotpCode, readTotpCredential, totpDigits, totpPeriodSeconds } from "./runtime.ts";
 
 const service = "totp";
@@ -51,7 +52,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: `${credential.websiteUrl.origin}#${credential.username}`,
         displayName: `${credential.username} at ${credential.websiteUrl.host}`,
       },
-      grantedScopes: [],
       metadata: {
         websiteOrigin: credential.websiteUrl.origin,
         algorithm: "SHA-1",

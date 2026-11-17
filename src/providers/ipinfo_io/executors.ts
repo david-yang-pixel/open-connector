@@ -1,6 +1,5 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -10,18 +9,16 @@ import {
   optionalRecord,
   optionalString,
 } from "../../core/cast.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
 import {
-  createProviderFetch,
   createProviderProxyUrl,
-  defineApiKeyProviderExecutors,
   normalizeProviderProxyEndpoint,
   normalizeProviderProxyHeaders,
-  ProviderRequestError,
-  providerUserAgent,
   readProviderProxyResponse,
-  requireApiKeyCredential,
   toProviderProxyError,
-} from "../provider-runtime.ts";
+} from "../provider-proxy.ts";
+import { createProviderFetch, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "ipinfo_io";
 const ipinfoIoFetch = createProviderFetch({ skipDnsValidation: true });
@@ -48,8 +45,7 @@ const plusBooleanFields = new Set([
 ]);
 
 type IpinfoIoRequestPhase = "validate" | "execute";
-type IpinfoIoActionContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
-type IpinfoIoActionHandler = (input: Record<string, unknown>, context: IpinfoIoActionContext) => Promise<unknown>;
+type IpinfoIoActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 
 export const ipinfoIoActionHandlers: ProviderActionHandlers<"ipinfo_io", IpinfoIoActionHandler> = {
   get_ip_info(input, context) {
@@ -192,7 +188,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "api_key",
         displayName: optionalString(tokenInfo.name) ?? optionalString(tokenInfo.email) ?? "IPinfo API Token",
       },
-      grantedScopes: [],
       metadata: compactObject({
         validationEndpoint: "/me",
         apiBaseUrl: ipinfoLegacyBaseUrl,
@@ -224,7 +219,7 @@ function resolveIpinfoProxyTarget(endpoint: string): { baseUrl: string; endpoint
 
 async function getLiteIpInfo(
   input: Record<string, unknown>,
-  context: IpinfoIoActionContext,
+  context: ApiKeyProviderContext,
 ): Promise<Record<string, unknown>> {
   const ip = optionalString(input.ip) ?? "me";
   const liteInfo = await lookupLiteInfo(ip, context);
@@ -239,12 +234,12 @@ async function getLiteIpInfo(
   });
 }
 
-async function getComprehensiveIpInfo(ip: string, context: IpinfoIoActionContext): Promise<Record<string, unknown>> {
+async function getComprehensiveIpInfo(ip: string, context: ApiKeyProviderContext): Promise<Record<string, unknown>> {
   const legacyProfile = await lookupLegacyIpProfile(ip, context, true);
   return normalizeComprehensiveInfo(legacyProfile);
 }
 
-async function getGeoByIp(ip: string, context: IpinfoIoActionContext): Promise<Record<string, unknown>> {
+async function getGeoByIp(ip: string, context: ApiKeyProviderContext): Promise<Record<string, unknown>> {
   const payload = await ipinfoRequest({
     baseUrl: ipinfoLookupBaseUrl,
     pathSegments: [ip, "geo"],
@@ -256,24 +251,24 @@ async function getGeoByIp(ip: string, context: IpinfoIoActionContext): Promise<R
   return normalizeGeoPayload(requireRecord(payload, "ipinfo geo response"));
 }
 
-async function getCompanyInfo(ip: string, context: IpinfoIoActionContext): Promise<Record<string, unknown>> {
+async function getCompanyInfo(ip: string, context: ApiKeyProviderContext): Promise<Record<string, unknown>> {
   const legacyProfile = await lookupLegacyIpProfile(ip, context, false);
   return normalizeCompanyPayload(optionalRecord(legacyProfile.company));
 }
 
-async function getCarrierInfo(ip: string, context: IpinfoIoActionContext): Promise<Record<string, unknown>> {
+async function getCarrierInfo(ip: string, context: ApiKeyProviderContext): Promise<Record<string, unknown>> {
   const legacyProfile = await lookupLegacyIpProfile(ip, context, false);
   return {
     carrier: normalizeCarrierPayload(optionalRecord(legacyProfile.carrier)),
   };
 }
 
-async function getPrivacyDetails(ip: string, context: IpinfoIoActionContext): Promise<Record<string, unknown>> {
+async function getPrivacyDetails(ip: string, context: ApiKeyProviderContext): Promise<Record<string, unknown>> {
   const legacyProfile = await lookupLegacyIpProfile(ip, context, false);
   return normalizePrivacyPayload(optionalRecord(legacyProfile.privacy));
 }
 
-async function getAbuseContact(ip: string, context: IpinfoIoActionContext): Promise<Record<string, unknown>> {
+async function getAbuseContact(ip: string, context: ApiKeyProviderContext): Promise<Record<string, unknown>> {
   const legacyProfile = await lookupLegacyIpProfile(ip, context, false);
   return {
     abuse: normalizeAbusePayload(optionalRecord(legacyProfile.abuse)),
@@ -282,7 +277,7 @@ async function getAbuseContact(ip: string, context: IpinfoIoActionContext): Prom
 
 async function getLiteFieldByIp(
   input: Record<string, unknown>,
-  context: IpinfoIoActionContext,
+  context: ApiKeyProviderContext,
 ): Promise<Record<string, unknown>> {
   const value = await getLiteFieldValue(requireIp(input), requireField(input), context);
   return { value };
@@ -290,7 +285,7 @@ async function getLiteFieldByIp(
 
 async function getCoreFieldByMe(
   input: Record<string, unknown>,
-  context: IpinfoIoActionContext,
+  context: ApiKeyProviderContext,
 ): Promise<Record<string, unknown>> {
   const field = requireField(input);
   const value =
@@ -302,13 +297,13 @@ async function getCoreFieldByMe(
 
 async function getPlusFieldByMe(
   input: Record<string, unknown>,
-  context: IpinfoIoActionContext,
+  context: ApiKeyProviderContext,
 ): Promise<Record<string, unknown>> {
   const value = await getLookupFieldValue("me", requireField(input), "plus", context);
   return { value };
 }
 
-async function batchLookup(input: Record<string, unknown>, context: IpinfoIoActionContext): Promise<unknown> {
+async function batchLookup(input: Record<string, unknown>, context: ApiKeyProviderContext): Promise<unknown> {
   const ips = readStringArray(input.ips, "ips");
   const filter = optionalBoolean(input.filter);
   const payload = await ipinfoRequest({
@@ -327,7 +322,7 @@ async function batchLookup(input: Record<string, unknown>, context: IpinfoIoActi
   return requireRecord(payload, "ipinfo batch response");
 }
 
-async function batchLiteLookup(input: Record<string, unknown>, context: IpinfoIoActionContext): Promise<unknown> {
+async function batchLiteLookup(input: Record<string, unknown>, context: ApiKeyProviderContext): Promise<unknown> {
   const payload = await ipinfoRequest({
     baseUrl: ipinfoBatchLiteBaseUrl,
     pathSegments: ["batch", "lite"],
@@ -343,7 +338,7 @@ async function batchLiteLookup(input: Record<string, unknown>, context: IpinfoIo
 
 async function mapIps(
   input: Record<string, unknown>,
-  context: IpinfoIoActionContext,
+  context: ApiKeyProviderContext,
 ): Promise<Record<string, unknown>> {
   const payload = await ipinfoRequest({
     baseUrl: ipinfoLegacyBaseUrl,
@@ -372,7 +367,7 @@ async function mapIps(
 }
 
 async function getTokenInfo(
-  context: IpinfoIoActionContext,
+  context: ApiKeyProviderContext,
   phase: IpinfoIoRequestPhase,
 ): Promise<Record<string, unknown>> {
   const payload = await ipinfoRequest({
@@ -387,7 +382,7 @@ async function getTokenInfo(
   return requireRecord(payload, "ipinfo token response");
 }
 
-async function lookupLiteInfo(ip: string, context: IpinfoIoActionContext): Promise<Record<string, unknown>> {
+async function lookupLiteInfo(ip: string, context: ApiKeyProviderContext): Promise<Record<string, unknown>> {
   const payload = await ipinfoRequest({
     baseUrl: ipinfoLiteBaseUrl,
     pathSegments: [ip],
@@ -412,7 +407,7 @@ async function lookupLiteInfo(ip: string, context: IpinfoIoActionContext): Promi
 
 async function lookupLegacyIpProfile(
   ip: string,
-  context: IpinfoIoActionContext,
+  context: ApiKeyProviderContext,
   enrichAsn: boolean,
 ): Promise<Record<string, unknown>> {
   const payload = await ipinfoRequest({
@@ -451,7 +446,7 @@ async function lookupLegacyIpProfile(
   };
 }
 
-async function getLiteFieldValue(ip: string, field: string, context: IpinfoIoActionContext): Promise<string> {
+async function getLiteFieldValue(ip: string, field: string, context: ApiKeyProviderContext): Promise<string> {
   return ipinfoTextRequest({
     baseUrl: ipinfoLiteBaseUrl,
     pathSegments: [ip, field],
@@ -464,7 +459,7 @@ async function getLookupFieldValue(
   ip: string,
   field: string,
   apiFamily: "core" | "plus",
-  context: IpinfoIoActionContext,
+  context: ApiKeyProviderContext,
 ): Promise<unknown> {
   const value = await ipinfoRequest({
     baseUrl: ipinfoLookupBaseUrl,
@@ -506,14 +501,14 @@ async function getLegacyTextFieldOutput(
   outputKey: string,
   field: string,
   ip: string,
-  context: IpinfoIoActionContext,
+  context: ApiKeyProviderContext,
 ): Promise<Record<string, unknown>> {
   return {
     [outputKey]: await legacyTextField(ip, field, context),
   };
 }
 
-async function legacyTextField(ip: string, field: string, context: IpinfoIoActionContext): Promise<string> {
+async function legacyTextField(ip: string, field: string, context: ApiKeyProviderContext): Promise<string> {
   return ipinfoTextRequest({
     baseUrl: ipinfoLegacyBaseUrl,
     pathSegments: [ip, field],
@@ -664,7 +659,7 @@ function undefinedIfEmptyObject(value: Record<string, unknown> | undefined): Rec
 async function ipinfoTextRequest(input: {
   baseUrl: string;
   pathSegments: string[];
-  context: IpinfoIoActionContext;
+  context: ApiKeyProviderContext;
   phase: IpinfoIoRequestPhase;
 }): Promise<string> {
   const payload = await ipinfoRequest({
@@ -685,7 +680,7 @@ async function ipinfoTextRequest(input: {
 async function ipinfoRequest(input: {
   baseUrl: string;
   pathSegments: string[];
-  context: IpinfoIoActionContext;
+  context: ApiKeyProviderContext;
   phase: IpinfoIoRequestPhase;
   expectJson: boolean;
   method?: string;

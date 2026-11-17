@@ -4,6 +4,9 @@ import type { IMarketplaceStore, ProviderPreference, StoredMarketplaceConfig } f
 
 import { describe, expect, it, vi } from "vitest";
 import { createCatalogStore } from "../catalog-store.ts";
+import { setDefaultGuardedFetchDnsLookup } from "../core/guarded-fetch.ts";
+import { withProviderNetworkPolicy } from "../core/provider-network-policy.ts";
+import { defaultMarketplaceDiscoveryUrl } from "./default-marketplace.ts";
 import { MarketplaceService } from "./marketplace-service.ts";
 
 const provider: ProviderDefinition = {
@@ -28,6 +31,179 @@ const provider: ProviderDefinition = {
 };
 
 describe("MarketplaceService", () => {
+  it.each(["http", "https"])(
+    "preserves %s discovery, validation and execution for trusted VPN hosts",
+    async (protocol) => {
+      return withProviderNetworkPolicy({ trustedHosts: ["marketplace.example"] }, async () => {
+        setDefaultGuardedFetchDnsLookup(async () => [{ address: "10.0.0.2", family: 4 }]);
+        const fetcher = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+          const url = new URL(String(input));
+          if (url.pathname === "/validate") return new Response(null, { status: 204 });
+          if (url.pathname === "/actions/example.run") return jsonResponse({ success: true, data: { ok: true } });
+          return jsonResponse({
+            version: 1,
+            id: "vpn",
+            name: "VPN",
+            pricing: "free",
+            validate: "/validate",
+            endpoint: "/actions",
+            actions: ["example.run"],
+          });
+        });
+        const service = new MarketplaceService({
+          catalog: createCatalogStore([provider]),
+          store: new MemoryMarketplaceStore(),
+          secretCodec: reversibleCodec,
+          fetcher,
+        });
+        try {
+          await service.configure({ discoveryUrl: `${protocol}://marketplace.example/discovery`, apiKey: "secret" });
+          expect(await service.execute("example.run", {})).toEqual({ ok: true, output: { ok: true } });
+          expect(fetcher.mock.calls.map(([url]) => String(url))).toEqual([
+            `${protocol}://marketplace.example/discovery`,
+            `${protocol}://marketplace.example/validate`,
+            `${protocol}://marketplace.example/actions/example.run`,
+          ]);
+        } finally {
+          setDefaultGuardedFetchDnsLookup(null);
+        }
+      });
+    },
+  );
+
+  it("loads the default discovery summary through the runtime fetcher", async () => {
+    setDefaultGuardedFetchDnsLookup(null);
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        version: 1,
+        id: "oomol",
+        name: "Default",
+        pricing: "metered",
+        validate: "/validate",
+        endpoint: "/actions",
+        actions: ["example.run"],
+      }),
+    );
+    const service = new MarketplaceService({
+      catalog: createCatalogStore([provider]),
+      store: new MemoryMarketplaceStore(),
+      secretCodec: reversibleCodec,
+      fetcher,
+    });
+    try {
+      await expect(service.getDefaultDiscovery()).resolves.toEqual({
+        version: 1,
+        name: "Default",
+        actions: ["example.run"],
+      });
+      expect(fetcher).toHaveBeenCalledOnce();
+      expect(String(fetcher.mock.calls[0]?.[0])).toBe(defaultMarketplaceDiscoveryUrl);
+      expect(fetcher.mock.calls[0]?.[1]).toMatchObject({
+        headers: { accept: "application/json" },
+        redirect: "manual",
+      });
+    } finally {
+      setDefaultGuardedFetchDnsLookup(null);
+    }
+  });
+
+  it.each([
+    { failure: new TypeError("terminated"), status: 502, message: "Marketplace discovery could not be read." },
+    { failure: new DOMException("Timed out", "TimeoutError"), status: 504, message: "Marketplace request timed out." },
+    { failure: new DOMException("Aborted", "AbortError"), status: 504, message: "Marketplace request timed out." },
+  ])("maps discovery body failures to HTTP $status", async ({ failure, status, message }) => {
+    let reads = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (reads++ === 0) controller.enqueue(new TextEncoder().encode('{"version":'));
+        else controller.error(failure);
+      },
+    });
+    const store = new MemoryMarketplaceStore();
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(body));
+    const service = new MarketplaceService({
+      catalog: createCatalogStore([provider]),
+      store,
+      secretCodec: reversibleCodec,
+      fetcher,
+    });
+    await expect(service.configure({ apiKey: "secret" })).rejects.toMatchObject({
+      code: "marketplace_unavailable",
+      status,
+      message,
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(await store.getConfig()).toBeUndefined();
+    expect(service.getState().configured).toBe(false);
+  });
+
+  it("preserves the discovery size-limit error and cancels the body", async () => {
+    const cancel = vi.fn();
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(4 * 1024 * 1024 + 1));
+      },
+      cancel,
+    });
+    const service = new MarketplaceService({
+      catalog: createCatalogStore([provider]),
+      store: new MemoryMarketplaceStore(),
+      secretCodec: reversibleCodec,
+      fetcher: vi.fn<typeof fetch>().mockResolvedValue(new Response(body)),
+    });
+    await expect(service.configure({ apiKey: "secret" })).rejects.toMatchObject({
+      code: "invalid_marketplace_discovery",
+      status: 400,
+      message: "Marketplace discovery exceeds 4 MiB.",
+    });
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["discovery", "validation"])("reports %s network failures as Marketplace errors", async (stage) => {
+    const fetcher = vi.fn<typeof fetch>();
+    if (stage === "validation") {
+      fetcher.mockResolvedValueOnce(
+        jsonResponse({
+          version: 1,
+          id: "test",
+          name: "Test Marketplace",
+          pricing: "metered",
+          validate: "/validate",
+          endpoint: "/actions",
+          actions: ["example.run"],
+        }),
+      );
+    }
+    fetcher.mockRejectedValueOnce(new Error("request URL must not resolve to private or reserved IP addresses"));
+    const store = new MemoryMarketplaceStore();
+    const service = new MarketplaceService({
+      catalog: createCatalogStore([provider]),
+      store,
+      secretCodec: reversibleCodec,
+      fetcher,
+    });
+    await expect(service.configure({ apiKey: "secret" })).rejects.toMatchObject({
+      code: "marketplace_unavailable",
+      status: 502,
+      message: `Marketplace ${stage} request failed.`,
+    });
+    expect(await store.getConfig()).toBeUndefined();
+    expect(service.getState().configured).toBe(false);
+  });
+
+  it("reports network timeouts as gateway timeouts", async () => {
+    const service = new MarketplaceService({
+      catalog: createCatalogStore([provider]),
+      store: new MemoryMarketplaceStore(),
+      secretCodec: reversibleCodec,
+      fetcher: vi.fn<typeof fetch>().mockRejectedValue(new DOMException("Timed out", "TimeoutError")),
+    });
+    await expect(service.configure({ apiKey: "secret" })).rejects.toMatchObject({
+      code: "marketplace_unavailable",
+      status: 504,
+      message: "Marketplace request timed out.",
+    });
+  });
   it("keeps the current source on failed replacement and hides old preferences after a successful switch", async () => {
     const fetcher = vi.fn<typeof fetch>().mockImplementation(async (input) => {
       const url = new URL(String(input));
@@ -56,7 +232,7 @@ describe("MarketplaceService", () => {
     expect(fetcher).toHaveBeenCalledTimes(count);
     await expect(
       service.configure({ discoveryUrl: "https://broken.example/discovery", apiKey: "new-key" }),
-    ).rejects.toThrow("offline");
+    ).rejects.toThrow("Marketplace discovery request failed.");
     expect(service.getState().discoveryUrl).toBe("https://first.example/discovery");
     expect(await service.listProviderPreferences()).toHaveLength(1);
     await service.configure({ discoveryUrl: "https://other.example/discovery", apiKey: "new-key" });
@@ -170,6 +346,56 @@ describe("MarketplaceService", () => {
 
     await expect(store.getConfig()).resolves.toMatchObject({ apiKeyEncrypted: "local-key" });
   });
+  it("keeps action output above the discovery limit intact", async () => {
+    const output = { content: "a".repeat(4 * 1024 * 1024 + 1) };
+    const service = await configuredService(jsonResponse({ success: true, data: output }));
+    await expect(service.execute("example.run", {})).resolves.toEqual({ ok: true, output });
+  });
+
+  it("preserves structured business errors including retry hints", async () => {
+    const service = await configuredService(
+      new Response(
+        JSON.stringify({
+          success: false,
+          errorCode: "rate_limit_exceeded",
+          message: "Slow down",
+          data: { retryAfterSeconds: 12 },
+        }),
+        { status: 429 },
+      ),
+    );
+    await expect(service.execute("example.run", {})).resolves.toEqual({
+      ok: false,
+      error: { code: "rate_limit_exceeded", message: "Slow down", details: { retryAfterSeconds: 12 } },
+    });
+  });
+
+  it("does not expose plain unauthorized bodies or malformed envelopes", async () => {
+    const service = await configuredService(new Response("Unauthorized secret-token", { status: 401 }));
+    await expect(service.execute("example.run", {})).resolves.toEqual({
+      ok: false,
+      error: { code: "marketplace_unavailable", message: "Marketplace action response is not valid JSON." },
+    });
+    const malformed = await configuredService(jsonResponse({ success: true }));
+    await expect(malformed.execute("example.run", {})).resolves.toMatchObject({
+      ok: false,
+      error: { code: "provider_error" },
+    });
+  });
+
+  it("rejects action redirects even when their body looks successful", async () => {
+    const cancel = vi.fn();
+    const response = new Response(new ReadableStream({ cancel }), {
+      status: 307,
+      headers: { location: "https://attacker.example" },
+    });
+    const service = await configuredService(response);
+    await expect(service.execute("example.run", {})).resolves.toMatchObject({
+      ok: false,
+      error: { code: "marketplace_unavailable" },
+    });
+    expect(cancel).toHaveBeenCalledOnce();
+  });
 });
 
 const reversibleCodec: ISecretCodec = {
@@ -215,4 +441,30 @@ class MemoryMarketplaceStore implements IMarketplaceStore {
 
 function jsonResponse(value: unknown): Response {
   return new Response(JSON.stringify(value), { status: 200, headers: { "content-type": "application/json" } });
+}
+
+async function configuredService(response: Response): Promise<MarketplaceService> {
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(
+      jsonResponse({
+        version: 1,
+        id: "test",
+        name: "Test",
+        pricing: "free",
+        validate: "/validate",
+        endpoint: "/actions",
+        actions: ["example.run"],
+      }),
+    )
+    .mockResolvedValueOnce(new Response(null, { status: 204 }))
+    .mockResolvedValueOnce(response);
+  const service = new MarketplaceService({
+    catalog: createCatalogStore([provider]),
+    store: new MemoryMarketplaceStore(),
+    secretCodec: reversibleCodec,
+    fetcher,
+  });
+  await service.configure({ discoveryUrl: "https://marketplace.example/discovery", apiKey: "secret" });
+  return service;
 }

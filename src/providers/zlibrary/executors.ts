@@ -2,7 +2,9 @@ import type { CredentialValidators, ExecutionContext, ProviderExecutors } from "
 import type { ZLibraryRuntimeContext } from "./runtime.ts";
 
 import { requiredString } from "../../core/cast.ts";
-import { defineProviderExecutors, ProviderRequestError, requireCustomCredential } from "../provider-runtime.ts";
+import { requireCustomCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { ProviderRequestError } from "../provider-runtime.ts";
 import { zlibraryActionHandlers, zlibraryEapiLoginWithFallback } from "./runtime.ts";
 
 const service = "zlibrary";
@@ -46,7 +48,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: email,
         displayName: email,
       },
-      grantedScopes: [],
       metadata: {
         remixUserid: session.remixUserid,
         eapiDomain: session.domain,

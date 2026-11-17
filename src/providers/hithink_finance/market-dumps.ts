@@ -1,7 +1,7 @@
 import type { TransitFileWriter } from "../../core/types.ts";
 
 import { optionalRecord, requiredString } from "../../core/cast.ts";
-import { readBoundedResponseBytes } from "../../core/request.ts";
+import { storeResponseInTransit } from "../../core/request.ts";
 import { ProviderRequestError, providerResponseError } from "../provider-runtime.ts";
 
 interface MarketDumpContext {
@@ -68,18 +68,23 @@ async function exportMarketDump(get: MarketDumpGet, path: string, name: string, 
     await response.body?.cancel().catch(() => undefined);
     throw new ProviderRequestError(502, `market dump download failed with HTTP ${response.status}`);
   }
-  const bytes = await readBoundedResponseBytes(response, {
-    maxBytes: context.transitFiles.maxBytes,
-    fieldName: "market dump",
-    createError: (message) => new ProviderRequestError(502, message),
-  });
-  validateParquetEnvelope(bytes);
-  const stored = await context.transitFiles.create(new File([Uint8Array.from(bytes)], name, { type: mimeType }));
+  if (!response.body) throw new ProviderRequestError(502, "market dump does not have a valid Parquet envelope");
+  const stored = await storeResponseInTransit(
+    new Response(response.body.pipeThrough(validateParquetEnvelopeStream()), { headers: response.headers }),
+    context.transitFiles,
+    {
+      name,
+      mimeType,
+      fieldName: "market dump",
+      createError: (message) => new ProviderRequestError(502, message),
+      signal,
+    },
+  );
   return {
     file: {
       fileId: stored.fileId,
       downloadUrl: stored.downloadUrl,
-      sizeBytes: bytes.byteLength,
+      sizeBytes: stored.sizeBytes,
       name,
       mimeType,
     },
@@ -87,16 +92,59 @@ async function exportMarketDump(get: MarketDumpGet, path: string, name: string, 
   };
 }
 
-function validateParquetEnvelope(bytes: Uint8Array): void {
+/**
+ * Validate the Parquet envelope while the body streams to transit storage: the
+ * file starts and ends with `PAR1`, and the four bytes before the footer hold a
+ * metadata length within the file. Only the first four and the last eight bytes
+ * are ever buffered, so a market dump of any size costs a constant amount of
+ * memory. A violation errors the stream, and the store discards the partial
+ * file.
+ */
+function validateParquetEnvelopeStream(): TransformStream<Uint8Array, Uint8Array> {
+  const magicLength = 4;
+  let header = new Uint8Array(0);
+  let tail = new Uint8Array(0);
+  let total = 0;
+  return new TransformStream({
+    transform(chunk, controller) {
+      if (header.byteLength < magicLength) {
+        const length = Math.min(magicLength, header.byteLength + chunk.byteLength);
+        const merged = new Uint8Array(length);
+        merged.set(header);
+        merged.set(chunk.subarray(0, length - header.byteLength), header.byteLength);
+        header = merged;
+      }
+      total += chunk.byteLength;
+      if (chunk.byteLength >= 8) {
+        tail = new Uint8Array(chunk.subarray(chunk.byteLength - 8));
+      } else {
+        const merged = new Uint8Array(tail.byteLength + chunk.byteLength);
+        merged.set(tail);
+        merged.set(chunk, tail.byteLength);
+        tail = new Uint8Array(merged.subarray(Math.max(0, merged.byteLength - 8)));
+      }
+      controller.enqueue(chunk);
+    },
+    flush(controller) {
+      try {
+        assertParquetEnvelope(header, tail, total);
+      } catch (error) {
+        controller.error(error);
+      }
+    },
+  });
+}
+
+function assertParquetEnvelope(header: Uint8Array, tail: Uint8Array, total: number): void {
   const magic = [0x50, 0x41, 0x52, 0x31];
-  const hasHeader = magic.every((byte, index) => bytes[index] === byte);
-  const hasFooter = magic.every((byte, index) => bytes[bytes.byteLength - 4 + index] === byte);
-  if (bytes.byteLength < 13 || !hasHeader || !hasFooter) {
+  const hasHeader = magic.every((byte, index) => header[index] === byte);
+  const hasFooter = magic.every((byte, index) => tail[tail.byteLength - 4 + index] === byte);
+  if (total < 13 || !hasHeader || !hasFooter) {
     throw new ProviderRequestError(502, "market dump does not have a valid Parquet envelope");
   }
-  const footer = bytes.subarray(bytes.byteLength - 8, bytes.byteLength - 4);
+  const footer = tail.subarray(tail.byteLength - 8, tail.byteLength - 4);
   const metadataLength = (footer[0]! | (footer[1]! << 8) | (footer[2]! << 16) | (footer[3]! << 24)) >>> 0;
-  if (metadataLength === 0 || metadataLength > bytes.byteLength - 12) {
+  if (metadataLength === 0 || metadataLength > total - 12) {
     throw new ProviderRequestError(502, "market dump does not have valid Parquet metadata bounds");
   }
 }

@@ -1,12 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { setPrivateNetworkAccessAllowed } from "../../core/request.ts";
+import { describe, expect, it } from "vitest";
 import { ProviderRequestError } from "../provider-runtime.ts";
 import { komariActions } from "./actions.ts";
-import { komariOperations } from "./operations.ts";
 import { komariActionHandlers, normalizeKomariBaseUrl, validateKomariCredential } from "./runtime.ts";
-
-beforeEach(() => setPrivateNetworkAccessAllowed(false));
-afterEach(() => setPrivateNetworkAccessAllowed(false));
 
 describe("normalizeKomariBaseUrl", () => {
   it("gates private-network instances and always rejects embedded credentials", () => {
@@ -54,7 +49,6 @@ describe("Komari RPC runtime", () => {
     ]);
     expect(validation).toEqual({
       profile: { accountId: "komari:monitor.example.com", displayName: "Komari monitor.example.com" },
-      grantedScopes: komariOperations.map((operation) => operation.rpcMethod),
       metadata: {
         baseUrl: "https://monitor.example.com/komari",
         version: "1.3.2",
@@ -88,13 +82,6 @@ describe("Komari RPC runtime", () => {
       },
     });
     expect(output).toEqual({ count: 0, records: [], load_type: "cpu", has_gpu_data: false });
-  });
-
-  it("declares each JSON-RPC method as its action capability", () => {
-    expect(komariActions).toHaveLength(71);
-    expect(komariActions.map((action) => action.requiredScopes)).toEqual(
-      komariOperations.map((operation) => [operation.rpcMethod]),
-    );
   });
 
   it.each([

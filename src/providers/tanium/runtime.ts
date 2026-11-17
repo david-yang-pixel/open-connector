@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { createHash } from "node:crypto";
@@ -81,7 +81,6 @@ export async function validateTaniumCredential(
       accountId: `tanium:${url.host}:${buildTokenFingerprint(apiKey)}`,
       displayName: `Tanium Gateway (${url.hostname})`,
     },
-    grantedScopes: [],
     metadata: {
       gatewayUrl,
       gatewayOrigin: url.origin,

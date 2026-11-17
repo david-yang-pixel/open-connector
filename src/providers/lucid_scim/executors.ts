@@ -1,14 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { optionalInteger, optionalString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "lucid_scim";
 const lucidScimApiBaseUrl = "https://users.lucid.app/scim/v2";
@@ -111,7 +107,6 @@ export const credentialValidators: CredentialValidators = {
       profile: {
         displayName: "Lucid SCIM Bearer Token",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: lucidScimApiBaseUrl,
         validationEndpoint: lucidScimConfigPath,
@@ -123,7 +118,7 @@ export const credentialValidators: CredentialValidators = {
 
 async function requestLucidScimJson(input: {
   path: string;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   phase: RequestPhase;
   searchParams?: URLSearchParams;
 }): Promise<unknown> {

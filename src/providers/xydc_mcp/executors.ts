@@ -1,18 +1,14 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ApiKeyProviderContext, ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ApiKeyProviderContext, ProviderActionHandlers } from "../provider-executors.ts";
 import type { Client } from "@modelcontextprotocol/client";
 
 import { ProtocolError, SdkHttpError, UnauthorizedError } from "@modelcontextprotocol/client";
 import { createHash } from "node:crypto";
 import { optionalRecord, optionalString } from "../../core/cast.ts";
 import { withMcpClient } from "../mcp-client.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  mapProviderActionHandlers,
-  providerUserAgent,
-  ProviderRequestError,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors, mapProviderActionHandlers } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 import { xydcMcpActions } from "./actions.ts";
 import { normalizeXydcMcpToolResult } from "./runtime.ts";
 
@@ -62,7 +58,7 @@ export const proxy: ProviderProxyExecutor = defineProviderProxy({
   },
   timeoutMs: generationTimeoutMs,
   skipDnsValidation: true,
-  redirect: "error",
+  redirect: "manual",
   customizeRequest({ headers }) {
     headers.set("accept", "application/json, text/event-stream");
     headers.set("content-type", "application/json");
@@ -88,7 +84,7 @@ async function withClient<T>(context: ApiKeyProviderContext, run: (client: Clien
       transport: "streamable_http",
       fetcher: context.fetcher,
       headers: { authorization: `Bearer ${context.apiKey}`, "user-agent": providerUserAgent },
-      redirect: "error",
+      redirect: "manual",
       signal: context.signal,
       mapError,
     },

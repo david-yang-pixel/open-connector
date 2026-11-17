@@ -1,6 +1,7 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { optionalRecord, optionalString } from "../../core/cast.ts";
 import { jsonObject } from "../../core/request.ts";
@@ -103,7 +104,6 @@ export async function validateVestaboardCredential(
       accountId: currentMessage.id,
       displayName: "Vestaboard API Token",
     },
-    grantedScopes: [],
     metadata: {
       validationEndpoint: "/",
       apiBaseUrl: vestaboardCloudApiBaseUrl,

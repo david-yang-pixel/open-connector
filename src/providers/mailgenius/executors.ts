@@ -4,23 +4,23 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { compactObject, optionalNumber, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
 import { queryParams } from "../../core/request.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   ProviderRequestError,
   providerUserAgent,
   readProviderJsonBody,
+  defaultProviderRequestTimeoutMs,
 } from "../provider-runtime.ts";
 
 const service = "mailgenius";
 const mailgeniusApiBaseUrl = "https://app.mailgenius.com";
-const requestTimeoutMs = 30_000;
 
 type MailgeniusRequestPhase = "validate" | "execute";
 
@@ -113,9 +113,7 @@ export const credentialValidators: CredentialValidators = {
     return {
       profile: {
         displayName: "MailGenius API Token",
-        grantedScopes: [],
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: mailgeniusApiBaseUrl,
         validationEndpoint: "/external/api/daily_limit",
@@ -151,7 +149,7 @@ async function requestMailgeniusJson(
     url.searchParams.set(key, value);
   }
 
-  const timeout = createProviderTimeout(context.signal, requestTimeoutMs);
+  const timeout = createProviderTimeout(context.signal);
   let response: Response;
   let payload: unknown;
   try {
@@ -174,7 +172,10 @@ async function requestMailgeniusJson(
       throw error;
     }
     if (timeout.didTimeout()) {
-      throw new ProviderRequestError(504, `MailGenius request timed out after ${requestTimeoutMs / 1000} seconds`);
+      throw new ProviderRequestError(
+        504,
+        `MailGenius request timed out after ${defaultProviderRequestTimeoutMs / 1000} seconds`,
+      );
     }
     throw new ProviderRequestError(
       502,

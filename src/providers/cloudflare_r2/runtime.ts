@@ -1,6 +1,6 @@
 import type { CredentialValidationResult, TransitFileWriter } from "../../core/types.ts";
-import type { CloudflareCurrentUser } from "../cloudflare-current-user.ts";
-import type { ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { CloudflareCurrentUser } from "../cloudflare_dns/runtime-user.ts";
+import type { ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-executors.ts";
 import type { CloudflareR2PresignedMethod } from "./s3-presign.ts";
 
 import {
@@ -13,15 +13,21 @@ import {
   requiredRawString,
   requiredString,
 } from "../../core/cast.ts";
-import { assertPublicHttpUrl, queryParams, readBoundedResponseBytes } from "../../core/request.ts";
-import { readCloudflareCurrentUser } from "../cloudflare-current-user.ts";
 import {
-  combineProviderActionHandlers,
+  assertPublicHttpUrl,
+  queryParams,
+  readBoundedResponseBytes,
+  storeResponseInTransit,
+} from "../../core/request.ts";
+import { readCloudflareCurrentUser } from "../cloudflare_dns/runtime-user.ts";
+import { combineProviderActionHandlers } from "../provider-executors.ts";
+import {
   providerFetch,
   providerInputError,
   ProviderRequestError,
   providerUserAgent,
   runProviderRequest,
+  providerResponseError,
 } from "../provider-runtime.ts";
 import { cloudflareR2AccountActionHandlers } from "./runtime-account.ts";
 import { cloudflareR2BucketSettingsActionHandlers } from "./runtime-bucket-settings.ts";
@@ -119,8 +125,8 @@ export async function validateCloudflareR2Credential(
   fetcher: typeof fetch,
   signal?: AbortSignal,
 ): Promise<CredentialValidationResult> {
-  const apiToken = requiredString(values.apiKey, "apiKey", (message) => new ProviderRequestError(400, message));
-  const accountId = requiredString(values.accountId, "accountId", (message) => new ProviderRequestError(400, message));
+  const apiToken = requiredString(values.apiKey, "apiKey", providerInputError);
+  const accountId = requiredString(values.accountId, "accountId", providerInputError);
   const envelope = await cloudflareR2RequestEnvelope(
     apiToken,
     {
@@ -142,7 +148,6 @@ export async function validateCloudflareR2Credential(
       accountId,
       displayName: optionalString(firstBucket?.name) ? `Cloudflare R2 - ${String(firstBucket?.name)}` : "Cloudflare R2",
     },
-    grantedScopes: [],
     metadata: compactObject({
       validationEndpoint: `/accounts/${accountId}/r2/buckets?per_page=1`,
       accountId,
@@ -266,12 +271,13 @@ async function downloadObject(input: Record<string, unknown>, context: Cloudflar
 
   const name = optionalString(input.fileName) ?? defaultObjectFileName(objectKey);
   const mimeType = optionalString(response.headers.get("content-type")) ?? "application/octet-stream";
-  const bytes = await readBoundedResponseBytes(response, {
-    maxBytes: context.transitFiles.maxBytes,
+  const file = await storeResponseInTransit(response, context.transitFiles, {
+    name,
+    mimeType,
     fieldName: "Cloudflare R2 download",
     createError: (message) => new ProviderRequestError(413, message),
+    signal: context.signal,
   });
-  const file = await context.transitFiles.create(new File([Uint8Array.from(bytes)], name, { type: mimeType }));
 
   return {
     fileId: objectKey,
@@ -479,7 +485,7 @@ async function downloadSourceFile(
       // An upstream 401/403 is not our authorization failure, so it must not
       // pass through as this action's own status.
       const message = `failed to download sourceUrl: ${response.status} ${response.statusText}`.trim();
-      throw response.status >= 500 ? new ProviderRequestError(502, message) : providerInputError(message);
+      throw response.status >= 500 ? providerResponseError(message) : providerInputError(message);
     }
     const bytes = await readBoundedResponseBytes(response, {
       maxBytes: maxSourceBytes,
@@ -774,7 +780,7 @@ function normalizeCloudflareR2Error(
     return new ProviderRequestError(429, message);
   }
   if (phase === "validate" && [400, 401, 403, 404].includes(response.status)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (phase === "execute" && (response.status === 400 || response.status === 404)) {
     return new ProviderRequestError(response.status, message);

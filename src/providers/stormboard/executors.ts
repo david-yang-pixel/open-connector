@@ -1,15 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, objectArray, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerResponseError,
-  providerUserAgent,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerResponseError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "stormboard";
 const stormboardApiBaseUrl = "https://api.stormboard.com";
@@ -137,7 +132,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: userId ? `stormboard:${userId}` : undefined,
         displayName: fullName || email || username || "Stormboard API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: stormboardApiBaseUrl,
         validationEndpoint: "/users/profile",
@@ -171,7 +165,7 @@ function buildStormboardPath(path: string, query: Record<string, unknown>): stri
 
 async function requestStormboardObject(
   path: string,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   mode: StormboardRequestMode,
 ): Promise<Record<string, unknown>> {
   let response: Response;

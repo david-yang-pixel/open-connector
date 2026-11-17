@@ -1,15 +1,11 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderRequestContext } from "../provider-runtime.ts";
 
 import { compactObject, optionalBoolean, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-  requiredInputString,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError, requiredInputString } from "../provider-runtime.ts";
 
 const service = "brandfetch";
 const brandfetchApiBaseUrl = "https://api.brandfetch.io";
@@ -80,7 +76,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "brandfetch-api-key",
         displayName: "Brandfetch API Key",
       },
-      grantedScopes: [],
       metadata: {
         validationEndpoint: brandfetchValidationPath,
         apiBaseUrl: brandfetchApiBaseUrl,
@@ -95,7 +90,7 @@ async function requestBrandfetchJson(input: {
   path: string;
   method: "GET" | "POST";
   body?: unknown;
-  context: Pick<ApiKeyProviderContext, "fetcher" | "signal">;
+  context: ProviderRequestContext;
   phase: BrandfetchPhase;
 }): Promise<unknown> {
   let response: Response;

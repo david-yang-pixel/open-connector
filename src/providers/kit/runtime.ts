@@ -1,6 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -10,7 +9,12 @@ import {
   optionalRecord,
   optionalString,
 } from "../../core/cast.ts";
-import { providerUserAgent, ProviderRequestError, runProviderRequest } from "../provider-runtime.ts";
+import {
+  providerUserAgent,
+  ProviderRequestError,
+  runProviderRequest,
+  providerInputError,
+} from "../provider-runtime.ts";
 
 const kitApiBaseUrl = "https://api.kit.com/v4";
 
@@ -179,9 +183,7 @@ export const kitActionHandlers: ProviderActionHandlers<"kit", KitActionHandler> 
   },
 };
 
-export async function validateKitCredential(
-  input: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
-): Promise<CredentialValidationResult> {
+export async function validateKitCredential(input: ApiKeyProviderContext): Promise<CredentialValidationResult> {
   const payload = await requestKitJson({
     method: "GET",
     path: "/account",
@@ -200,7 +202,6 @@ export async function validateKitCredential(
       accountId,
       displayName,
     },
-    grantedScopes: [],
     metadata: compactObject({
       validationEndpoint: "/account",
       accountId: account.account.id,
@@ -284,7 +285,7 @@ function createKitError(status: number, payload: unknown, phase: KitPhase) {
   }
 
   if (phase === "validate" && status >= 400 && status < 500) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
 
   if (phase === "execute" && status === 401) {

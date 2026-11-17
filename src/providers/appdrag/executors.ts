@@ -4,28 +4,30 @@ import type {
   ProviderProxyExecutor,
   ProxyExecutionResult,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderRequestContext } from "../provider-runtime.ts";
 
 import { compactObject, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import {
+  createProviderProxyUrl,
+  normalizeProviderProxyHeaders,
+  readProviderProxyErrorMessage,
+  readProviderProxyResponse,
+  toProviderProxyError,
+} from "../provider-proxy.ts";
 import {
   createProviderFetch,
-  createProviderProxyUrl,
-  defineApiKeyProviderExecutors,
   isAbortLikeError,
-  normalizeProviderProxyHeaders,
   providerInputError,
   ProviderRequestError,
   providerUserAgent,
-  readProviderProxyErrorMessage,
-  readProviderProxyResponse,
-  requireApiKeyCredential,
-  toProviderProxyError,
+  defaultProviderRequestTimeoutMs,
 } from "../provider-runtime.ts";
 
 const service = "appdrag";
 const appdragHomepageUrl = "https://appdrag.com";
-const appdragDefaultRequestTimeoutMs = 30_000;
 const appdragResponseWrapperDescription = "/api/<folder>/<function>";
 const appdragFetch = createProviderFetch({ skipDnsValidation: true });
 
@@ -93,7 +95,6 @@ export const credentialValidators: CredentialValidators = {
       profile: {
         displayName: "AppDrag API Key",
       },
-      grantedScopes: [],
       metadata: {
         homepageUrl: appdragHomepageUrl,
         routePattern: appdragResponseWrapperDescription,
@@ -251,9 +252,9 @@ function appendSearchParam(route: URL, key: string, value: unknown): void {
 async function requestAppdrag(
   route: URL,
   init: RequestInit,
-  context: Pick<ApiKeyProviderContext, "fetcher" | "signal">,
+  context: ProviderRequestContext,
 ): Promise<AppdragResponse> {
-  const timeoutSignal = AbortSignal.timeout(appdragDefaultRequestTimeoutMs);
+  const timeoutSignal = AbortSignal.timeout(defaultProviderRequestTimeoutMs);
   const signal = context.signal ? AbortSignal.any([context.signal, timeoutSignal]) : timeoutSignal;
 
   try {

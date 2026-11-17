@@ -5,7 +5,7 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
 import {
@@ -16,18 +16,16 @@ import {
   optionalString,
   requiredString,
 } from "../../core/cast.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
 import {
-  createProviderFetch,
   createProviderProxyUrl,
-  defineProviderExecutors,
   normalizeProviderProxyHeaders,
-  ProviderRequestError,
-  providerUserAgent,
   readProviderProxyErrorMessage,
   readProviderProxyResponse,
-  requireApiKeyCredential,
   toProviderProxyError,
-} from "../provider-runtime.ts";
+} from "../provider-proxy.ts";
+import { createProviderFetch, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "nethunt";
 const nethuntApiBaseUrl = "https://nethunt.com/api/v1/zapier";
@@ -224,7 +222,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: `nethunt:${userEmail}`,
         displayName: userName ? `${userName} <${userEmail}>` : userEmail,
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: nethuntApiBaseUrl,
         validationEndpoint: nethuntAuthTestPath,

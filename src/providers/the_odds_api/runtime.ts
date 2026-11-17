@@ -1,12 +1,15 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { booleanString, compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
-import { createProviderTimeout, isAbortLikeError, ProviderRequestError } from "../provider-runtime.ts";
+import {
+  createProviderTimeout,
+  isAbortLikeError,
+  ProviderRequestError,
+  defaultProviderRequestTimeoutMs,
+} from "../provider-runtime.ts";
 
 export const theOddsApiBaseUrl = "https://api.the-odds-api.com/v4/";
-const defaultRequestTimeoutMs = 30_000;
 
 type TheOddsApiHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 
@@ -123,7 +126,6 @@ export async function validateTheOddsApiCredential(
   const firstSportTitle = optionalString(firstSport?.title);
   return {
     profile: { accountId: firstSportKey ?? "the_odds_api:api-key", displayName: "The Odds API Key" },
-    grantedScopes: [],
     metadata: compactObject({
       validationEndpoint: "/v4/sports",
       firstSportKey,
@@ -144,11 +146,11 @@ export function theOddsApiRequestUrl(path: string, apiKey: string, params: Recor
 
 async function theOddsApiRequestJson(
   path: string,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   params: Record<string, string | undefined>,
   phase: "validate" | "execute" = "execute",
 ): Promise<{ payload: unknown; quota: Record<string, unknown> }> {
-  const timeout = createProviderTimeout(context.signal, defaultRequestTimeoutMs);
+  const timeout = createProviderTimeout(context.signal);
   let response: Response;
   let payload: unknown;
   try {
@@ -161,7 +163,7 @@ async function theOddsApiRequestJson(
     if (timeout.didTimeout() && isAbortLikeError(error)) {
       throw new ProviderRequestError(
         502,
-        `The Odds API ${path} request timed out after ${Math.ceil(defaultRequestTimeoutMs / 1000)} seconds`,
+        `The Odds API ${path} request timed out after ${Math.ceil(defaultProviderRequestTimeoutMs / 1000)} seconds`,
       );
     }
     throw new ProviderRequestError(

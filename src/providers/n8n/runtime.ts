@@ -1,5 +1,5 @@
 import type { CredentialValidationResult, ResolvedCredential } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
 import { assertPublicHttpUrl, isPrivateNetworkAccessAllowed } from "../../core/request.ts";
@@ -475,7 +475,6 @@ export async function validateN8nCredential(
       accountId: `n8n:${instanceUrl}`,
       displayName: `n8n ${host}`,
     },
-    grantedScopes: [],
     metadata: compactObject({
       instanceUrl,
       apiBaseUrl,

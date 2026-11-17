@@ -1,3 +1,5 @@
+import type { TriggerKeySnapshot } from "../triggers/common/types.ts";
+import type { TriggerPermission } from "../triggers/metadata.ts";
 /**
  * JSON Schema object used for action input and output contracts.
  *
@@ -22,8 +24,8 @@ export type AuthType = "no_auth" | "api_key" | "custom_credential" | "oauth2";
 export type ProviderScenario =
   | "ai"
   | "cross-border-ecommerce"
+  | "investment"
   | "communication"
-  | "docs"
   | "productivity"
   | "marketing"
   | "data-storage"
@@ -128,13 +130,28 @@ export type OAuth2AuthDefinition = {
   type: "oauth2";
   /** Provider authorization endpoint used to build the browser consent URL. */
   authorizationUrl: string;
+  /** Validated authorization server identity for discovered OAuth providers. */
+  issuer?: string;
+  /** Whether authorization responses must include the discovered issuer. */
+  requireIssuer?: boolean;
+  /** MCP resource binding sent in authorization and token requests. */
+  resource?: string;
   /** Provider token endpoint used to exchange an authorization code. */
   tokenUrl: string;
   /** Provider token endpoint used to refresh an access token. Defaults to tokenUrl. */
   refreshTokenUrl?: string;
-  /** OAuth scopes joined with spaces into the authorization URL `scope` parameter. */
+  /**
+   * Provider token revocation endpoint (RFC 7009). When set, a disconnect that
+   * asks for it (`revoke: true`) posts the connection's refresh token (else its
+   * access token) there once the credential is deleted, so the grant ends at
+   * the provider as well as here. Inert otherwise.
+   */
+  revocationUrl?: string;
+  /** Default OAuth scopes when no requestedScopes or authorization options are selected. */
   scopes: string[];
-  /** Selectable provider-native OAuth scopes for programmatic connections. */
+  /** Scopes added before authorization for identity validation or token renewal; never a grant check. */
+  requiredScopes?: string[];
+  /** Curated extra permissions with localizable explanations; ordinary access belongs in scopes. */
   authorizationOptions?: OAuthAuthorizationOption[];
   /** Separator used when joining OAuth scopes. Defaults to a space. */
   scopeSeparator?: " " | ",";
@@ -203,10 +220,7 @@ export interface OAuthAuthorizationOption {
   id: string;
   label: string;
   description: string;
-  required: boolean;
-  defaultSelected: boolean;
   risk: "standard" | "sensitive" | "destructive";
-  requires?: string[];
 }
 
 /**
@@ -238,6 +252,8 @@ export type ActionDefinition = {
   description: string;
   /** Whether the action reads, changes, or destructively changes provider state. */
   operationType: ActionOperationType;
+  /** Explicit supported credential types. Omission inherits the provider's capabilities. */
+  authTypes?: AuthType[];
   /** Provider-native OAuth scopes, permission names, or capability strings needed for this action. */
   requiredScopes: string[];
   /** Provider-native permissions or scopes users must grant. */
@@ -281,6 +297,8 @@ export type ProviderDefinition = {
   iconUrl?: string;
   /** Public action catalog for this provider. */
   actions: readonly ActionDefinition[];
+  triggers?: readonly TriggerKeySnapshot[];
+  triggerPermissions?: readonly TriggerPermission[];
 };
 
 /**
@@ -344,10 +362,22 @@ export interface TransitFileRead {
   mimeType: string;
 }
 
+/** A byte stream consumed with backpressure; failed or cancelled writes must leave no file behind. */
+export interface TransitFileStream {
+  body: ReadableStream<Uint8Array>;
+  name: string;
+  mimeType: string;
+  signal?: AbortSignal;
+}
+
 export interface TransitFileStore {
   readonly maxBytes: number;
   create(file: File): Promise<TransitFileUpload>;
+  /** Available only on backends that can store unknown-length streams without buffering the file. */
+  createFromStream?(file: TransitFileStream): Promise<TransitFileUpload>;
   read(fileId: string): Promise<TransitFileRead>;
+  /** Stream a stored file for provider uploads without materializing its bytes. */
+  response?(fileId: string): Promise<Response>;
   delete(fileId: string): Promise<boolean>;
 }
 
@@ -400,7 +430,7 @@ export type CredentialValidationResult = {
    * users and agents so they can see which account an action will use.
    */
   profile?: CredentialProfileInput;
-  /** Provider-native scopes granted to this credential, when known. */
+  /** Provider-reported scopes for display only. Upstream APIs enforce credential permissions. */
   grantedScopes?: string[];
   /**
    * Provider-specific non-secret metadata kept for executors.
@@ -425,7 +455,7 @@ export type CredentialProfile = {
   accountId: string;
   /** Human-readable label for local users and agents. */
   displayName: string;
-  /** Provider-native scopes granted to this credential, when known. */
+  /** Provider-reported scopes for display only. Upstream APIs enforce credential permissions. */
   grantedScopes: string[];
 };
 
@@ -437,7 +467,7 @@ export type CredentialProfileInput = {
   accountId?: string;
   /** Human-readable label for local users and agents. */
   displayName?: string;
-  /** Provider-native scopes granted to this credential, when known. */
+  /** Provider-reported scopes for display only. Upstream APIs enforce credential permissions. */
   grantedScopes?: string[];
 };
 

@@ -1,16 +1,17 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, nullableInteger, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   isAbortLikeError,
   providerUserAgent,
   ProviderRequestError,
   requiredResponseRecord,
+  providerInputError,
 } from "../provider-runtime.ts";
 
 type QueryValue = string | number | boolean | undefined;
@@ -66,7 +67,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: user.email ?? "eodhd-api-key",
         displayName: user.email ?? user.name ?? "EODHD API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: eodhdApisApiBaseUrl,
         validationEndpoint: "/user",
@@ -313,7 +313,7 @@ function createEodhdApisError(status: number, payload: unknown): ProviderRequest
   const message = extractEodhdApisErrorMessage(payload) ?? `EODHD APIs request failed with status ${status}`;
 
   if (status === 400 || status === 401 || status === 403 || status === 404 || status === 422) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
 
   if (status === 429) {

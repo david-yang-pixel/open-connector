@@ -1,24 +1,15 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-  requiredInputString,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent, requiredInputString } from "../provider-runtime.ts";
 
 const service = "helpscout_docs";
 const helpscoutDocsApiBaseUrl = "https://docsapi.helpscout.net/v1";
 
-type HelpscoutDocsActionContext = ApiKeyProviderContext;
-type HelpscoutDocsActionHandler = (
-  input: Record<string, unknown>,
-  context: HelpscoutDocsActionContext,
-) => Promise<unknown>;
+type HelpscoutDocsActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 
 export const helpscoutDocsActionHandlers: ProviderActionHandlers<"helpscout_docs", HelpscoutDocsActionHandler> = {
   list_sites(input, context) {
@@ -106,7 +97,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "api_key",
         displayName: "Help Scout Docs API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: helpscoutDocsApiBaseUrl,
         validationEndpoint: "/sites",
@@ -119,7 +109,7 @@ async function executePagedRequest(
   path: string,
   envelopeKey: string,
   input: Record<string, unknown>,
-  context: HelpscoutDocsActionContext,
+  context: ApiKeyProviderContext,
   query: Record<string, unknown> = {},
 ): Promise<unknown> {
   const payload = await helpscoutDocsGetJson(
@@ -137,7 +127,7 @@ async function executePagedRequest(
 
 async function helpscoutDocsGetJson(
   path: string,
-  context: Pick<HelpscoutDocsActionContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   query: Record<string, unknown> = {},
 ): Promise<unknown> {
   const url = new URL(joinPath(path));

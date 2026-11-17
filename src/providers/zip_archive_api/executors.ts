@@ -1,6 +1,8 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
 
-import { defineApiKeyProviderExecutors, defineProviderProxy, ProviderRequestError } from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError } from "../provider-runtime.ts";
 import { zipArchiveApiActionHandlers, zipArchiveApiBaseUrl } from "./runtime.ts";
 
 const service = "zip_archive_api";
@@ -19,7 +21,6 @@ export const credentialValidators: CredentialValidators = {
     if (!input.apiKey.trim()) throw new ProviderRequestError(400, "ArchiveAPI secret key is required");
     return {
       profile: { displayName: "ArchiveAPI Secret Key" },
-      grantedScopes: [],
       metadata: { apiBaseUrl: zipArchiveApiBaseUrl, credentialValidation: "non_empty_only" },
     };
   },

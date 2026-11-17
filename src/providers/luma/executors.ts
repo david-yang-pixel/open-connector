@@ -4,16 +4,12 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "luma";
 const lumaApiBaseUrl = "https://public-api.luma.com";
@@ -122,9 +118,7 @@ async function validateLumaCredential(
     profile: {
       accountId: id ?? email ?? "luma-api-key",
       displayName: email ?? name ?? id ?? "Luma API Key",
-      grantedScopes: [],
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: lumaApiBaseUrl,
       validationEndpoint: "/v1/users/get-self",
@@ -151,11 +145,7 @@ function lumaUrl(path: string, query?: Record<string, unknown>): URL {
   return url;
 }
 
-async function requestLuma(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
-  url: URL,
-  mode: "validate" | "execute",
-): Promise<unknown> {
+async function requestLuma(context: ApiKeyProviderContext, url: URL, mode: "validate" | "execute"): Promise<unknown> {
   let response: Response;
   try {
     response = await context.fetcher(url.toString(), {

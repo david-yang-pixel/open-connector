@@ -1,8 +1,8 @@
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString, positiveInteger } from "../../core/cast.ts";
-import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
+import { ProviderRequestError, providerUserAgent, providerInputError } from "../provider-runtime.ts";
 
 export const hunterApiBaseUrl = "https://api.hunter.io/v2";
 
@@ -168,7 +168,6 @@ export async function validateHunterCredential(
   options: { fetcher: typeof fetch; signal?: AbortSignal },
 ): Promise<{
   profile: { accountId: string; displayName: string };
-  grantedScopes: string[];
   metadata: Record<string, unknown>;
 }> {
   const payload = await requestHunter({
@@ -186,7 +185,6 @@ export async function validateHunterCredential(
       accountId: email ?? "hunter:api-key",
       displayName: email ?? "Hunter API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       validationEndpoint: "/account",
       apiBaseUrl: hunterApiBaseUrl,
@@ -280,7 +278,7 @@ function buildListLeadsQuery(input: Record<string, unknown>): Record<string, unk
 }
 
 function readHunterId(input: Record<string, unknown>): number {
-  return positiveInteger(input.id, "id", (message) => new ProviderRequestError(400, message));
+  return positiveInteger(input.id, "id", providerInputError);
 }
 
 function omitFields(input: Record<string, unknown>, fields: string[]): Record<string, unknown> {
@@ -317,7 +315,7 @@ async function readHunterErrorMessage(response: Response): Promise<string> {
 
 function mapHunterError(status: number, message: string, phase: "validate" | "execute"): ProviderRequestError {
   if (phase === "validate" && (status === 400 || status === 401 || status === 403)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   return new ProviderRequestError(status, message);
 }

@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { compactObject, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
 import {
@@ -9,6 +9,7 @@ import {
   providerUserAgent,
   ProviderRequestError,
   readProviderTextBody,
+  providerInputError,
 } from "../provider-runtime.ts";
 
 export const tuskrApiBaseUrl = "https://api.tuskr.live/api";
@@ -57,7 +58,6 @@ export async function validateTuskrCredential(
   await tuskrGet("/project", {}, context, "validate");
   return {
     profile: { accountId: `tuskr:${tenantId}`, displayName: "Tuskr API Token" },
-    grantedScopes: [],
     metadata: { apiBaseUrl: tuskrApiBaseUrl, tenantId, validationEndpoint: "/project" },
   };
 }
@@ -244,7 +244,7 @@ function createTuskrError(status: number, payload: unknown, phase: "validate" | 
     optionalString(record?.errorMessage) ??
     `Tuskr request failed with status ${status}`;
   if ((status === 401 || status === 403) && phase === "validate") {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (status >= 400 && status < 500) return new ProviderRequestError(status, message);
   return new ProviderRequestError(status || 502, message);

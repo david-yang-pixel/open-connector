@@ -1,6 +1,7 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { optionalRecord, optionalString } from "../../core/cast.ts";
 import {
@@ -8,6 +9,8 @@ import {
   ProviderRequestError,
   readProviderJsonBody,
   runProviderRequest,
+  providerInputError,
+  providerResponseError,
 } from "../provider-runtime.ts";
 
 export const sportsdataApiBaseUrl = "https://api.sportsdata.io";
@@ -84,7 +87,7 @@ export async function validateSportsdataCredential(
 ): Promise<CredentialValidationResult> {
   const sports = await requestSportsdata(apiKey, "/sports", fetcher, signal, "validate");
   return {
-    profile: { accountId: "api_key", displayName: "SportsDataIO API Key", grantedScopes: [] },
+    profile: { accountId: "api_key", displayName: "SportsDataIO API Key" },
     metadata: {
       apiBaseUrl: sportsdataApiBaseUrl,
       validationEndpoint: "/sports",
@@ -131,10 +134,10 @@ function createSportsdataError(status: number, payload: unknown, phase: RequestP
     optionalString(record?.Error) ??
     `SportsDataIO request failed with status ${status}`;
   if (status === 429) return new ProviderRequestError(429, message);
-  if (phase === "validate" && 400 <= status && status < 500) return new ProviderRequestError(400, message);
+  if (phase === "validate" && 400 <= status && status < 500) return providerInputError(message);
   if (status === 401 || status === 403) return new ProviderRequestError(status, message);
-  if (400 <= status && status < 500) return new ProviderRequestError(400, message);
-  return new ProviderRequestError(502, message);
+  if (400 <= status && status < 500) return providerInputError(message);
+  return providerResponseError(message);
 }
 
 function segment(value: unknown): string {

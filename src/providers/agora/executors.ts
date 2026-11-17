@@ -6,7 +6,9 @@ import type {
 } from "../../core/types.ts";
 
 import { Buffer } from "node:buffer";
-import { defineProviderExecutors, defineProviderProxy, requireApiKeyCredential } from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import { agoraActionHandlers, agoraApiBaseUrl, readAgoraCustomerId, validateAgoraCredential } from "./runtime.ts";
 
 const service = "agora";

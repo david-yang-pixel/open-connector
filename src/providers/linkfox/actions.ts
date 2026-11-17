@@ -13,6 +13,7 @@ import { chuhaijiangActions } from "./chuhaijiang-actions.ts";
 import { maidalvAction } from "./maidalv-actions.ts";
 import { mercadoActions } from "./mercado-actions.ts";
 import { seerfarActions } from "./seerfar-actions.ts";
+import { sifActions } from "./sif-actions.ts";
 import { zhihuiyaActions } from "./zhihuiya-actions.ts";
 
 const service = "linkfox";
@@ -1188,6 +1189,7 @@ const tiktokShopProductInput = s.object("TikTok Shop product detail parameters."
 });
 
 export const linkfoxActions: ProviderActionDefinition[] = [
+  ...sifActions,
   ...mercadoActions,
   ...zhihuiyaActions,
   ...chuhaijiangActions,

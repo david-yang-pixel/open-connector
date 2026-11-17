@@ -1,6 +1,6 @@
 import type { CredentialValidators, ExecutionContext, ProviderExecutors } from "../../core/types.ts";
 import type { ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -16,25 +16,23 @@ import {
   requiredRecord,
   requiredString,
 } from "../../core/cast.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { createProviderProxyUrl, normalizeProviderProxyHeaders, toProviderProxyError } from "../provider-proxy.ts";
 import {
   createProviderFetch,
-  createProviderProxyUrl,
-  defineProviderExecutors,
   isAbortLikeError,
-  normalizeProviderProxyHeaders,
   providerInputError,
   ProviderRequestError,
   providerResponseError,
   providerUserAgent,
-  requireApiKeyCredential,
   requiredInputString,
-  toProviderProxyError,
+  defaultProviderRequestTimeoutMs,
 } from "../provider-runtime.ts";
 
 const service = "habitica";
 const habiticaApiBaseUrl = "https://habitica.com/api/v3";
 const habiticaFetch = createProviderFetch({ skipDnsValidation: true });
-const habiticaDefaultRequestTimeoutMs = 30_000;
 
 type HabiticaRequestPhase = "validate" | "execute";
 type HabiticaMethod = "GET" | "POST" | "PUT" | "DELETE";
@@ -189,7 +187,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: providerAccountId,
         displayName: profileName ?? `Habitica ${providerAccountId}`,
       },
-      grantedScopes: [],
       metadata: compactObject({
         userId: providerAccountId,
         xClient: credential.xClient,
@@ -390,7 +387,7 @@ async function deleteTag(input: Record<string, unknown>, context: HabiticaAction
 }
 
 async function requestHabitica(input: HabiticaRequestOptions): Promise<HabiticaEnvelope> {
-  const timeoutSignal = AbortSignal.timeout(habiticaDefaultRequestTimeoutMs);
+  const timeoutSignal = AbortSignal.timeout(defaultProviderRequestTimeoutMs);
   const signal = input.signal ? AbortSignal.any([input.signal, timeoutSignal]) : timeoutSignal;
 
   try {

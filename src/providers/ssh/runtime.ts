@@ -8,7 +8,8 @@ import { createHash } from "node:crypto";
 import { connect as connectSocket } from "node:net";
 import { Client } from "ssh2";
 import { optionalIntegerLike, optionalString } from "../../core/cast.ts";
-import { createPinnedLookup, resolveGuardedEgressTarget } from "../../core/guarded-fetch.ts";
+import { resolveGuardedEgressTarget } from "../../core/guarded-fetch.ts";
+import { createPinnedLookup } from "../../core/guarded-socket.ts";
 import { isPrivateNetworkAccessAllowed } from "../../core/request.ts";
 import {
   providerInputError,

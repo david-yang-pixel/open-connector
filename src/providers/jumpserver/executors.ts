@@ -5,21 +5,19 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
+import type * as RuntimeModule from "./runtime.ts";
 import type { JumpServerMcpContext } from "./runtime.ts";
 
 import { isPrivateNetworkAccessAllowed } from "../../core/request.ts";
-import {
-  createProviderFetch,
-  defineProviderExecutors,
-  defineProviderProxy,
-  mapProviderActionNames,
-  requireCustomCredential,
-} from "../provider-runtime.ts";
+import { requireCustomCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors, mapProviderActionNames } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { createProviderFetch } from "../provider-runtime.ts";
 import { jumpServerMcpToolNames } from "./actions.ts";
 
 const service = "jumpserver";
 
-type JumpServerRuntime = typeof import("./runtime.ts");
+type JumpServerRuntime = typeof RuntimeModule;
 type JumpServerActionHandler = (input: Record<string, unknown>, context: JumpServerMcpContext) => Promise<unknown>;
 
 let runtimeModule: Promise<JumpServerRuntime> | undefined;

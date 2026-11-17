@@ -1,15 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-  runProviderRequest,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError, runProviderRequest } from "../provider-runtime.ts";
 
 const service = "chorus";
 const chorusApiBaseUrl = "https://chorus.ai";
@@ -17,7 +12,6 @@ const chorusValidationPath = "/api/v1/users/me";
 
 type ChorusPhase = "validate" | "execute";
 type ChorusAcceptHeader = "application/json" | "application/vnd.api+json";
-type ChorusContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
 type ChorusActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 
 export const chorusActionHandlers: ProviderActionHandlers<"chorus", ChorusActionHandler> = {
@@ -149,7 +143,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: `chorus:user:${userId}`,
         displayName: buildChorusAccountLabel({ name, email, id: userId }),
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: chorusApiBaseUrl,
         validationEndpoint: chorusValidationPath,
@@ -166,7 +159,7 @@ async function requestChorusJson(input: {
   path: string;
   accept: ChorusAcceptHeader;
   phase: ChorusPhase;
-  context: ChorusContext;
+  context: ApiKeyProviderContext;
   query?: URLSearchParams;
 }): Promise<unknown> {
   return runProviderRequest({ signal: input.context.signal, label: "Chorus" }, async (signal) => {

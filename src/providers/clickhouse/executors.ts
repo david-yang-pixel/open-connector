@@ -10,18 +10,16 @@ import type { ClickhouseActionContext } from "./runtime.ts";
 
 import { Buffer } from "node:buffer";
 import { isPrivateNetworkAccessAllowed } from "../../core/request.ts";
+import { requireCustomCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
 import {
-  createProviderFetch,
   createProviderProxyUrl,
-  defineProviderExecutors,
   normalizeProviderProxyHeaders,
-  ProviderRequestError,
-  providerUserAgent,
   readProviderProxyErrorMessage,
   readProviderProxyResponse,
-  requireCustomCredential,
   toProviderProxyError,
-} from "../provider-runtime.ts";
+} from "../provider-proxy.ts";
+import { createProviderFetch, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 import { clickhouseActionHandlers, createClickhouseContext, validateClickhouseCredential } from "./runtime.ts";
 
 const service = "clickhouse";

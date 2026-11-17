@@ -1,6 +1,5 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 import type { Client } from "@modelcontextprotocol/client";
 
 import { UnauthorizedError } from "@modelcontextprotocol/client";
@@ -8,21 +7,16 @@ import { SdkHttpError } from "@modelcontextprotocol/client";
 import { ProtocolError } from "@modelcontextprotocol/client";
 import { createHash } from "node:crypto";
 import { withMcpClient } from "../mcp-client.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  mapProviderActionHandlers,
-  providerUserAgent,
-  ProviderRequestError,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors, mapProviderActionHandlers } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 import { sellerspriteMcpActions } from "./actions.ts";
 
 const service = "sellersprite_mcp";
 const endpoint = "https://mcp.sellersprite.com/mcp";
 const timeoutMs = 60_000;
-type Context = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
 type ToolResult = Awaited<ReturnType<Client["callTool"]>>;
-type SellerSpriteMcpHandler = (input: Record<string, unknown>, context: Context) => Promise<unknown>;
+type SellerSpriteMcpHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 
 const handlers: ProviderActionHandlers<"sellersprite_mcp", SellerSpriteMcpHandler> = mapProviderActionHandlers(
   service,
@@ -34,7 +28,8 @@ const handlers: ProviderActionHandlers<"sellersprite_mcp", SellerSpriteMcpHandle
     if (name === "call_tool") {
       return (input, context) => call(context, required(input.toolName, "toolName"), object(input.arguments));
     }
-    return (input, context) => call(context, name, input);
+    return (input, context) =>
+      call(context, name, name === "traffic_extend" ? { ...input, queryType: input.queryType ?? 2 } : input);
   },
 );
 export const executors: ProviderExecutors = defineApiKeyProviderExecutors(service, handlers, {
@@ -48,7 +43,6 @@ export const credentialValidators: CredentialValidators = {
     const hash = createHash("sha256").update(input.apiKey).digest("hex").slice(0, 16);
     return {
       profile: { accountId: `sellersprite-mcp:${hash}`, displayName: `SellerSprite MCP - ${hash.slice(-6)}` },
-      grantedScopes: [],
       metadata: { mcpEndpoint: endpoint, discoveredToolCount: tools.length },
     };
   },
@@ -60,7 +54,7 @@ export const proxy: ProviderProxyExecutor = defineProviderProxy({
   auth: { type: "api_key_header", name: "secret-key" },
   skipDnsValidation: true,
   timeoutMs,
-  redirect: "error",
+  redirect: "manual",
   customizeRequest({ url, headers }) {
     if (url.toString() !== endpoint) {
       throw new ProviderRequestError(400, "SellerSprite MCP proxy only supports the official /mcp endpoint");
@@ -69,7 +63,7 @@ export const proxy: ProviderProxyExecutor = defineProviderProxy({
     if (!headers.has("content-type")) headers.set("content-type", "application/json");
   },
 });
-async function discover(context: Context): Promise<unknown[]> {
+async function discover(context: ApiKeyProviderContext): Promise<unknown[]> {
   return withClient(context, async (client) => {
     const result = await client.listTools({}, { timeout: timeoutMs });
     const tools = result.tools.filter((tool) => tool.name !== "secret_invalid");
@@ -83,13 +77,17 @@ async function discover(context: Context): Promise<unknown[]> {
     }));
   });
 }
-async function call(context: Context, name: string, argumentsInput: Record<string, unknown>): Promise<unknown> {
+async function call(
+  context: ApiKeyProviderContext,
+  name: string,
+  argumentsInput: Record<string, unknown>,
+): Promise<unknown> {
   return withClient(context, async (client) => {
     const result = await client.callTool({ name, arguments: argumentsInput }, { timeout: timeoutMs });
     return { result: normalize(result) };
   });
 }
-async function withClient<T>(context: Context, run: (client: Client) => Promise<T>): Promise<T> {
+async function withClient<T>(context: ApiKeyProviderContext, run: (client: Client) => Promise<T>): Promise<T> {
   const headers = new Headers({ "secret-key": context.apiKey, "user-agent": providerUserAgent });
   return withMcpClient(
     {
@@ -113,7 +111,9 @@ function normalize(result: ToolResult): unknown {
       )
     )
       throw new ProviderRequestError(401, message, envelope);
-    if (envelope.code === "ERROR_VISIT_MAX") throw new ProviderRequestError(429, message, envelope);
+    if (envelope.code === "ERROR_VISIT_MAX" || envelope.code === "ERROR_MAXIMUM_ACCESS_PER_MINUTE") {
+      throw new ProviderRequestError(429, message, envelope);
+    }
     if (envelope.code === "ERROR_AUTH_ERROR") throw new ProviderRequestError(403, message, envelope);
     if (envelope.code === "ERROR_PARAM") throw new ProviderRequestError(400, message, envelope);
     throw new ProviderRequestError(502, message, envelope);

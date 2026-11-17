@@ -4,8 +4,7 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -17,13 +16,9 @@ import {
   requiredString,
 } from "../../core/cast.ts";
 import { queryFlag, queryParams } from "../../core/request.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerInputError,
-  ProviderRequestError,
-  providerUserAgent,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerInputError, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "listennotes";
 const listennotesApiBaseUrl = "https://listen-api.listennotes.com/api/v2";
@@ -222,7 +217,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "listennotes-api-key",
         displayName: "Listen Notes API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: listennotesApiBaseUrl,
         validationEndpoint: listennotesValidationPath,
@@ -235,7 +229,7 @@ export const credentialValidators: CredentialValidators = {
 async function requestListennotesJson(input: {
   path: string;
   query: Record<string, string>;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   phase: "validate" | "execute";
 }): Promise<unknown> {
   let response: Response;

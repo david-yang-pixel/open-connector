@@ -1,14 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "shipengine";
 const shipengineBaseUrl = "https://api.shipengine.com";
@@ -60,7 +56,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: firstCarrierId ?? "shipengine-api-key",
         displayName: "ShipEngine API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: shipengineBaseUrl,
         validationEndpoint,
@@ -157,7 +152,7 @@ async function estimateRates(input: Record<string, unknown>, context: ApiKeyProv
 }
 
 async function shipengineRequest(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   request: ShipengineRequestInput,
   phase: ShipengineRequestPhase,
 ): Promise<unknown> {

@@ -103,5 +103,77 @@
         <a href="https://app.nibrun.com/deploy?name=open-connector&amp;binary=https%3A%2F%2Fgithub.com%2Foomol-lab%2Fopen-connector%2Freleases%2Flatest%2Fdownload%2Fopen-connector-linux-x64&amp;port=3000&amp;env=HOST%3D0.0.0.0&amp;env=OOMOL_CONNECT_DATA_DIR%3D%24%7BNIBRUN_DATA_DIR%7D&amp;env=OOMOL_CONNECT_ORIGIN%3Dhttps%3A%2F%2F%24%7BNIBRUN_HOSTNAME%7D&amp;env=OOMOL_CONNECT_CATALOG_LAZY_SCHEMAS%3Dtrue&amp;env=OOMOL_CONNECT_ENCRYPTION_KEY&amp;env=OOMOL_CONNECT_ADMIN_TOKEN&amp;env=OOMOL_CONNECT_RUNTIME_TOKEN"><strong>Развернуть в один клик</strong></a>
       </td>
     </tr>
+    <tr>
+      <td valign="middle" align="center">
+        <a href="https://nexusai.run/"><img src="../../assets/deployment-options/nexus-ai.svg" alt="NEXUS AI" width="140"></a>
+      </td>
+      <td valign="top">
+        Собирает <code>docker/Dockerfile</code> репозитория в контейнер с собственным HTTPS URL. Ссылка
+        развертывания задает <code>OOMOL_CONNECT_ORIGIN</code> равным этому URL, запрашивает admin token в
+        форме и генерирует ключ шифрования и runtime token, поэтому Web Console и все API требуют
+        аутентификации с первого запуска. Секреты вводятся в форме или генерируются на сервере и никогда не
+        попадают в ссылку.
+        <br><br>
+        <strong>Преимущества:</strong> развертывание из исходного кода в один клик, логи и повторные
+        развертывания в одной панели и собственные домены на платных тарифах. База SQLite хранится в
+        контейнере: она переживает перезапуски, но не пересборки. Для долговременных данных задайте
+        <code>OOMOL_CONNECT_DATABASE_URL</code> на PostgreSQL, выполняйте
+        <a href="../configuration.md#runtime-database">миграции PostgreSQL</a> до первого запуска и перед каждым
+        повторным развертыванием с новыми миграциями и не меняйте <code>OOMOL_CONNECT_ENCRYPTION_KEY</code>:
+        им зашифрованы сохраненные учетные данные.
+        <br><br>
+        <strong>Цена:</strong> тариф Free включает 1 активное развертывание с публичным HTTPS URL без
+        банковской карты, но предназначен только для тестирования и оценки; тестовые развертывания истекают
+        автоматически. Starter стоит $29/месяц за 2 активных развертывания и собственные домены, Pro стоит
+        $149/месяц за 5. Каждое приложение получает 512 MB RAM. См.
+        <a href="https://nexusai.run/pricing">тарифы NEXUS AI</a>.
+      </td>
+      <td valign="middle" align="center">
+        <a href="https://nexusai.run/deploy?repo=https%3A%2F%2Fgithub.com%2Foomol-lab%2Fopen-connector&amp;dockerfile=docker%2FDockerfile&amp;env=OOMOL_CONNECT_ORIGIN%3D%7Burl%7D&amp;require=OOMOL_CONNECT_ADMIN_TOKEN&amp;generate=OOMOL_CONNECT_ENCRYPTION_KEY&amp;generate=OOMOL_CONNECT_RUNTIME_TOKEN&amp;template=open-connector"><strong>Развернуть в один клик</strong></a>
+      </td>
+    </tr>
+    <tr>
+      <td valign="middle" align="center">
+        <a href="https://pethost.dev/"><img src="../../assets/deployment-options/pethost.svg" alt="Pethost" width="140"></a>
+      </td>
+      <td valign="top">
+        Шаблон в один клик запускает опубликованный образ
+        <code>ghcr.io/oomol-lab/open-connector</code> с собственным HTTPS-адресом. Он задает
+        <code>OOMOL_CONNECT_ORIGIN</code> равным этому адресу, запрашивает admin token и генерирует
+        ключ шифрования и runtime token, поэтому Web Console и все API требуют аутентификации с
+        первого запуска. Каталог данных с базой SQLite лежит на томе, поэтому переживает перезапуски
+        и повторные развертывания.
+        <br><br>
+        <strong>Преимущества:</strong> одна фиксированная цена в месяц за весь сервер, который
+        OpenConnector может делить с другими приложениями и базами данных; ничего не тарифицируется
+        по использованию и ничего не засыпает. Ночные бэкапы, логи и все HTTP-запросы в одной
+        панели, а через MCP-сервер агент может развертывать его и управлять им.
+        <br><br>
+        <strong>Цена:</strong> от €9.99/месяц за 2 vCPU, 3 GB памяти и 30 GB SSD или €17.99/месяц за
+        4 vCPU, 6 GB и 60 GB, проектов сколько поместится. OpenConnector в простое занимает около
+        230 MB памяти. См. <a href="https://pethost.dev/ru/#pricing">тарифы Pethost</a>.
+      </td>
+      <td valign="middle" align="center">
+        <a href="https://pethost.dev/templates/open-connector/"><strong>Развернуть в один клик</strong></a>
+      </td>
+    </tr>
+    <tr>
+      <td valign="middle" align="center">
+        <a href="https://zop.dev/"><img src="../../assets/deployment-options/zopday.svg" alt="ZopDay" width="140"></a>
+      </td>
+      <td valign="top">
+        Запустите опубликованный образ <code>ghcr.io/oomol-lab/open-connector</code> с HTTPS и панелью управления.
+        Перед первым запуском настройте публичный URL, токены аутентификации, ключ шифрования и постоянное хранилище.
+        OAuth-приложения регистрируются самостоятельно.
+        <br><br>
+        <strong>Преимущества:</strong> панель управления контейнерами и развертывание через Helm в собственном облаке.
+        <br><br>
+        <strong>Цена:</strong> см.
+        <a href="https://zop.dev/zopday#pricing">тарифы ZopDay</a>.
+      </td>
+      <td valign="middle" align="center">
+        <a href="../zopday.md"><strong>Руководство по развертыванию (англ.)</strong></a>
+      </td>
+    </tr>
   </tbody>
 </table>

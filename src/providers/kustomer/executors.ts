@@ -1,12 +1,11 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { optionalRecord, optionalString, requiredRecord, requiredString } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   isAbortLikeError,
   providerInputError,
   providerUserAgent,
@@ -16,8 +15,7 @@ import {
 const service = "kustomer";
 const kustomerApiBaseUrl = "https://api.kustomerapp.com/v1";
 
-type KustomerActionContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
-type KustomerActionHandler = (input: Record<string, unknown>, context: KustomerActionContext) => Promise<unknown>;
+type KustomerActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 type KustomerQueryValue = string | number | boolean | null | undefined;
 
 interface KustomerRequestInput {
@@ -127,7 +125,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "api_key",
         displayName: "Kustomer API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: kustomerApiBaseUrl,
         validationMode: "format_only",

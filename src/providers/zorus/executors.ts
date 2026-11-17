@@ -1,20 +1,17 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { arrayPayload, requestJson } from "../http-json-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
 import {
-  createProviderFetch,
   createProviderProxyUrl,
-  defineApiKeyProviderExecutors,
   normalizeProviderProxyHeaders,
-  ProviderRequestError,
-  providerUserAgent,
   readProviderProxyErrorMessage,
   readProviderProxyResponse,
-  requireApiKeyCredential,
   toProviderProxyError,
-} from "../provider-runtime.ts";
+} from "../provider-proxy.ts";
+import { createProviderFetch, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "zorus";
 const apiBaseUrl = "https://developer.zorustech.com";
@@ -96,7 +93,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "zorus-api-token",
         displayName: "Zorus API Token",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl,
         apiVersion,
@@ -108,7 +104,7 @@ export const credentialValidators: CredentialValidators = {
 
 function zorusRequest(
   path: string,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   body: unknown,
   phase: "validate" | "execute" = "execute",
 ): Promise<unknown> {

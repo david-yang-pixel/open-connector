@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import {
   compactObject,
@@ -16,8 +16,7 @@ export const subvisoryApiBaseUrl = "https://www.subvisory.com";
 const validationPath = "/api/v1/subscriptions";
 
 type SubvisoryRequestMode = "validate" | "execute";
-type SubvisoryActionContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
-type SubvisoryActionHandler = (input: Record<string, unknown>, context: SubvisoryActionContext) => Promise<unknown>;
+type SubvisoryActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 
 interface SubvisoryRequestInput {
   apiKey: string;
@@ -160,7 +159,6 @@ export async function validateSubvisoryCredential(
       accountId: "api_key",
       displayName: "Subvisory API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: subvisoryApiBaseUrl,
       validationEndpoint: validationPath,

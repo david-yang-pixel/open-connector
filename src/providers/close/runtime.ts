@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
 import { compactObject, optionalBoolean, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
@@ -10,6 +10,7 @@ import {
   providerUserAgent,
   ProviderRequestError,
   requiredResponseRecord,
+  providerInputError,
 } from "../provider-runtime.ts";
 
 export const closeApiBaseUrl = "https://api.close.com/api/v1";
@@ -88,7 +89,6 @@ export async function validateCloseCredential(
       accountId: meId.startsWith("close:") ? meId : `close:${meId}`,
       displayName: optionalString(payload.full_name) ?? readRequiredString(payload.email, "me.email"),
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: closeApiBaseUrl,
       validationEndpoint: "/me/",
@@ -446,10 +446,10 @@ function buildCloseError(
     optionalString(payload.message) ??
     `Close request failed with status ${status || 502}`;
   if (mode === "validation" && (status === 401 || status === 403)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (status === 400 || status === 404) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (status === 429) {
     return new ProviderRequestError(429, message);

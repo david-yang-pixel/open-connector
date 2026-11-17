@@ -1,16 +1,21 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { compactObject, objectArray, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
 import { encodePathSegment } from "../../core/request.ts";
-import { ProviderRequestError, providerUserAgent, requiredInputString } from "../provider-runtime.ts";
+import {
+  ProviderRequestError,
+  providerUserAgent,
+  requiredInputString,
+  providerInputError,
+  providerResponseError,
+} from "../provider-runtime.ts";
 
 export const emailoctopusApiBaseUrl = "https://emailoctopus.com/api/1.6";
 const emailoctopusValidationPath = "/lists";
 
 interface EmailoctopusRequestOptions {
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   mode: "validate" | "execute";
   path: string;
   method?: "GET" | "POST" | "PUT" | "DELETE";
@@ -73,7 +78,6 @@ export async function validateEmailoctopusCredential(
       accountId: "emailoctopus",
       displayName: "EmailOctopus API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: emailoctopusApiBaseUrl,
       validationEndpoint: emailoctopusValidationPath,
@@ -341,10 +345,10 @@ function createEmailoctopusHttpError(
     return new ProviderRequestError(429, message);
   }
   if (mode === "validate" && status === 401) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (status === 400 || status === 404 || status === 422) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   return new ProviderRequestError(status || 500, message);
 }
@@ -367,7 +371,7 @@ function contactPath(input: Record<string, unknown>): string {
 }
 
 function readObjectArray(value: unknown, fieldName: string): Array<Record<string, unknown>> {
-  return Array.isArray(value) ? objectArray(value, fieldName, (message) => new ProviderRequestError(502, message)) : [];
+  return Array.isArray(value) ? objectArray(value, fieldName, providerResponseError) : [];
 }
 
 function optionalStringArray(value: unknown): string[] | undefined {

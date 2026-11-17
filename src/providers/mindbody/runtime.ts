@@ -1,9 +1,8 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
-import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
+import { ProviderRequestError, providerUserAgent, providerInputError } from "../provider-runtime.ts";
 
 export const mindbodyApiBaseUrl = "https://api.mindbodyonline.com";
 const mindbodyBusinessDirectoryPath = "/partnergateway/consumer/activity/v1/businesses";
@@ -39,7 +38,6 @@ export async function validateMindbodyCredential(
       accountId: "mindbody:api-key",
       displayName: "Mindbody API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: mindbodyApiBaseUrl,
       validationEndpoint: mindbodyBusinessDirectoryPath,
@@ -51,7 +49,7 @@ export async function validateMindbodyCredential(
 
 async function executeListBusinesses(
   input: Record<string, unknown>,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: MindbodyRequestPhase,
 ): Promise<MindbodyListBusinessesOutput> {
   const payload = await mindbodyGetJson({
@@ -66,7 +64,7 @@ async function executeListBusinesses(
 async function mindbodyGetJson(input: {
   path: string;
   query: Record<string, unknown>;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   phase: MindbodyRequestPhase;
 }): Promise<unknown> {
   const url = new URL(input.path, mindbodyApiBaseUrl);
@@ -146,7 +144,7 @@ function createMindbodyError(response: Response, payload: unknown, phase: Mindbo
   }
 
   if (phase === "validate" && (response.status === 401 || response.status === 403)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
 
   if (phase === "execute" && (response.status === 401 || response.status === 403)) {
@@ -154,7 +152,7 @@ function createMindbodyError(response: Response, payload: unknown, phase: Mindbo
   }
 
   if (phase === "execute" && [400, 404, 422].includes(response.status)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
 
   return new ProviderRequestError(response.status || 500, message);

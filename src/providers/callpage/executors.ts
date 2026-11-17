@@ -1,14 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "callpage";
 const callpageApiBaseUrl = "https://core.callpage.io";
@@ -77,7 +73,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "callpage",
         displayName: "CallPage API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: callpageApiBaseUrl,
         validationEndpoint: callpageValidationPath,
@@ -276,7 +271,7 @@ async function executeCreateWidgetCall(
 
 async function callpageGetJson(
   path: string,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: CallpagePhase,
 ): Promise<Record<string, unknown>> {
   return callpageRequestEnvelope(
@@ -296,7 +291,7 @@ async function callpageGetJson(
 async function callpagePostJson(
   path: string,
   body: Record<string, unknown>,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
 ): Promise<Record<string, unknown>> {
   return callpageRequestEnvelope(
     new URL(path, callpageApiBaseUrl),

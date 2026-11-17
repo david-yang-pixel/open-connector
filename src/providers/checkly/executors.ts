@@ -4,22 +4,22 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { optionalBoolean, optionalRecord, optionalString, requiredRecord, requiredString } from "../../core/cast.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineProviderExecutors,
-  defineProviderProxy,
   isAbortLikeError,
   providerResponseError,
   providerUserAgent,
   ProviderRequestError,
-  requireApiKeyCredential,
+  defaultProviderRequestTimeoutMs,
 } from "../provider-runtime.ts";
 
 const service = "checkly";
 const apiBaseUrl = "https://api.checklyhq.com";
-const requestTimeoutMs = 30_000;
 
 type ChecklyPhase = "validate" | "execute";
 
@@ -144,7 +144,6 @@ export const credentialValidators: CredentialValidators = {
         accountId,
         displayName: optionalString(account.name) ?? `Checkly ${accountId}`,
       },
-      grantedScopes: [],
       metadata: {
         accountId: context.accountId,
         apiBaseUrl,
@@ -184,8 +183,8 @@ async function requestChecklyJson(input: {
   query?: URLSearchParams;
 }): Promise<unknown> {
   const signal = input.context.signal
-    ? AbortSignal.any([input.context.signal, AbortSignal.timeout(requestTimeoutMs)])
-    : AbortSignal.timeout(requestTimeoutMs);
+    ? AbortSignal.any([input.context.signal, AbortSignal.timeout(defaultProviderRequestTimeoutMs)])
+    : AbortSignal.timeout(defaultProviderRequestTimeoutMs);
   let response: Response;
   let payload: unknown;
   try {

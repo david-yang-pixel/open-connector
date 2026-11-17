@@ -2,29 +2,19 @@ import type { ActionDefinition } from "../../core/types.ts";
 
 import { s } from "../../core/json-schema.ts";
 import { defineProviderAction } from "../../core/provider-definition.ts";
-import officialTools from "./official-tools.json" with { type: "json" };
-
-const resultSchema = s.object(
-  "The FastMoss MCP tool result.",
-  {
-    result: s.unknown(
-      "Structured MCP content when available; otherwise the complete MCP content envelope. Data availability and Credits depend on the connected FastMoss account.",
-    ),
-  },
-  { optional: [] },
-);
+import { contentActions } from "./actions-content.ts";
+import { creatorActions } from "./actions-creator.ts";
+import { productActions } from "./actions-product.ts";
+import { researchActions } from "./actions-research.ts";
+import { shopActions } from "./actions-shop.ts";
+import { resultSchema } from "./schemas.ts";
 
 export const fastmossMcpActions: readonly ActionDefinition[] = [
-  ...officialTools.map((tool) =>
-    defineProviderAction("fastmoss_mcp", {
-      name: tool.name,
-      operationType: "read",
-      description: tool.description,
-      requiredScopes: [],
-      inputSchema: tool.inputSchema,
-      outputSchema: resultSchema,
-    }),
-  ),
+  ...productActions,
+  ...creatorActions,
+  ...shopActions,
+  ...contentActions,
+  ...researchActions,
   defineProviderAction("fastmoss_mcp", {
     name: "list_tools",
     operationType: "read",

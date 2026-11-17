@@ -1,6 +1,6 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { OAuthProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { OAuthProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -10,9 +10,14 @@ import {
   pickOptionalInteger,
   pickOptionalString as pickNonEmptyString,
 } from "../../core/cast.ts";
-import { defineGoogleProviderExecutors, googleBearerProxyAuth, googleServiceAccountValidator } from "../google-auth.ts";
-import { googleJsonRequest, googleRequest } from "../google-runtime.ts";
-import { defineProviderProxy, ProviderRequestError } from "../provider-runtime.ts";
+import {
+  defineGoogleProviderExecutors,
+  googleBearerProxyAuth,
+  googleServiceAccountValidator,
+} from "../googledrive/runtime-auth.ts";
+import { googleJsonRequest, googleRequest } from "../googledrive/runtime-request.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError } from "../provider-runtime.ts";
 import { googleSearchConsoleOAuthScopes } from "./scopes.ts";
 
 const service = "google_search_console";

@@ -1,10 +1,16 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { optionalRecord, optionalString } from "../../core/cast.ts";
 import { jsonObject, queryParams } from "../../core/request.ts";
-import { createProviderTimeout, providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
+import {
+  createProviderTimeout,
+  providerUserAgent,
+  ProviderRequestError,
+  providerInputError,
+  providerResponseError,
+} from "../provider-runtime.ts";
 
 export const msg91ApiBaseUrl = "https://control.msg91.com";
 
@@ -45,7 +51,6 @@ export async function validateMsg91Credential(apiKey: string): Promise<Credentia
       accountId: "msg91",
       displayName: "MSG91 Authkey",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: msg91ApiBaseUrl,
       validationMode: "local_only",
@@ -296,7 +301,7 @@ function createMsg91HttpError(response: Response, payload: unknown): ProviderReq
     return new ProviderRequestError(401, message);
   }
   if (response.status === 400 || response.status === 404 || response.status === 422) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   return new ProviderRequestError(response.status || 500, message);
 }
@@ -320,9 +325,9 @@ function throwOnMsg91Error(payload: unknown, actionName: string): void {
     throw new ProviderRequestError(429, message);
   }
   if (isInvalidInputMessage(lowerMessage)) {
-    throw new ProviderRequestError(400, message);
+    throw providerInputError(message);
   }
-  throw new ProviderRequestError(502, message);
+  throw providerResponseError(message);
 }
 
 function throwOnMsg91AuthError(payload: unknown): void {

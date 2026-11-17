@@ -1,6 +1,6 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -11,16 +11,12 @@ import {
   optionalString,
   requiredRecord,
 } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError, defaultProviderRequestTimeoutMs } from "../provider-runtime.ts";
 
 const service = "firehydrant";
 const firehydrantApiBaseUrl = "https://api.firehydrant.io/v1";
-const firehydrantRequestTimeoutMs = 30_000;
 
 type RequestPhase = "validate" | "execute";
 type FirehydrantContext = ApiKeyProviderContext;
@@ -110,7 +106,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "api_key",
         displayName: firstIncident ? `FireHydrant: ${String(firstIncident.name)}` : "FireHydrant API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: firehydrantApiBaseUrl,
         validationEndpoint: "/incidents",
@@ -339,7 +334,7 @@ async function requestJson(input: FirehydrantRequestInput): Promise<unknown> {
     }
   }
 
-  const timeoutSignal = AbortSignal.timeout(firehydrantRequestTimeoutMs);
+  const timeoutSignal = AbortSignal.timeout(defaultProviderRequestTimeoutMs);
   const signal = input.signal ? AbortSignal.any([input.signal, timeoutSignal]) : timeoutSignal;
   let response: Response;
   try {

@@ -4,8 +4,7 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -17,13 +16,9 @@ import {
   optionalString,
   optionalStringOrNull,
 } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-  runProviderRequest,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent, runProviderRequest } from "../provider-runtime.ts";
 
 const service = "leadmagic";
 const leadmagicApiBaseUrl = "https://api.leadmagic.io/v1";
@@ -150,9 +145,7 @@ export const credentialValidators: CredentialValidators = {
   },
 };
 
-async function validateLeadmagicCredential(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
-): Promise<CredentialValidationResult> {
+async function validateLeadmagicCredential(context: ApiKeyProviderContext): Promise<CredentialValidationResult> {
   const account = normalizeCredits(
     await requestLeadmagicJson(
       {
@@ -169,7 +162,6 @@ async function validateLeadmagicCredential(
       accountId: service,
       displayName: `LeadMagic (${formatCredits(account.credits)} credits)`,
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: leadmagicApiBaseUrl,
       validationEndpoint: "/credits",
@@ -180,7 +172,7 @@ async function validateLeadmagicCredential(
 
 async function requestLeadmagicJson(
   input: LeadmagicRequestInput,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
 ): Promise<Record<string, unknown>> {
   return runProviderRequest({ signal: context.signal, label: "LeadMagic" }, async (signal) => {
     const response = await context.fetcher(buildLeadmagicUrl(input.path), {

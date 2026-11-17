@@ -4,13 +4,13 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderRequestContext } from "../provider-runtime.ts";
 
 import { compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   providerUserAgent,
   ProviderRequestError,
   readProviderJsonBody,
@@ -27,7 +27,7 @@ type BeeboleRequestPhase = "validate" | "execute";
 interface BeeboleGraphqlRequestOptions {
   apiKey: string;
   body: Record<string, unknown>;
-  context: Pick<ApiKeyProviderContext, "fetcher" | "signal">;
+  context: ProviderRequestContext;
   phase: BeeboleRequestPhase;
 }
 
@@ -82,7 +82,6 @@ export const credentialValidators: CredentialValidators = {
       profile: {
         displayName: "Beebole API Key",
       },
-      grantedScopes: [],
       metadata: {
         graphqlEndpoint: beeboleGraphqlEndpoint,
         validationEndpoint: beeboleGraphqlPath,

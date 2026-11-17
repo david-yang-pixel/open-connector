@@ -29,6 +29,46 @@ first.
 NOTION_TOKEN=secret_... node examples/local-http/notion.ts
 ```
 
+Run Apache Doris with a dedicated read-only account. See the
+[Doris setup and limits](../../docs/configuration.md#apache-doris) before connecting.
+Set `DORIS_TABLE` as well to describe a table; without `DORIS_DATABASE`, the example
+only executes `SELECT 1` and lists databases. Missing credentials produce a skip message.
+
+```bash
+DORIS_BASE_URL=https://doris.example.com:8030 \
+DORIS_USERNAME=oc_reader \
+DORIS_PASSWORD=... \
+DORIS_DATABASE=analytics \
+node examples/local-http/doris.ts
+```
+
+Run Kubernetes with a ServiceAccount token bound to a narrow Role. The example lists namespaces,
+pods and warning events, so the Role needs `list` on those. Set `KUBERNETES_CA_DATA` to the
+`certificate-authority-data` value from kubeconfig when the API server uses a private certificate
+authority. See the [Kubernetes setup and limits](../../docs/configuration.md#kubernetes). Missing
+credentials produce a skip message.
+
+```bash
+KUBERNETES_BASE_URL=https://kubernetes.example.com:6443 \
+KUBERNETES_TOKEN=... \
+KUBERNETES_CA_DATA=LS0tLS1CRUdJTi... \
+node examples/local-http/kubernetes.ts
+```
+
+Run SFTP against any SSH server that offers the SFTP subsystem. The example lists and inspects
+`SFTP_PATH` (default: the login directory). Set `SFTP_WRITE_DIR` as well to create a scratch
+directory there, upload, rename, download and delete a file, and remove the directory again. Leave
+`SFTP_HOST_KEY_FINGERPRINT` empty to record the key the server presents when the connection is saved.
+Missing credentials produce a skip message.
+
+```bash
+SFTP_HOST=sftp.example.com \
+SFTP_USERNAME=deploy \
+SFTP_PRIVATE_KEY="$(cat ~/.ssh/id_ed25519_connector)" \
+SFTP_WRITE_DIR=/tmp \
+node examples/local-http/sftp.ts
+```
+
 Run App Store Connect with an API key created in App Store Connect. Pass the `.p8` file through
 `APP_STORE_CONNECT_PRIVATE_KEY_PATH`, or inline its PEM contents through
 `APP_STORE_CONNECT_PRIVATE_KEY`. Omit `APP_STORE_CONNECT_ISSUER_ID` when you use an Individual API

@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
 import {
@@ -105,7 +105,6 @@ export async function validatePasscreatorCredential(
       accountId: "passcreator_api_key",
       displayName: "Passcreator API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: passcreatorApiBaseUrl,
       validationEndpoint: passcreatorValidationPath,

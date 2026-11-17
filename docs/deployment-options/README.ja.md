@@ -102,5 +102,64 @@ platform では OAuth app を自分で登録する必要があります。マネ
         <a href="https://app.nibrun.com/deploy?name=open-connector&amp;binary=https%3A%2F%2Fgithub.com%2Foomol-lab%2Fopen-connector%2Freleases%2Flatest%2Fdownload%2Fopen-connector-linux-x64&amp;port=3000&amp;env=HOST%3D0.0.0.0&amp;env=OOMOL_CONNECT_DATA_DIR%3D%24%7BNIBRUN_DATA_DIR%7D&amp;env=OOMOL_CONNECT_ORIGIN%3Dhttps%3A%2F%2F%24%7BNIBRUN_HOSTNAME%7D&amp;env=OOMOL_CONNECT_CATALOG_LAZY_SCHEMAS%3Dtrue&amp;env=OOMOL_CONNECT_ENCRYPTION_KEY&amp;env=OOMOL_CONNECT_ADMIN_TOKEN&amp;env=OOMOL_CONNECT_RUNTIME_TOKEN"><strong>ワンクリックデプロイ</strong></a>
       </td>
     </tr>
+    <tr>
+      <td valign="middle" align="center">
+        <a href="https://nexusai.run/"><img src="../../assets/deployment-options/nexus-ai.svg" alt="NEXUS AI" width="140"></a>
+      </td>
+      <td valign="top">
+        repository の <code>docker/Dockerfile</code> を build し、専用の HTTPS URL を持つ container で
+        実行します。deploy link は <code>OOMOL_CONNECT_ORIGIN</code> をその URL に設定し、admin token を
+        フォームで入力させ、encryption key と runtime token を生成するため、Web Console とすべての API は
+        最初の起動から認証が必要です。secret はフォームで入力するか server で生成され、link には含まれません。
+        <br><br>
+        <strong>利点:</strong> source からワンクリックでデプロイでき、log と redeploy を 1 つの dashboard で
+        管理でき、有料プランでは custom domain を使えます。SQLite database は container 内にあり、再起動では
+        保持されますが rebuild では保持されません。長期保存するデータには
+        <code>OOMOL_CONNECT_DATABASE_URL</code> を PostgreSQL に設定し、初回起動前と新しい migration を含む
+        redeploy の前に <a href="../configuration.md#runtime-database">PostgreSQL migration</a> を実行してください。
+        保存済みの credential はこの key で暗号化されるため、<code>OOMOL_CONNECT_ENCRYPTION_KEY</code> は変更しないで
+        ください。
+        <br><br>
+        <strong>料金:</strong> Free プランは public HTTPS URL 付きの active deployment 1 つを含み、
+        クレジットカードは不要ですが、テストと評価専用です。test deployment は自動的に期限切れになります。
+        Starter は $29/月で active deployment 2 つと custom domain、Pro は $149/月で 5 つです。各 app は
+        512 MB RAM です。<a href="https://nexusai.run/pricing">NEXUS AI の料金</a> を参照してください。
+      </td>
+      <td valign="middle" align="center">
+        <a href="https://nexusai.run/deploy?repo=https%3A%2F%2Fgithub.com%2Foomol-lab%2Fopen-connector&amp;dockerfile=docker%2FDockerfile&amp;env=OOMOL_CONNECT_ORIGIN%3D%7Burl%7D&amp;require=OOMOL_CONNECT_ADMIN_TOKEN&amp;generate=OOMOL_CONNECT_ENCRYPTION_KEY&amp;generate=OOMOL_CONNECT_RUNTIME_TOKEN&amp;template=open-connector"><strong>ワンクリックデプロイ</strong></a>
+      </td>
+    </tr>
+    <tr>
+      <td valign="middle" align="center">
+        <a href="https://pethost.dev/"><img src="../../assets/deployment-options/pethost.svg" alt="Pethost" width="140"></a>
+      </td>
+      <td valign="top">
+        公開済みの <code>ghcr.io/oomol-lab/open-connector</code> イメージを専用の HTTPS アドレスで実行するワンクリックテンプレートです。<code>OOMOL_CONNECT_ORIGIN</code> をそのアドレスに設定し、admin token を入力させ、encryption key と runtime token を生成するため、Web Console とすべての API は最初の起動から認証が必要です。SQLite データベースを含むデータディレクトリは volume 上にあり、再起動や redeploy の後も残ります。
+        <br><br>
+        <strong>利点:</strong>サーバー全体が月額固定料金で、OpenConnector を他のアプリやデータベースと同じサーバーで動かせます。従量課金はなく、スリープもしません。夜間バックアップ、log、すべての HTTP リクエストを 1 つのパネルで確認でき、MCP サーバーを通じて agent がデプロイと管理を行えます。
+        <br><br>
+        <strong>料金:</strong>2 vCPU、3 GB メモリ、30 GB SSD で月額 €9.99 から、4 vCPU、6 GB、60 GB で月額 €17.99 です。プロジェクトは収まるだけ置けます。OpenConnector のアイドル時のメモリ使用量は約 230 MB です。<a href="https://pethost.dev/#pricing">Pethost の料金</a> を参照してください。
+      </td>
+      <td valign="middle" align="center">
+        <a href="https://pethost.dev/templates/open-connector/"><strong>ワンクリックデプロイ</strong></a>
+      </td>
+    </tr>
+    <tr>
+      <td valign="middle" align="center">
+        <a href="https://zop.dev/"><img src="../../assets/deployment-options/zopday.svg" alt="ZopDay" width="140"></a>
+      </td>
+      <td valign="top">
+        公開済みの <code>ghcr.io/oomol-lab/open-connector</code> イメージを HTTPS と管理ダッシュボード付きで実行できます。
+        初回起動前に公開 URL、認証トークン、暗号化キー、永続ストレージを設定してください。OAuth アプリの登録はご自身で行います。
+        <br><br>
+        <strong>利点:</strong> コンテナ管理ダッシュボードと、自社クラウドでの Helm デプロイ。
+        <br><br>
+        <strong>料金:</strong>
+        <a href="https://zop.dev/zopday#pricing">ZopDay の料金</a> を参照してください。
+      </td>
+      <td valign="middle" align="center">
+        <a href="../zopday.md"><strong>デプロイガイド（英語）</strong></a>
+      </td>
+    </tr>
   </tbody>
 </table>

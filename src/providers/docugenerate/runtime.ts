@@ -1,9 +1,14 @@
 import type { CredentialValidationResult, ExecutionContext } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { compactObject, optionalBoolean, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
-import { providerUserAgent, ProviderRequestError, requiredInputString } from "../provider-runtime.ts";
+import {
+  providerUserAgent,
+  ProviderRequestError,
+  requiredInputString,
+  providerInputError,
+} from "../provider-runtime.ts";
 
 export const docugenerateValidationPath = "/template";
 
@@ -175,7 +180,6 @@ export async function validateDocugenerateCredential(
       accountId: `docugenerate:${region}`,
       displayName: "DocuGenerate API Key",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl,
       region,
@@ -282,13 +286,13 @@ function createDocugenerateError(
     return new ProviderRequestError(429, message);
   }
   if (phase === "validate" && (response.status === 401 || response.status === 403)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (phase === "execute" && (response.status === 401 || response.status === 403)) {
     return new ProviderRequestError(response.status, message);
   }
   if (phase === "execute" && [400, 404, 422].includes(response.status)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   return new ProviderRequestError(response.status >= 500 ? 502 : response.status, message);
 }

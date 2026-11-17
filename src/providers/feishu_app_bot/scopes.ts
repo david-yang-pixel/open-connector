@@ -36,6 +36,6 @@ export const feishuAppBotScopes: FeishuAppBotScopes = {
   groupAtReadonly: "im:message.group_at_msg:readonly",
   groupAtWithBotReadonly: "im:message.group_at_msg.include_bot:readonly",
   groupReadonly: "im:message.group_msg:readonly",
-  applicationRead: "application:application:readonly",
+  applicationRead: "application:application:self_manage",
   applicationVersionRead: "application:application.app_version:readonly",
 };

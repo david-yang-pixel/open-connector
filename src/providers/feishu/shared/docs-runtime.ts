@@ -1,7 +1,14 @@
 import type { FeishuJsonRequest } from "./client.ts";
 
-import { optionalNumber, optionalRecord, optionalStringArray } from "../../../core/cast.ts";
-import { providerInputError } from "../../provider-runtime.ts";
+import {
+  optionalNumber,
+  optionalRecord,
+  optionalRawString,
+  optionalStringArray,
+  requiredString,
+} from "../../../core/cast.ts";
+import { providerInputError, ProviderRequestError, requiredResponseRecord } from "../../provider-runtime.ts";
+import { readFeishuResponsePage } from "./response.ts";
 
 interface FeishuDocsActionHandler {
   (input: Record<string, unknown>): Promise<unknown>;
@@ -13,6 +20,11 @@ export function createFeishuDocsActionHandlers(request: FeishuJsonRequest): Reco
   return {
     create_document(input) {
       return createDocument(input, request);
+    },
+    async get_document_creation(input) {
+      const taskId = requireString(input.taskId, "taskId");
+      const data = await request({ path: `/docs_ai/v1/async_tasks/${encodeURIComponent(taskId)}` });
+      return normalizeCreation(data, taskId);
     },
     fetch_document(input) {
       return fetchDocument(input, request);
@@ -50,13 +62,64 @@ async function createDocument(input: Record<string, unknown>, request: FeishuJso
     path: "/docs_ai/v1/documents",
     body: {
       format,
+      extra_param: '{"open_create_async":true}',
       content: title ? `${createTitle(format, title)}\n${content}` : content,
       parent_token: parentToken,
       parent_position: parentPosition,
       reference_map: optionalRecord(input.referenceMap),
     },
   });
-  return { document: optionalRecord(data.document) ?? data };
+  return normalizeCreation(data);
+}
+
+function normalizeCreation(data: Record<string, unknown>, expectedTaskId?: string) {
+  if (data.task == null && !expectedTaskId) {
+    return {
+      taskId: null,
+      status: "succeeded",
+      document: requireCreatedDocument(data.document),
+      pollAfterMs: null,
+      failure: null,
+    };
+  }
+  const task = requiredResponseRecord(data.task, "Feishu document creation task");
+  const taskId = optionalRawString(task.task_id) || expectedTaskId;
+  if (!taskId || (expectedTaskId && taskId !== expectedTaskId)) {
+    throw new ProviderRequestError(502, "Feishu document creation task ID is missing or mismatched");
+  }
+  const status = optionalRawString(task.status)?.trim().toLowerCase() || "processing";
+  if (!["processing", "succeeded", "failed", "expired"].includes(status)) {
+    throw new ProviderRequestError(502, `Unsupported Feishu document creation status: ${status}`);
+  }
+  let document: Record<string, unknown> | null = null;
+  if (status === "succeeded") {
+    const result = optionalRecord(task.result);
+    const serialized = optionalRawString(result?.create_document);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(serialized ?? "");
+    } catch {
+      throw new ProviderRequestError(502, "Invalid Feishu document creation result JSON");
+    }
+    document = requireCreatedDocument(optionalRecord(parsed)?.document);
+  }
+  return {
+    taskId,
+    status,
+    document,
+    pollAfterMs: optionalNumber(task.poll_after_ms) ?? null,
+    failure: optionalRecord(task.failure) ?? null,
+  };
+}
+
+function requireCreatedDocument(value: unknown) {
+  const document = requiredResponseRecord(value, "Feishu created document");
+  requiredString(
+    document.document_id,
+    "Feishu created document.document_id",
+    (message) => new ProviderRequestError(502, message),
+  );
+  return document;
 }
 
 async function fetchDocument(input: Record<string, unknown>, request: FeishuJsonRequest) {
@@ -113,9 +176,18 @@ async function updateDocument(input: Record<string, unknown>, request: FeishuJso
   const content = optionalString(input.content);
   const pattern = optionalString(input.pattern);
   const blockId = optionalString(input.blockId);
+  const startBlockId = optionalRawString(input.startBlockId)?.trim() || undefined;
+  const endBlockId = optionalRawString(input.endBlockId)?.trim() || undefined;
   const sourceBlockIds = optionalStringArray(input.sourceBlockIds);
-  validateUpdateInput({ command, content, pattern, blockId, sourceBlockIds });
-
+  validateUpdateInput({
+    command,
+    content,
+    pattern,
+    blockId,
+    startBlockId,
+    endBlockId,
+    sourceBlockIds,
+  });
   const apiCommand = {
     replace_text: "str_replace",
     delete_blocks: "block_delete",
@@ -135,6 +207,8 @@ async function updateDocument(input: Record<string, unknown>, request: FeishuJso
       content,
       pattern,
       block_id: command === "append" ? "-1" : blockId,
+      start_block_id: startBlockId,
+      end_block_id: endBlockId,
       src_block_ids: sourceBlockIds?.join(","),
       revision_id: optionalNumber(input.revisionId),
       reference_map: optionalRecord(input.referenceMap),
@@ -155,11 +229,12 @@ async function searchDocuments(input: Record<string, unknown>, request: FeishuJs
       page_token: optionalString(input.pageToken),
     },
   });
+  const page = readFeishuResponsePage(data, "res_units");
   return {
-    results: Array.isArray(data.res_units) ? data.res_units : [],
+    results: page.items,
     total: typeof data.total === "number" ? data.total : undefined,
-    hasMore: data.has_more === true,
-    pageToken: optionalString(data.page_token),
+    hasMore: page.hasMore,
+    pageToken: page.pageToken,
     notice: optionalString(data.notice),
   };
 }
@@ -246,18 +321,36 @@ interface UpdateInput {
   readonly content: string | undefined;
   readonly pattern: string | undefined;
   readonly blockId: string | undefined;
+  readonly startBlockId: string | undefined;
+  readonly endBlockId: string | undefined;
   readonly sourceBlockIds: string[] | undefined;
 }
 
 function validateUpdateInput(input: UpdateInput) {
+  const hasRange = input.startBlockId != null || input.endBlockId != null;
+  const isBlockMutation = input.command === "replace_block" || input.command === "delete_blocks";
+  if (hasRange) {
+    if (!isBlockMutation) {
+      throw providerInputError("startBlockId and endBlockId are only supported for replace_block or delete_blocks");
+    }
+    if (input.blockId) {
+      throw providerInputError("blockId cannot be combined with startBlockId or endBlockId");
+    }
+    if (!input.startBlockId || !input.endBlockId) {
+      throw providerInputError("startBlockId and endBlockId must be provided together");
+    }
+    if (input.startBlockId === "-1" || input.endBlockId === "0") {
+      throw providerInputError("startBlockId cannot be -1 and endBlockId cannot be 0");
+    }
+  }
+  if (isBlockMutation && !input.blockId && !hasRange) {
+    throw providerInputError("blockId or both startBlockId and endBlockId are required");
+  }
   if (input.command === "replace_text" && !input.pattern) {
     throw providerInputError("pattern is required for replace_text");
-  } else if (input.command === "delete_blocks" && !input.blockId) {
-    throw providerInputError("blockId is required for delete_blocks");
-  } else if (
-    (input.command === "insert_after" || input.command === "replace_block") &&
-    (!input.blockId || !input.content)
-  ) {
+  } else if (input.command === "replace_block" && !input.content) {
+    throw providerInputError("content is required for replace_block");
+  } else if (input.command === "insert_after" && (!input.blockId || !input.content)) {
     throw providerInputError(`blockId and content are required for ${input.command}`);
   } else if (
     (input.command === "copy_after" || input.command === "move_after") &&

@@ -4,17 +4,14 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { optionalBoolean, optionalInteger, optionalRecord, optionalString, compactObject } from "../../core/cast.ts";
 import { assertPublicHttpUrl } from "../../core/request.ts";
-import {
-  defineProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-  requireApiKeyCredential,
-} from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 
 const service = "apiflash";
 const apiflashApiBaseUrl = "https://api.apiflash.com";
@@ -79,7 +76,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "api_key",
         displayName: "ApiFlash Access Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         validationEndpoint: apiflashQuotaPath,
         apiBaseUrl: apiflashApiBaseUrl,

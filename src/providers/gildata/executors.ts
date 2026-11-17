@@ -1,16 +1,13 @@
 import type { CredentialValidators, ProviderExecutors } from "../../core/types.ts";
 import type { McpToolSummary, McpToolOptions } from "../mcp-tools.ts";
-import type { ApiKeyProviderContext, ProviderFetch } from "../provider-runtime.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { sha256Hex } from "../../core/aws-sigv4.ts";
 import { optionalRecord, optionalString } from "../../core/cast.ts";
 import { listMcpTools, callMcpTool } from "../mcp-tools.ts";
-import {
-  defineApiKeyProviderExecutors,
-  mapProviderActionHandlers,
-  ProviderRequestError,
-  requiredInputString,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors, mapProviderActionHandlers } from "../provider-executors.ts";
+import { ProviderRequestError, requiredInputString } from "../provider-runtime.ts";
 import { gildataActions, gildataMcpServerTypes } from "./actions.ts";
 type GildataMcpServerType = "tool" | "api";
 const gildataMcpOrigin = "https://api.gildata.com";
@@ -297,7 +294,7 @@ function buildGildataMcpInput(
   return {
     endpoint: endpoint.toString(),
     service: "Gildata Data Map",
-    fetcher: (async (request, init) => {
+    fetcher: async (request, init) => {
       const response = await fetcher(request, init);
       if (response.status === 401) {
         await response.body?.cancel().catch(() => undefined);
@@ -313,8 +310,8 @@ function buildGildataMcpInput(
         );
       }
       return response;
-    }) as ProviderFetch,
-    redirect: "error",
+    },
+    redirect: "manual",
     terminateSession: true,
     signal: parentSignal,
     requestTimeoutMs,

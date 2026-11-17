@@ -7,8 +7,9 @@ import type {
 import type { CloudflareWorkerContext } from "./runtime.ts";
 
 import { compactObject, optionalString, requiredString } from "../../core/cast.ts";
-import { cloudflareCurrentUserDisplayName } from "../cloudflare-current-user.ts";
-import { defineProviderExecutors, ProviderRequestError } from "../provider-runtime.ts";
+import { cloudflareCurrentUserDisplayName } from "../cloudflare_dns/runtime-user.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { ProviderRequestError } from "../provider-runtime.ts";
 import {
   cloudflareWorkerActionHandlers,
   requestCloudflareWorkerCurrentUser,
@@ -66,7 +67,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: user.userId,
         displayName,
       },
-      grantedScopes: input.profile.grantedScopes,
       metadata: compactObject({
         userId: user.userId,
         email: user.email,

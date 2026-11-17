@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { compactObject, objectArray, optionalRecord, optionalString } from "../../core/cast.ts";
 import { queryParams } from "../../core/request.ts";
@@ -9,6 +9,8 @@ import {
   isAbortLikeError,
   providerUserAgent,
   ProviderRequestError,
+  providerInputError,
+  providerResponseError,
 } from "../provider-runtime.ts";
 import { wejamAiExportResourceValues } from "./constants.ts";
 
@@ -19,8 +21,7 @@ export const wejamAiValidationPath: string = `${wejamAiDataExportPathPrefix}/use
 const wejamAiExportResourceSet = new Set<string>(wejamAiExportResourceValues);
 
 type WejamAiPhase = "validate" | "execute";
-type WejamAiActionContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
-type WejamAiActionHandler = (input: Record<string, unknown>, context: WejamAiActionContext) => Promise<unknown>;
+type WejamAiActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 
 export const wejamAiActionHandlers: ProviderActionHandlers<"wejam_ai", WejamAiActionHandler> = {
   async export_data(input, context) {
@@ -68,7 +69,6 @@ export async function validateWejamAiCredential(
       accountId: firstUserEmail ?? "wejam_ai:api_key",
       displayName: firstUserEmail ? `Jam (${firstUserEmail})` : "Jam API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: wejamAiApiBaseUrl,
       validationEndpoint: wejamAiValidationPath,
@@ -173,7 +173,7 @@ function createWejamAiError(status: number, payload: unknown, phase: WejamAiPhas
   const message = extractWejamAiErrorMessage(payload) ?? `Jam request failed with status ${status}`;
 
   if (phase === "validate" && status === 401) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (phase === "execute" && status === 401) {
     return new ProviderRequestError(401, message);
@@ -218,7 +218,7 @@ function normalizeDataExportPayload(
 
   return {
     resource,
-    data: objectArray(body.data, "Jam data-export response data", (message) => new ProviderRequestError(502, message)),
+    data: objectArray(body.data, "Jam data-export response data", providerResponseError),
     meta: {
       total: readRequiredNumber(meta, "total"),
       page: readRequiredNumber(meta, "page"),

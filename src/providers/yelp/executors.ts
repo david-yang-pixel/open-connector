@@ -1,14 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 
 const service = "yelp";
 const yelpApiBaseUrl = "https://api.yelp.com";
@@ -115,7 +111,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "yelp-api-key",
         displayName: "Yelp API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: yelpApiBaseUrl,
         validationEndpoint: yelpValidationPath,
@@ -128,7 +123,7 @@ export const credentialValidators: CredentialValidators = {
 async function requestYelpJson(input: {
   path: string;
   query: Record<string, YelpQueryValue>;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   phase: "validate" | "execute";
 }): Promise<unknown> {
   let response: Response;

@@ -4,24 +4,23 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   isAbortLikeError,
   providerInputError,
   providerUserAgent,
   ProviderRequestError,
+  defaultProviderRequestTimeoutMs,
 } from "../provider-runtime.ts";
 
 const service = "l2s";
 const l2sApiBaseUrl = "https://api.l2s.is";
 const l2sValidationPath = "/user/setting";
-const l2sDefaultRequestTimeoutMs = 30_000;
 
 type L2sRequestMode = "validate" | "execute";
 type L2sActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
@@ -89,9 +88,7 @@ export const credentialValidators: CredentialValidators = {
   },
 };
 
-async function validateL2sCredential(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
-): Promise<CredentialValidationResult> {
+async function validateL2sCredential(context: ApiKeyProviderContext): Promise<CredentialValidationResult> {
   const payload = await l2sRequest(context, {
     method: "GET",
     path: l2sValidationPath,
@@ -108,7 +105,6 @@ async function validateL2sCredential(
       accountId: "l2s",
       displayName: "L2S API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: l2sApiBaseUrl,
       validationEndpoint: l2sValidationPath,
@@ -118,11 +114,8 @@ async function validateL2sCredential(
   };
 }
 
-async function l2sRequest(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
-  input: L2sRequestInput,
-): Promise<unknown> {
-  const timeout = createProviderTimeout(context.signal, l2sDefaultRequestTimeoutMs);
+async function l2sRequest(context: ApiKeyProviderContext, input: L2sRequestInput): Promise<unknown> {
+  const timeout = createProviderTimeout(context.signal);
 
   try {
     const response = await context.fetcher(new URL(input.path, l2sApiBaseUrl), {
@@ -153,7 +146,7 @@ async function l2sRequest(
         504,
         `L2S ${input.path} request timed out after ${Math.max(
           1,
-          Math.ceil(l2sDefaultRequestTimeoutMs / 1000),
+          Math.ceil(defaultProviderRequestTimeoutMs / 1000),
         )} seconds`,
       );
     }

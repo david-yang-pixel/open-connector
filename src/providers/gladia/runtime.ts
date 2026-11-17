@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { basename, extname } from "node:path";
 import {
@@ -12,11 +12,11 @@ import {
   optionalString,
 } from "../../core/cast.ts";
 import { assertPublicHttpUrl, readBoundedResponseBytes } from "../../core/request.ts";
+import { readTransitFileInput } from "../provider-files.ts";
 import {
   providerFetch,
   ProviderRequestError,
   providerUserAgent,
-  readTransitFileInput,
   requiredInputString,
   requiredResponseRecord,
 } from "../provider-runtime.ts";
@@ -73,7 +73,6 @@ export async function validateGladiaCredential(
       accountId: "gladia",
       displayName: "Gladia API Key",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: gladiaApiBaseUrl,
       validationEndpoint: gladiaPreRecordedPath,
@@ -319,7 +318,7 @@ async function resolveUploadSource(
     const file =
       name === transitFile.file.name && mimeType === transitFile.file.type
         ? transitFile.file
-        : new File([await transitFile.file.arrayBuffer()], name, { type: mimeType });
+        : new File([transitFile.file], name, { type: mimeType });
     assertUploadSourceSize(transitFile.sizeBytes);
     return { file };
   }

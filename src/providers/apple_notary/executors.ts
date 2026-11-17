@@ -2,12 +2,9 @@ import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } f
 import type { ExecutionContext } from "../../core/types.ts";
 
 import { createAppStoreConnectAuthorization } from "../app_store_connect/jwt.ts";
-import {
-  defineProviderExecutors,
-  defineProviderProxy,
-  providerProxyEndpointPrefixes,
-  requireCustomCredential,
-} from "../provider-runtime.ts";
+import { requireCustomCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy, providerProxyEndpointPrefixes } from "../provider-proxy.ts";
 import { appleNotaryHandlers, appleNotaryApiOrigin, validateAppleNotaryCredential } from "./runtime.ts";
 
 const service = "apple_notary";

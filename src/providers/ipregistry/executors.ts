@@ -1,23 +1,17 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  isAbortLikeError,
-  providerUserAgent,
-  ProviderRequestError,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { isAbortLikeError, providerUserAgent, ProviderRequestError, providerInputError } from "../provider-runtime.ts";
 
 const service = "ipregistry";
 const ipregistryBaseUrl = "https://api.ipregistry.co";
 const validationIp = "8.8.8.8";
 
 type IpregistryRequestPhase = "validate" | "execute";
-type IpregistryActionContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
-type IpregistryActionHandler = (input: Record<string, unknown>, context: IpregistryActionContext) => Promise<unknown>;
+type IpregistryActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 
 export const ipregistryActionHandlers: ProviderActionHandlers<"ipregistry", IpregistryActionHandler> = {
   async lookup_ip(input, context) {
@@ -134,7 +128,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "api_key",
         displayName: "Ipregistry API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: ipregistryBaseUrl,
         validationEndpoint: `/${validationIp}`,
@@ -154,7 +147,7 @@ async function requestIpregistryJson(
     method?: "GET" | "POST";
     body?: unknown;
   },
-  context: IpregistryActionContext,
+  context: ApiKeyProviderContext,
 ): Promise<unknown> {
   const method = input.method ?? "GET";
 
@@ -268,7 +261,7 @@ function mapIpregistryError(
     return new ProviderRequestError(phase === "validate" ? 400 : 401, normalizedMessage);
   }
   if (status === 400 || status === 404) {
-    return new ProviderRequestError(400, normalizedMessage);
+    return providerInputError(normalizedMessage);
   }
   if (status === 402 || status === 429) {
     return new ProviderRequestError(429, normalizedMessage);

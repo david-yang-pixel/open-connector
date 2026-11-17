@@ -5,8 +5,7 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
 import {
@@ -18,13 +17,9 @@ import {
   requiredRecord,
 } from "../../core/cast.ts";
 import { queryParams } from "../../core/request.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-  requiredInputString,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError, requiredInputString } from "../provider-runtime.ts";
 
 export const chartmogulApiBaseUrl = "https://api.chartmogul.com";
 const service = "chartmogul";
@@ -88,7 +83,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: normalized.uuid ? `chartmogul:${normalized.uuid}` : "chartmogul-api-key",
         displayName: normalized.name ?? "ChartMogul Account",
       },
-      grantedScopes: [],
       metadata: {
         accountUuid: normalized.uuid,
         accountName: normalized.name,
@@ -194,7 +188,7 @@ async function listContacts(input: Record<string, unknown>, context: ApiKeyProvi
 }
 
 async function requestChartmogulJson(input: {
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   path: string;
   query?: Record<string, QueryValue>;
   phase: ChartmogulRequestPhase;

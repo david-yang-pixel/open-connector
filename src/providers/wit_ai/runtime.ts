@@ -1,6 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -135,7 +134,6 @@ export async function validateWitAiCredential(
         accountId: "wit-ai-token",
         displayName: "Wit.ai API Token",
       },
-      grantedScopes: [],
       metadata: {
         validationEndpoint: "/apps",
         appCount: 0,
@@ -147,7 +145,6 @@ export async function validateWitAiCredential(
       accountId: primary.id,
       displayName: primary.name,
     },
-    grantedScopes: [],
     metadata: compactObject({
       validationEndpoint: "/apps",
       appId: primary.id,
@@ -369,7 +366,7 @@ async function deleteUtterances(input: Record<string, unknown>, context: ApiKeyP
 }
 
 async function witAiRequest<T>(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   input: WitAiRequestInput,
   phase: WitAiRequestPhase = "execute",
 ): Promise<T> {

@@ -1,10 +1,9 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { optionalRecord, optionalString } from "../../core/cast.ts";
-import { assertPublicHttpUrl, readBoundedResponseBytes } from "../../core/request.ts";
-import { providerFetch, providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
+import { assertPublicHttpUrl, readBoundedResponseBytes, storeResponseInTransit } from "../../core/request.ts";
+import { providerFetch, providerUserAgent, ProviderRequestError, providerInputError } from "../provider-runtime.ts";
 
 type KlangioActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 type KlangioJobOutput = "mxml" | "midi" | "pdf" | "gp5" | "json" | "midi_quant";
@@ -130,9 +129,7 @@ export const klangioActionHandlers: ProviderActionHandlers<"klangio", KlangioAct
   },
 };
 
-export async function validateKlangioCredential(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
-): Promise<CredentialValidationResult> {
+export async function validateKlangioCredential(context: ApiKeyProviderContext): Promise<CredentialValidationResult> {
   const validationEndpoint = `/job/${klangioValidationJobId}/status`;
   const response = await context.fetcher(buildKlangioUrl(validationEndpoint), {
     method: "GET",
@@ -150,7 +147,6 @@ export async function validateKlangioCredential(
       accountId: "api_key",
       displayName: "Klangio API Key",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: klangioApiBaseUrl,
       validationEndpoint,
@@ -220,20 +216,19 @@ async function downloadKlangioFile(input: {
     throw createKlangioError(response, payload);
   }
 
-  const bytes = await readBoundedResponseBytes(response, {
-    maxBytes: input.context.transitFiles.maxBytes,
-    fieldName: `Klangio ${input.actionName} file`,
-    createError: (message) => new ProviderRequestError(413, message),
-  });
-  if (bytes.byteLength === 0) {
-    throw new ProviderRequestError(502, `Klangio ${input.actionName} response did not include file bytes`);
-  }
-
   const contentType = normalizeMimeType(response.headers.get("content-type")) ?? input.fallbackMimeType;
   const name = appendExtensionIfMissing(input.fileName, extensionForMimeType(contentType));
-  const upload = await input.context.transitFiles.create(
-    new File([Uint8Array.from(bytes)], name, { type: contentType }),
-  );
+  const upload = await storeResponseInTransit(response, input.context.transitFiles, {
+    name,
+    mimeType: contentType,
+    fieldName: `Klangio ${input.actionName} file`,
+    createError: (message) => new ProviderRequestError(413, message),
+    signal: input.context.signal,
+  });
+  if (upload.sizeBytes === 0) {
+    await input.context.transitFiles.delete(upload.fileId).catch(() => undefined);
+    throw new ProviderRequestError(502, `Klangio ${input.actionName} response did not include file bytes`);
+  }
 
   return {
     file: {
@@ -245,7 +240,7 @@ async function downloadKlangioFile(input: {
       mimeType: contentType,
     },
     contentType,
-    contentLength: bytes.byteLength,
+    contentLength: upload.sizeBytes,
   };
 }
 
@@ -265,7 +260,7 @@ async function resolveKlangioUploadSource(
   if (fileUrl) {
     const url = assertPublicHttpUrl(fileUrl, {
       fieldName: "file.url",
-      createError: (message) => new ProviderRequestError(400, message),
+      createError: providerInputError,
     });
     const response = await providerFetch(url, {
       method: "GET",
@@ -324,7 +319,7 @@ async function readKlangioUploadSourceBytes(response: Response): Promise<Uint8Ar
   return readBoundedResponseBytes(response, {
     maxBytes: maxKlangioUploadSourceBytes,
     fieldName: "klangio upload source",
-    createError: (message) => new ProviderRequestError(400, message),
+    createError: providerInputError,
   });
 }
 
@@ -399,7 +394,7 @@ function createKlangioError(response: Response, payload: unknown): ProviderReque
   }
 
   if (response.status >= 400 && response.status < 500) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
 
   return new ProviderRequestError(response.status || 500, message);

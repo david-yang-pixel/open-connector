@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -9,7 +9,7 @@ import {
   optionalString,
   requiredString,
 } from "../../core/cast.ts";
-import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
+import { ProviderRequestError, providerUserAgent, providerInputError } from "../provider-runtime.ts";
 
 export const pagerDutyApiBaseUrl = "https://api.pagerduty.com";
 const pagerDutyAcceptHeader = "application/vnd.pagerduty+json;version=2";
@@ -61,7 +61,6 @@ export async function validatePagerDutyCredential(
     profile: {
       accountId: providerAccountId,
       displayName: accountLabel,
-      grantedScopes: [],
     },
     metadata: compactObject({
       apiBaseUrl: pagerDutyApiBaseUrl,
@@ -299,7 +298,7 @@ function mapPagerDutyError(
     return new ProviderRequestError(response.status, message);
   }
   if (response.status === 404 && notFoundAsInvalidInput) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (response.status === 429) {
     return new ProviderRequestError(429, message);

@@ -1,6 +1,6 @@
 import type { Plugin } from "vite";
 
-const catalogUrl = "https://oomol.com/en/apps/catalog.json";
+const catalogUrl = "https://connector.oomol.com/public/v1/apps";
 const publicModuleId = "virtual:oomol-provider-icons";
 const resolvedModuleId = `\0${publicModuleId}`;
 
@@ -10,7 +10,7 @@ interface CatalogItem {
 }
 
 interface CatalogPayload {
-  items?: unknown;
+  data?: unknown;
 }
 
 interface ProviderIconsPluginOptions {
@@ -33,9 +33,8 @@ export function providerIconsPlugin(options: ProviderIconsPluginOptions = {}): P
       cachedModule ??= options.iconUrls
         ? Promise.resolve(serializeProviderIcons(options.iconUrls))
         : loadProviderIconsModule().catch((error: unknown) => {
-            // The icon map is optional: the console falls back to homepage favicons and initials, so an
-            // unavailable catalog must not fail the build and block a deployment.
-            this.warn(`${error instanceof Error ? error.message : String(error)}; using homepage favicons instead.`);
+            const reason = error instanceof Error ? error.message : String(error);
+            this.warn(`Provider icon catalog unavailable: ${reason}. Using default provider icons.`);
             return serializeProviderIcons({});
           });
       return cachedModule;
@@ -44,18 +43,18 @@ export function providerIconsPlugin(options: ProviderIconsPluginOptions = {}): P
 }
 
 async function loadProviderIconsModule(): Promise<string> {
-  const response = await fetch(catalogUrl);
+  const response = await fetch(catalogUrl, { signal: AbortSignal.timeout(10_000) });
   if (!response.ok) {
     throw new Error(`Could not load OOMOL provider icons: ${response.status} ${response.statusText}`);
   }
 
   const payload = (await response.json()) as CatalogPayload;
-  if (!Array.isArray(payload.items)) {
-    throw new Error("Could not load OOMOL provider icons: catalog.items is not an array");
+  if (!Array.isArray(payload.data)) {
+    throw new Error("Could not load OOMOL provider icons: catalog.data is not an array");
   }
 
   const iconUrls: Record<string, string> = {};
-  for (const item of payload.items as CatalogItem[]) {
+  for (const item of payload.data as CatalogItem[]) {
     if (typeof item.service === "string" && typeof item.iconUrl === "string" && item.iconUrl.trim()) {
       iconUrls[item.service] = item.iconUrl;
     }

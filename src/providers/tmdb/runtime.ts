@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import {
   CastError,
@@ -19,7 +19,6 @@ export const tmdbApiBaseUrl: string = "https://api.themoviedb.org";
 const tmdbValidationPath = "/3/authentication";
 
 type TmdbActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
-type TmdbRequestContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
 
 const trendingMediaTypes = ["all", "movie", "tv", "person"];
 const trendingTimeWindows = ["day", "week"];
@@ -93,7 +92,6 @@ export async function validateTmdbCredential(
       accountId: "api_key",
       displayName: "TMDB API Read Access Token",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: tmdbApiBaseUrl,
       validationEndpoint: tmdbValidationPath,
@@ -103,7 +101,7 @@ export async function validateTmdbCredential(
 
 async function tmdbGet(
   path: string,
-  context: TmdbRequestContext,
+  context: ApiKeyProviderContext,
   query?: Record<string, string | number | boolean | undefined>,
   phase: "validate" | "execute" = "execute",
 ): Promise<unknown> {

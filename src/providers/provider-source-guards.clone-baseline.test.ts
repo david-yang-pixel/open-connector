@@ -1,7 +1,8 @@
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { sourceScanTimeout } from "./provider-source-guards.support.ts";
 
 /**
  * A generic runtime fact that already has one shared owner in this repository.
@@ -114,14 +115,14 @@ const cloneClasses: CloneClass[] = [
   },
   {
     id: "local-api-key-action-input",
-    owner: "ApiKeyActionRequest in src/providers/provider-runtime.ts",
-    ownerFile: providerRuntimeFile,
+    owner: "ApiKeyActionRequest in src/providers/provider-executors.ts",
+    ownerFile: "src/providers/provider-executors.ts",
     pattern: /interface \w*ApiKey\w*ActionInput\b/,
   },
   {
     id: "hand-written-proxy",
-    owner: "defineProviderProxy in src/providers/provider-runtime.ts",
-    ownerFile: providerRuntimeFile,
+    owner: "defineProviderProxy in src/providers/provider-proxy.ts",
+    ownerFile: "src/providers/provider-proxy.ts",
     pattern:
       /export (?:const proxy(?:: ProviderProxyExecutor)? =(?!\s*defineProviderProxy\b)|(?:async )?function proxy\b)/,
   },
@@ -150,7 +151,7 @@ const cloneClasses: CloneClass[] = [
     id: "local-action-name-union",
     owner:
       "the plain string action name every provider runtime already receives, or the generated ProviderActionName map for typed callers",
-    ownerFile: providerRuntimeFile,
+    ownerFile: "src/providers/provider-executors.ts",
     pattern: /^[^\S\n]*(?:export )?type \w+ActionName\b/,
   },
   {
@@ -226,7 +227,7 @@ const cloneSpellings: CloneSpellings[] = [
     id: "local-api-key-action-input",
     clones: ["interface ApiKeyProviderActionInput {", "interface EchotikApiKeyActionInput {"],
     callers: [
-      'import type { ApiKeyActionRequest } from "../provider-runtime.ts";',
+      'import type { ApiKeyActionRequest } from "../provider-executors.ts";',
       "async function runAction(request: ApiKeyActionRequest): Promise<unknown> {",
     ],
   },
@@ -302,14 +303,20 @@ const cloneSpellings: CloneSpellings[] = [
   },
 ];
 
-const matchesById = scanCloneClasses();
-const currentCounts = countMatches(matchesById);
-if (process.env.SEED_CLONE_BASELINE === "1") {
-  writeBaseline(currentCounts);
-} else if (process.env.UPDATE_CLONE_BASELINE === "1") {
-  writeBaseline(ratchetBaseline(readBaseline(), currentCounts));
-}
-const baseline = readBaseline();
+const sourceFiles = providerSourceFiles(providersDir);
+let matchesById: Record<string, CloneMatch[]>;
+let currentCounts: CloneCounts;
+let baseline: CloneCounts;
+beforeAll(() => {
+  matchesById = scanCloneClasses();
+  currentCounts = countMatches(matchesById);
+  if (process.env.SEED_CLONE_BASELINE === "1") {
+    writeBaseline(currentCounts);
+  } else if (process.env.UPDATE_CLONE_BASELINE === "1") {
+    writeBaseline(ratchetBaseline(readBaseline(), currentCounts));
+  }
+  baseline = readBaseline();
+}, sourceScanTimeout(sourceFiles.length));
 
 describe("provider clone-class ratchet", () => {
   it("keeps every provider file at or below its committed clone count", () => {
@@ -477,8 +484,9 @@ function scanCloneClasses(): Record<string, CloneMatch[]> {
     matches[cloneClass.id] = [];
   }
 
-  for (const path of providerSourceFiles(providersDir)) {
-    const file = relative(repositoryRoot, path);
+  for (const path of sourceFiles) {
+    // The baseline keys are POSIX paths; `relative` returns backslashes on Windows.
+    const file = relative(repositoryRoot, path).replaceAll("\\", "/");
     const text = readFileSync(path, "utf8");
     for (const cloneClass of cloneClasses) {
       if (cloneClass.ownerFile === file) {

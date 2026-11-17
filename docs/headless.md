@@ -2,9 +2,10 @@
 
 [![npm](https://img.shields.io/npm/v/@oomol-lab/open-connector.svg)](https://www.npmjs.com/package/@oomol-lab/open-connector)
 [![Node.js](https://img.shields.io/node/v/@oomol-lab/open-connector.svg)](https://nodejs.org)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](https://github.com/oomol-lab/open-connector/blob/main/LICENSE.txt)
+[![License: Modified Apache-2.0](https://img.shields.io/badge/License-Modified%20Apache--2.0-blue.svg)](https://github.com/oomol-lab/open-connector/blob/main/LICENSE.txt)
 
-Embeddable Open Connector runtime for Node.js 22.18+ and Bun 1.4+.
+Embeddable Open Connector runtime for Node.js 22.23.4+, 24.22.1+, or 26.12.1+ within those release
+lines, and Bun 1.4.4+. These minimums include the CVE-2026-111497 Brotli decoder fix.
 
 This package is the headless runtime library. It owns providers, authorization,
 credentials, and storage. Your application owns the HTTP server, configuration,
@@ -55,8 +56,10 @@ layouts do not expose this package's own copy for a direct host import. On Bun,
 pass the same `fetch` handler to `Bun.serve()` and skip `@hono/node-server`.
 
 Importing the package starts nothing. Configuration is explicit; the library
-does not read environment variables. One runtime may be active per process
-because provider egress policy is process-wide. Keep administrator credentials
+does not read environment variables. Multiple runtimes may share a process; each
+owns its network policy and background tasks. Use separate data directories and
+database namespaces for independent tenants. Closing one runtime does not change
+another runtime’s network policy. Keep administrator credentials
 in your backend and authorize users before making management calls.
 
 `publicOrigin` is the external HTTP(S) URL of the runtime. A path such as
@@ -68,24 +71,29 @@ original request URL when you forward.
 
 `createConnectorRuntime(options)`:
 
-| Option          | Purpose                                                                                         |
-| --------------- | ----------------------------------------------------------------------------------------------- |
-| `dataDir`       | Writable directory for SQLite, local transit files, and upload staging. Required.               |
-| `publicOrigin`  | External HTTP(S) URL. A path is a mount prefix. Required.                                       |
-| `encryptionKey` | Encrypts stored credentials and OAuth state. Omit to store them in plain text.                  |
-| `adminToken`    | Bearer token for management APIs. Omit to leave them open.                                      |
-| `runtimeToken`  | Static bearer token for `/v1` and `/mcp`. JWT and admin-issued tokens are alternatives.         |
-| `jwt`           | `{ jwksUri, issuer, audience }` to verify `/v1` bearer tokens as JWTs.                          |
-| `postgres`      | `{ connectionString }` to use PostgreSQL instead of SQLite under `dataDir`.                     |
-| `actionPolicy`  | Allow or block actions and proxies by name (`service.*` and `*` are accepted).                  |
-| `transitFiles`  | TTL, size limit, and optional S3 for files exchanged with providers.                            |
-| `network`       | Private-network and trusted-host egress policy. Process-wide.                                   |
-| `apiReference`  | Serve `/docs` API-reference HTML. Off by default. Authorization completion pages are always on. |
-| `logger`        | `{ error, info, warn }`. Omit for silence.                                                      |
+| Option                   | Purpose                                                                                                              |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| `dataDir`                | Writable directory for SQLite, local transit files, and upload staging. Required.                                    |
+| `publicOrigin`           | External HTTP(S) URL. A path is a mount prefix. Required.                                                            |
+| `encryptionKey`          | Encrypts stored credentials and OAuth state. Omit to store them in plain text.                                       |
+| `adminToken`             | Bearer token for management APIs. Omit to leave them open.                                                           |
+| `runtimeToken`           | Static bearer token for `/v1` and `/mcp`. JWT and admin-issued tokens are alternatives.                              |
+| `jwt`                    | `{ jwksUri, issuer, audience }` to verify `/v1` bearer tokens as JWTs.                                               |
+| `postgres`               | `{ connectionString }` to use PostgreSQL instead of SQLite under `dataDir`.                                          |
+| `actionPolicy`           | Allow or block actions and proxies by name (`service.*` and `*` are accepted).                                       |
+| `transitFiles`           | TTL, size limit, and optional S3 for files exchanged with providers.                                                 |
+| `network`                | Private-network and trusted-host egress policy. Process-wide.                                                        |
+| `apiReference`           | Serve `/docs` API-reference HTML. Off by default. Authorization completion pages are always on.                      |
+| `oauthCloseDelaySeconds` | Seconds the OAuth completion page waits before closing its window. Defaults to 5; `0` closes it as soon as it loads. |
+| `logger`                 | `{ error, info, warn }`. Omit for silence.                                                                           |
 
 `connector.fetch(request)` is the HTTP boundary: `/v1/*`, `/mcp`,
 `/oauth/callback`, and admin `/api/*`. `connector.close()` aborts in-flight
 work and closes owned storage. It is safe to call more than once.
+
+## Provider Triggers
+
+Provider Triggers use the same headless runtime and selected provider registry as Actions. Grant explicit `allowedTriggers` on a persistent runtime token to manage remote subscriptions; public proxy grants are independent. Runtime shutdown cancels and waits for maintenance. Include the generated catalog and migrations supplied by `getConnectorBuildOptions`; selected-provider builds include only those providers' Trigger executors. See the [Trigger runtime reference](https://github.com/oomol-lab/open-connector/blob/main/docs/runtime-api.md#provider-triggers) for request shapes and cleanup.
 
 ## Connector SDK
 
@@ -130,6 +138,33 @@ For Bun executables, include `getConnectorAssetDirectory()` in
 the asset directory named `open-connector`; package assets resolve
 independently of the working directory.
 
+To include only selected providers, use the build helper:
+
+```ts
+import { getConnectorBuildOptions } from "@oomol-lab/open-connector/build";
+
+const prepared = await getConnectorBuildOptions({ providers: ["github", "slack"] });
+try {
+  await Bun.build({
+    entrypoints: ["./server.ts"],
+    target: "bun",
+    format: "esm",
+    splitting: true,
+    plugins: prepared.plugins,
+    external: prepared.external,
+    compile: { outfile: "./app", assets: prepared.assets },
+  });
+} finally {
+  await prepared.dispose();
+}
+```
+
+Omitting options or `providers` includes all providers; `providers: []` includes
+none. Unknown IDs fail preparation. Selection includes each provider's complete
+executor module and catalog entry, including authentication and action schemas.
+Shared runtime code and migrations remain included. The runtime API is unchanged,
+and the installed npm package still contains all providers.
+
 ## Documentation
 
 - [Runtime API and MCP](https://github.com/oomol-lab/open-connector/blob/main/docs/runtime-api.md)
@@ -139,4 +174,7 @@ independently of the working directory.
 
 ## License
 
-[Apache-2.0](https://github.com/oomol-lab/open-connector/blob/main/LICENSE.txt)
+[OpenConnector License](https://github.com/oomol-lab/open-connector/blob/main/LICENSE.txt), a modified
+Apache License 2.0. Providing OpenConnector to third parties as a hosted connector service requires a
+commercial license from OOMOL. See
+[NOTICE.md](https://github.com/oomol-lab/open-connector/blob/main/NOTICE.md).

@@ -1,6 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { compactObject, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
 import { providerUserAgent, ProviderRequestError, runProviderRequest } from "../provider-runtime.ts";
@@ -51,7 +50,6 @@ export async function validateBuiltwithCredential(input: {
       accountId: "builtwith_api_key",
       displayName: "BuiltWith API Key",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: builtwithApiBaseUrl,
       validationEndpoint: builtwithValidationPath,
@@ -157,7 +155,7 @@ async function builtwithRequest(
     path: string;
     query?: Record<string, string | undefined>;
   },
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: "validate" | "execute",
 ): Promise<unknown> {
   return runProviderRequest({ signal: context.signal, label: "BuiltWith" }, async (signal) => {

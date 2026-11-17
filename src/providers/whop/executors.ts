@@ -1,14 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean, optionalNumber, optionalRawString, optionalRecord } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "whop";
 
@@ -19,8 +15,7 @@ const whopValidationPath = "/companies";
 
 type WhopQueryValue = boolean | number | readonly string[] | string | undefined;
 type WhopRequestMode = "validate" | "execute";
-type WhopActionContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
-type WhopActionHandler = (input: Record<string, unknown>, context: WhopActionContext) => Promise<unknown>;
+type WhopActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 
 interface WhopRequestOptions {
   apiKey: string;
@@ -190,7 +185,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: firstCompanyId ? `whop:${firstCompanyId}` : "whop-api-key",
         displayName: firstCompanyTitle ?? "Whop API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: whopApiBaseUrl,
         apiVersion: whopApiVersion,

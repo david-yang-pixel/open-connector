@@ -1,10 +1,11 @@
 import type { CredentialValidationResult, ProviderExecutors } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { createHash } from "node:crypto";
 import { compactObject, requiredString } from "../../core/cast.ts";
-import { defineApiKeyProviderExecutors, providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { providerUserAgent, ProviderRequestError, providerInputError } from "../provider-runtime.ts";
 
 type QueryValue = string | number | readonly string[] | undefined;
 type QuoActionContext = ApiKeyProviderContext;
@@ -159,7 +160,7 @@ export async function validateQuoCredential(
   const accountLabel = readOptionalString(firstPhoneNumber?.number) ?? "Quo API Key";
 
   return {
-    profile: { accountId: providerAccountId, displayName: accountLabel, grantedScopes: [] },
+    profile: { accountId: providerAccountId, displayName: accountLabel },
     metadata: {
       apiBaseUrl: quoApiBaseUrl,
       validationEndpoint: "/v1/phone-numbers",
@@ -241,7 +242,7 @@ function createQuoError(status: number, payload: unknown) {
   const message = extractErrorMessage(payload) ?? `Quo request failed with ${status || 500}`;
 
   if (status === 400 || status === 401 || status === 404) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
 
   if (status === 402 || status === 403) {

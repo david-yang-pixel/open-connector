@@ -1,12 +1,11 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { optionalRawString, optionalRecord, requiredString } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   isAbortLikeError,
   providerInputError,
   ProviderRequestError,
@@ -89,7 +88,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "quipteams:api-key",
         displayName: "Quipteams API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: quipteamsApiBaseUrl,
         validationEndpoint: "/api/v1/products",
@@ -140,7 +138,7 @@ async function requestQuipteamsDetail(
 async function requestQuipteamsJson(input: {
   path: string;
   query?: Record<string, string>;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   phase: QuipteamsRequestPhase;
 }): Promise<unknown> {
   const timeout = createProviderTimeout(input.context.signal);

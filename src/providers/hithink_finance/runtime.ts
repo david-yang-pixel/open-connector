@@ -1,7 +1,19 @@
-import type { TransitFileWriter } from "../../core/types.ts";
+import type { CredentialValidationResult, TransitFileWriter } from "../../core/types.ts";
 
-import { compactObject } from "../../core/cast.ts";
-import { runProviderRequest, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
+import {
+  compactObject,
+  optionalInteger,
+  optionalNumber,
+  optionalString,
+  optionalStringArray,
+} from "../../core/cast.ts";
+import {
+  requiredInputNumber,
+  requiredInputString,
+  runProviderRequest,
+  ProviderRequestError,
+  providerUserAgent,
+} from "../provider-runtime.ts";
 import { createMarketDumpHandlers } from "./market-dumps.ts";
 
 type HithinkFinanceQueryValue = string | number | undefined;
@@ -21,38 +33,12 @@ type HithinkFinanceGet = (
   context: HithinkFinanceActionContext,
 ) => Promise<unknown>;
 
-function requiredString(value: unknown, fieldName: string) {
-  if (typeof value !== "string" || !value.trim()) {
-    throw hithinkError("invalid_input", `${fieldName} is required`, 400);
-  }
-  return value.trim();
-}
-
-function optionalString(value: unknown) {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-function optionalStringArray(value: unknown) {
-  return Array.isArray(value) && value.every((item) => typeof item === "string") ? value : undefined;
-}
-
 function requiredStringArray(value: unknown, fieldName: string) {
   const result = optionalStringArray(value);
   if (!result || result.length === 0) {
     throw hithinkError("invalid_input", `${fieldName} is required`, 400);
   }
-  return result.map((item, index) => requiredString(item, `${fieldName}[${index}]`));
-}
-
-function optionalNumber(value: unknown) {
-  return typeof value === "number" ? value : undefined;
-}
-
-function requiredNumber(value: unknown, fieldName: string) {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    throw hithinkError("invalid_input", `${fieldName} is required`, 400);
-  }
-  return value;
+  return result.map((item, index) => requiredInputString(item, `${fieldName}[${index}]`));
 }
 
 type QueryValue = HithinkFinanceQueryValue;
@@ -73,7 +59,7 @@ export const hithinkFinanceApiBaseUrl = "https://fuyao.aicubes.cn";
 export async function validateHithinkFinanceCredential(
   apiKey: string,
   fetcher: typeof fetch,
-): Promise<import("../../core/types.ts").CredentialValidationResult> {
+): Promise<CredentialValidationResult> {
   await hithinkFinanceGet("/api/meta/tickers/search", { q: "600519.SH", limit: 1 }, apiKey, fetcher, "validate");
 
   return {
@@ -123,7 +109,7 @@ export async function fetchHithinkFinanceProxy(input: HithinkFinanceProxyInput):
     }
     throw error;
   }
-  const code = readInteger(payload.code);
+  const code = optionalInteger(payload.code);
   if (!response.ok || code !== 0) {
     throw buildProviderError(response.status, code, payload, "execute");
   }
@@ -187,7 +173,7 @@ export const hithinkFinanceActionHandlers: Record<string, ActionHandler> = {
     return get(
       "/api/meta/tickers/search",
       {
-        q: requiredString(input.query, "query"),
+        q: requiredInputString(input.query, "query"),
         exchange: optionalString(input.exchange),
         asset_type: optionalStringArray(input.assetTypes)?.join(","),
         limit: optionalNumber(input.limit),
@@ -222,10 +208,10 @@ export const hithinkFinanceActionHandlers: Record<string, ActionHandler> = {
     return get(
       "/api/a-share/prices/historical",
       {
-        thscode: requiredString(input.thscode, "thscode"),
+        thscode: requiredInputString(input.thscode, "thscode"),
         interval: "1d",
-        start: requiredNumber(input.startTimeMs, "startTimeMs"),
-        end: requiredNumber(input.endTimeMs, "endTimeMs"),
+        start: requiredInputNumber(input.startTimeMs, "startTimeMs"),
+        end: requiredInputNumber(input.endTimeMs, "endTimeMs"),
         adjust: optionalString(input.adjust),
         offset: optionalNumber(input.offset),
       },
@@ -236,7 +222,7 @@ export const hithinkFinanceActionHandlers: Record<string, ActionHandler> = {
     return get(
       "/api/a-share/corporate-actions/adjustment-factors",
       {
-        thscode: requiredString(input.thscode, "thscode"),
+        thscode: requiredInputString(input.thscode, "thscode"),
         from: optionalString(input.from),
         to: optionalString(input.to),
       },
@@ -256,8 +242,8 @@ export const hithinkFinanceActionHandlers: Record<string, ActionHandler> = {
     return get(
       "/api/a-share/financials/indicators",
       {
-        thscode: requiredString(input.thscode, "thscode"),
-        report: requiredString(input.report, "report"),
+        thscode: requiredInputString(input.thscode, "thscode"),
+        report: requiredInputString(input.report, "report"),
       },
       context,
     );
@@ -278,7 +264,7 @@ export const hithinkFinanceActionHandlers: Record<string, ActionHandler> = {
   get_index_constituents(input, context) {
     return get(
       "/api/a-share-index/constituents/ths-stock-list",
-      { thscode: requiredString(input.thscode, "thscode") },
+      { thscode: requiredInputString(input.thscode, "thscode") },
       context,
     );
   },
@@ -293,10 +279,10 @@ export const hithinkFinanceActionHandlers: Record<string, ActionHandler> = {
     return get(
       "/api/a-share-index/prices/historical",
       {
-        thscode: requiredString(input.thscode, "thscode"),
+        thscode: requiredInputString(input.thscode, "thscode"),
         interval: "1d",
-        start: requiredNumber(input.startTimeMs, "startTimeMs"),
-        end: requiredNumber(input.endTimeMs, "endTimeMs"),
+        start: requiredInputNumber(input.startTimeMs, "startTimeMs"),
+        end: requiredInputNumber(input.endTimeMs, "endTimeMs"),
       },
       context,
     );
@@ -342,30 +328,34 @@ function createFundHandlers(get: HithinkFinanceGet): Record<string, HithinkFinan
       });
     },
     get_fund_market_snapshot(input, context) {
-      return get("/api/fund/market/snapshot", { thscode: requiredString(input.thscode, "thscode") }, context);
+      return get("/api/fund/market/snapshot", { thscode: requiredInputString(input.thscode, "thscode") }, context);
     },
     get_fund_market_history(input, context) {
       return get(
         "/api/fund/market/historical",
         {
-          thscode: requiredString(input.thscode, "thscode"),
+          thscode: requiredInputString(input.thscode, "thscode"),
           interval: "1d",
-          start: requiredNumber(input.startTimeMs, "startTimeMs"),
-          end: requiredNumber(input.endTimeMs, "endTimeMs"),
+          start: requiredInputNumber(input.startTimeMs, "startTimeMs"),
+          end: requiredInputNumber(input.endTimeMs, "endTimeMs"),
         },
         context,
       );
     },
     get_fund_company(input, context) {
-      return get("/api/fund/companies/detail", { company_id: requiredString(input.companyId, "companyId") }, context);
+      return get(
+        "/api/fund/companies/detail",
+        { company_id: requiredInputString(input.companyId, "companyId") },
+        context,
+      );
     },
     get_fund_industry_allocation(input, context) {
       return getFund(get, "/api/fund/portfolio/industry-allocation", input, context);
     },
     get_fund_performance_indicators(input, context) {
       return getFund(get, "/api/fund/performance/indicators-historical", input, context, {
-        start: requiredNumber(input.startTimeMs, "startTimeMs"),
-        end: requiredNumber(input.endTimeMs, "endTimeMs"),
+        start: requiredInputNumber(input.startTimeMs, "startTimeMs"),
+        end: requiredInputNumber(input.endTimeMs, "endTimeMs"),
       });
     },
     get_fund_drawdowns(input, context) {
@@ -396,7 +386,7 @@ function createFundHandlers(get: HithinkFinanceGet): Record<string, HithinkFinan
     },
     get_fund_manager_performance(input, context) {
       return getManager(get, "/api/fund/managers/performance", input, context, {
-        range: requiredString(input.range, "range"),
+        range: requiredInputString(input.range, "range"),
       });
     },
     get_fund_manager_experience(input, context) {
@@ -414,7 +404,7 @@ function createFundHandlers(get: HithinkFinanceGet): Record<string, HithinkFinan
     list_fund_offerings(input, context) {
       return get(
         "/api/fund/offerings/list",
-        { subscribe: requiredString(input.subscriptionStatus, "subscriptionStatus") },
+        { subscribe: requiredInputString(input.subscriptionStatus, "subscriptionStatus") },
         context,
       );
     },
@@ -446,8 +436,8 @@ function getFund(
   return get(
     path,
     {
-      fund_type: requiredString(input.fundType, "fundType"),
-      thscode: requiredString(input.thscode, "thscode"),
+      fund_type: requiredInputString(input.fundType, "fundType"),
+      thscode: requiredInputString(input.thscode, "thscode"),
       ...extra,
     },
     context,
@@ -471,7 +461,7 @@ function getManager(
   context: HithinkFinanceActionContext,
   extra: Record<string, HithinkFinanceQueryValue> = {},
 ) {
-  return get(path, { manager_id: requiredString(input.managerId, "managerId"), ...extra }, context);
+  return get(path, { manager_id: requiredInputString(input.managerId, "managerId"), ...extra }, context);
 }
 
 function getFundHoldingsHistory(
@@ -481,8 +471,8 @@ function getFundHoldingsHistory(
   context: HithinkFinanceActionContext,
 ) {
   return getFund(get, path, input, context, {
-    report_type: requiredString(input.reportType, "reportType"),
-    end_date: requiredString(input.endDate, "endDate"),
+    report_type: requiredInputString(input.reportType, "reportType"),
+    end_date: requiredInputString(input.endDate, "endDate"),
   });
 }
 
@@ -528,7 +518,7 @@ function createSpecialDataHandlers(get: HithinkFinanceGet): Record<string, Hithi
     get_hot_stock_history(input, context) {
       return get(
         "/api/a-share/special-data/hot-stock-list-history",
-        { date: requiredString(input.date, "date") },
+        { date: requiredInputString(input.date, "date") },
         context,
       );
     },
@@ -536,9 +526,9 @@ function createSpecialDataHandlers(get: HithinkFinanceGet): Record<string, Hithi
       return get(
         "/api/a-share/special-data/hot-stock-rank-trend",
         {
-          thscode: requiredString(input.thscode, "thscode"),
-          start_date: requiredString(input.startDate, "startDate"),
-          end_date: requiredString(input.endDate, "endDate"),
+          thscode: requiredInputString(input.thscode, "thscode"),
+          start_date: requiredInputString(input.startDate, "startDate"),
+          end_date: requiredInputString(input.endDate, "endDate"),
         },
         context,
       );
@@ -582,8 +572,8 @@ function getFinancialStatements(path: string, input: Record<string, unknown>, co
   return get(
     path,
     {
-      thscode: requiredString(input.thscode, "thscode"),
-      period: optionalString(input.period),
+      thscode: requiredInputString(input.thscode, "thscode"),
+      period: optionalString(input.period) ?? "annual",
       limit: optionalNumber(input.limit),
       start: optionalNumber(input.startTimeMs),
       end: optionalNumber(input.endTimeMs),
@@ -641,7 +631,7 @@ async function hithinkFinanceGet(
     }
     throw error;
   }
-  const code = readInteger(payload.code);
+  const code = optionalInteger(payload.code);
   if (!response.ok || code !== 0) {
     throw buildProviderError(response.status, code, payload, phase);
   }
@@ -707,11 +697,10 @@ function buildProviderError(
     );
   }
   if (code === 4001 || status === 429) {
-    return hithinkError(
-      "rate_limited",
-      `${detail}. Reduce request frequency and concurrency, then retry with exponential backoff (up to 3 attempts)`,
-      429,
-    );
+    const retryAdvice = message.startsWith("Global request rate limit exceeded")
+      ? "This upstream limit is shared across the account. Wait before retrying; reconnecting or sending concurrent retries will not reset it"
+      : "Reduce request frequency and concurrency, then retry with exponential backoff (up to 3 attempts)";
+    return hithinkError("rate_limited", `${detail}. ${retryAdvice}`, 429);
   }
   if (code === 4040) {
     return hithinkError(
@@ -738,10 +727,6 @@ function buildProviderError(
     return hithinkError("provider_error", detail, 502);
   }
   return hithinkError("provider_error", detail, status >= 500 ? 502 : 503);
-}
-
-function readInteger(value: unknown) {
-  return typeof value === "number" && Number.isInteger(value) ? value : undefined;
 }
 
 function hithinkError(code: string, message: string, status: number): ProviderRequestError {

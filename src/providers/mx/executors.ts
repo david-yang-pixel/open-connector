@@ -6,13 +6,10 @@ import type {
 } from "../../core/types.ts";
 import type { MxContext } from "./runtime.ts";
 
-import {
-  basicAuthorizationHeader,
-  defineProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  requireApiKeyCredential,
-} from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { basicAuthorizationHeader, ProviderRequestError } from "../provider-runtime.ts";
 import { mxActionHandlers, mxApiBaseUrl, validateMxCredential } from "./runtime.ts";
 
 const service = "mx";

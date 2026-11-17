@@ -1,9 +1,14 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
-import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
+import {
+  providerUserAgent,
+  ProviderRequestError,
+  providerInputError,
+  providerResponseError,
+} from "../provider-runtime.ts";
 
 const clockifyApiBaseUrl = "https://api.clockify.me/api/v1";
 
@@ -70,7 +75,6 @@ export async function validateClockifyCredential(
       accountId: userId,
       displayName: optionalString(user.name) ?? optionalString(user.email) ?? "Clockify User",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: clockifyApiBaseUrl,
       validationEndpoint: "/user",
@@ -402,16 +406,16 @@ async function readClockifyPayload(response: Response): Promise<unknown> {
 function createClockifyError(response: Response, payload: unknown, phase: ClockifyRequestPhase): ProviderRequestError {
   const message = readClockifyErrorMessage(payload) ?? `Clockify request failed with status ${response.status}`;
   if (phase === "validate" && (response.status === 401 || response.status === 403)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (response.status === 404) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (response.status === 429) {
     return new ProviderRequestError(429, message);
   }
   if (response.status >= 500) {
-    return new ProviderRequestError(502, message);
+    return providerResponseError(message);
   }
   return new ProviderRequestError(response.status, message);
 }

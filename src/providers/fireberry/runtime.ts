@@ -1,12 +1,17 @@
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { createHash } from "node:crypto";
 import { compactObject, optionalNumber, optionalRecord, requiredRecord } from "../../core/cast.ts";
-import { isAbortLikeError, providerUserAgent, ProviderRequestError, requiredInputString } from "../provider-runtime.ts";
+import {
+  isAbortLikeError,
+  providerUserAgent,
+  ProviderRequestError,
+  requiredInputString,
+  defaultProviderRequestTimeoutMs,
+} from "../provider-runtime.ts";
 
 export const fireberryApiBaseUrl = "https://api.fireberry.com";
-export const fireberryDefaultRequestTimeoutMs = 30_000;
 
 type FireberryRequestPhase = "validate" | "execute";
 type FireberryObjectName = "account" | "contact";
@@ -76,7 +81,6 @@ export async function validateFireberryApiKey(
   signal?: AbortSignal,
 ): Promise<{
   profile: { accountId: string; displayName: string };
-  grantedScopes: string[];
   metadata: Record<string, unknown>;
 }> {
   const payload = await requestFireberryJson({
@@ -99,7 +103,6 @@ export async function validateFireberryApiKey(
       accountId: `fireberry:${hashToken(apiKey)}`,
       displayName: "Fireberry API Token",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: fireberryApiBaseUrl,
       validationEndpoint: "/api/record/account",
@@ -221,8 +224,8 @@ async function requestFireberryJson(input: {
   signal?: AbortSignal;
 }) {
   const signal = input.signal
-    ? AbortSignal.any([input.signal, AbortSignal.timeout(fireberryDefaultRequestTimeoutMs)])
-    : AbortSignal.timeout(fireberryDefaultRequestTimeoutMs);
+    ? AbortSignal.any([input.signal, AbortSignal.timeout(defaultProviderRequestTimeoutMs)])
+    : AbortSignal.timeout(defaultProviderRequestTimeoutMs);
 
   try {
     const response = await input.fetcher(buildFireberryUrl(input.path, input.query), {

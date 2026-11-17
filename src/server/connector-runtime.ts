@@ -1,23 +1,28 @@
 import type { ActionPolicyConfig } from "../core/action-policy.ts";
+import type { ProviderHttpDispatchOptions } from "../core/provider-http-dispatch.ts";
+import type { ProviderNetworkPolicy } from "../core/provider-network-policy.ts";
 import type { RuntimeLogger } from "../core/types.ts";
+import type { McpOAuthClientMetadata } from "../custom-mcp/definition.ts";
 import type { RuntimeJwtConfig } from "./api/runtime-jwt.ts";
 import type { S3TransitClientOptions } from "./files/s3-transit-files.ts";
 import type { IStagedTransitFileService } from "./files/transit-file-store.ts";
+import type { McpOutputMode } from "./mcp-settings.ts";
+import type { OAuthServerSettings } from "./oauth/settings.ts";
 
 import { mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { loadCatalog } from "../catalog-store.ts";
 import { ActionPolicyService } from "../core/action-policy.ts";
-import { setEgressTrustedHosts, setPrivateNetworkAccessAllowed } from "../core/request.ts";
 import { ProviderLoader } from "../providers/provider-loader.ts";
 import { executorModules } from "../providers/registry.generated.ts";
+import { DEFAULT_OAUTH_CLOSE_DELAY_SECONDS, normalizeOAuthResultOrigins } from "./api/oauth-completion-page.ts";
 import { createRuntimeJwtVerifier } from "./api/runtime-jwt.ts";
 import { createConnectApp } from "./connect-app.ts";
+import { getConnectorAssetDirectory } from "./connector-assets.ts";
 import { cleanupStagedTransitFiles, createNodeTransitFileUpload } from "./files/node-transit-file-upload.ts";
 import { TransitFileService } from "./files/transit-files.ts";
+import { parseMcpOutputMode } from "./mcp-settings.ts";
 import { createSecretCodec } from "./secrets/secret-codec.ts";
-import { isStandaloneExecutable } from "./server-assets.ts";
 import { createDirectoryMigrationSource } from "./storage/migration-source.ts";
 import { createNodeRuntimeDatabase } from "./storage/node-runtime-database.ts";
 import { DEFAULT_RUN_LIMIT } from "./storage/runtime-store.ts";
@@ -41,14 +46,6 @@ export interface ConnectorPostgresOptions {
   connectionTimeoutMs?: number;
 }
 
-/** Provider egress policy. It is process-wide, which is why one runtime may be active per process. */
-export interface ConnectorNetworkOptions {
-  /** Let self-hosted providers reach instance hosts on private networks; loopback, link-local and cloud metadata stay blocked. */
-  allowPrivateNetwork?: boolean;
-  /** Hosts exempt from resolved-address validation, for domains a corporate VPN resolves to placeholder addresses. */
-  trustedHosts?: readonly string[];
-}
-
 export interface ConnectorS3Options extends S3TransitClientOptions {
   bucket: string;
 }
@@ -69,12 +66,25 @@ export interface ConnectorRuntimeOptions {
   dataDir: string;
   /** External HTTP(S) URL, optionally including a mount path such as /connector. */
   publicOrigin: string;
+  /** False when the host supplied a development fallback instead of an explicit public origin. */
+  publicOriginConfigured?: boolean;
   /** Encrypts stored credentials, OAuth client configuration, pending OAuth state and replayed action responses. Omit to store them in plain text. */
   encryptionKey?: string;
   /** Bearer token required for management requests such as connections, OAuth clients and policies. Omit to leave them open. */
   adminToken?: string;
   /** Static bearer token for the /v1 and /mcp execution API. JWT verification and console-issued tokens are the alternatives. */
   runtimeToken?: string;
+  /** Which credentials `/mcp` + `/v1` accept; default `runtime_token` (historical behavior). */
+  authMode?: "none" | "runtime_token" | "oauth" | "mixed";
+  /** Inbound OAuth 2.1 authorization server for remote MCP clients (ChatGPT et al). */
+  oauth?: OAuthServerSettings;
+  /**
+   * Trust reverse-proxy forwarding headers when keying the OAuth endpoints'
+   * rate-limit buckets. Default `false`; see `OAuthRoutesOptions`.
+   */
+  trustProxyHeaders?: boolean;
+  /** Dedicated bearer token for inbound provider event verification. Kept separate from the admin token. */
+  eventVerifyToken?: string;
   /** Verify /v1 bearer tokens as JWTs against a JWKS endpoint. */
   jwt?: RuntimeJwtConfig;
   /** Let ChatGPT custom connectors obtain /mcp runtime tokens through OAuth. Requires `adminToken` and an HTTPS `publicOrigin`. */
@@ -82,8 +92,10 @@ export interface ConnectorRuntimeOptions {
   /** Callbacks of other MCP clients that may register for MCP OAuth besides ChatGPT and the Gemini app. Each is matched exactly. */
   mcpOAuthRedirectUris?: string[];
   postgres?: ConnectorPostgresOptions;
-  network?: ConnectorNetworkOptions;
-  /** Allow or block actions and proxies by name. */
+  network?: ProviderNetworkPolicy;
+  /** Opt-in admission and result feedback for every provider HTTP transport attempt. */
+  providerHttpDispatch?: ProviderHttpDispatchOptions;
+  /** Allow or block actions, proxies and Triggers by name. */
   actionPolicy?: ActionPolicyConfig;
   /** Services, or `*`, whose connections may carry their own OAuth client instead of the configured one. */
   allowedCustomOAuth?: string[];
@@ -100,6 +112,14 @@ export interface ConnectorRuntimeOptions {
   logger?: RuntimeLogger;
   /** The standalone host opts into API-reference HTML. Authorization completion pages are always available. */
   apiReference?: boolean;
+  /** Defaults to compatible JSON text. Use compact only with clients that consume structuredContent. */
+  mcpOutputMode?: McpOutputMode;
+  /** Seconds the OAuth completion page waits before closing its window. Defaults to 5; `0` closes it as soon as it loads. */
+  oauthCloseDelaySeconds?: number;
+  /** Exact origins a provider-refusal callback page may post its result to. Never `*`. */
+  oauthResultOrigins?: string[];
+  /** Name and links Connect sends when it registers its own OAuth client with a custom MCP server. */
+  customMcpOAuthClient?: McpOAuthClientMetadata;
 }
 
 /** Standard web requests are the host boundary; credentials, databases and framework objects stay private. */
@@ -110,29 +130,10 @@ export interface ConnectorRuntime {
   close(): Promise<void>;
 }
 
-let runtimeActive = false;
-
-/** Directory to include in a host's Bun compile.assets. Its basename keeps connector assets namespaced. */
-export function getConnectorAssetDirectory(): string {
-  return isStandaloneExecutable()
-    ? join(import.meta.dirname, "open-connector")
-    : fileURLToPath(new URL("../../assets/open-connector/", import.meta.url));
-}
+export { getConnectorAssetDirectory } from "./connector-assets.ts";
 
 /** Create a headless runtime without opening a listener or installing process signal handlers. */
 export async function createConnectorRuntime(options: ConnectorRuntimeOptions): Promise<ConnectorRuntime> {
-  if (runtimeActive)
-    throw new Error("Only one Open Connector runtime may be active per process. Close it before creating another.");
-  runtimeActive = true;
-  try {
-    return await openRuntime(options);
-  } catch (error) {
-    releaseRuntime();
-    throw error;
-  }
-}
-
-async function openRuntime(options: ConnectorRuntimeOptions): Promise<ConnectorRuntime> {
   const publicUrl = new URL(options.publicOrigin);
   if (
     !["http:", "https:"].includes(publicUrl.protocol) ||
@@ -146,19 +147,24 @@ async function openRuntime(options: ConnectorRuntimeOptions): Promise<ConnectorR
   const publicOrigin = `${publicUrl.origin}${mountPath}`;
   if (!options.dataDir.trim()) throw new Error("dataDir must not be empty.");
   const dataDir = resolve(options.dataDir);
+  const mcpOutputMode = parseMcpOutputMode(options.mcpOutputMode);
   const ttlSeconds = options.transitFiles?.ttlSeconds ?? 86400;
   const maxBytes = options.transitFiles?.maxBytes ?? 100 * 1024 * 1024;
   if (!Number.isFinite(ttlSeconds) || ttlSeconds <= 0)
     throw new Error("transitFiles.ttlSeconds must be a positive number of seconds.");
   if (!Number.isFinite(maxBytes) || maxBytes <= 0) throw new Error("transitFiles.maxBytes must be a positive number.");
+  const oauthCloseDelaySeconds = options.oauthCloseDelaySeconds ?? DEFAULT_OAUTH_CLOSE_DELAY_SECONDS;
+  if (!Number.isInteger(oauthCloseDelaySeconds) || oauthCloseDelaySeconds < 0)
+    throw new Error("oauthCloseDelaySeconds must be a non-negative integer of seconds.");
+  // The same rules as `OOMOL_CONNECT_OAUTH_RESULT_ORIGINS`: a host passing the option directly must not be able
+  // to make the refusal page post OAuth state to `*` or to a value that is not an origin.
+  const oauthResultOrigins = normalizeOAuthResultOrigins(options.oauthResultOrigins ?? []);
   const assetDirectory = getConnectorAssetDirectory();
   const assets = options.assets ?? {
     catalogDir: join(assetDirectory, "catalog/apps"),
     catalogIndexFile: join(assetDirectory, "catalog/apps-index.json"),
     migrationDirectory: join(assetDirectory, "migrations"),
   };
-  setPrivateNetworkAccessAllowed(options.network?.allowPrivateNetwork ?? false);
-  setEgressTrustedHosts(options.network?.trustedHosts ?? []);
   const secretCodec = createSecretCodec(options.encryptionKey);
   const verifyRuntimeJwt = await createRuntimeJwtVerifier(options.jwt ?? {});
   const lazySchemas = options.lazySchemas ?? true;
@@ -214,16 +220,24 @@ async function openRuntime(options: ConnectorRuntimeOptions): Promise<ConnectorR
     const tempDir = join(dataDir, "tmp/transit-files");
     await transitFiles.cleanupExpired();
     await cleanupStagedTransitFiles(tempDir, ttlSeconds * 1000);
-    const { app, runtimeAuthConfigured } = await createConnectApp({
+    const { app, runtimeAuthConfigured, saasCleanup, triggerMaintenance } = await createConnectApp({
       catalog,
+      network: options.network,
       providerLoader: new ProviderLoader(executorModules),
+      providerHttpDispatch: options.providerHttpDispatch,
       runtimeDatabase: database,
       transitFiles,
       uploadTransitFile: createNodeTransitFileUpload({ transitFiles, tempDir }),
       publicOrigin,
+      configuredOrigin: options.publicOriginConfigured === false ? undefined : publicOrigin,
       secretCodec,
       adminToken: options.adminToken,
       runtimeToken: options.runtimeToken,
+      authMode: options.authMode,
+      oauth: options.oauth,
+      trustProxyHeaders: options.trustProxyHeaders,
+      eventVerifyToken: options.eventVerifyToken,
+      mcpOutputMode,
       verifyRuntimeJwt,
       mcpOAuth: options.mcpOAuth,
       mcpOAuthRedirectUris: options.mcpOAuthRedirectUris,
@@ -231,7 +245,12 @@ async function openRuntime(options: ConnectorRuntimeOptions): Promise<ConnectorR
       allowedCustomOAuth: options.allowedCustomOAuth,
       logger: options.logger,
       serveDocumentation: options.apiReference ?? false,
+      oauthCloseDelaySeconds,
+      oauthResultOrigins,
+      customMcpOAuthClient: options.customMcpOAuthClient,
     });
+    saasCleanup.start();
+    triggerMaintenance.start();
     const shutdown = new AbortController();
     const pending = new Set<Promise<Response>>();
     let closing: Promise<void> | undefined;
@@ -259,15 +278,11 @@ async function openRuntime(options: ConnectorRuntimeOptions): Promise<ConnectorR
         if (!closing) {
           closing = Promise.resolve().then(async () => {
             shutdown.abort(new Error("Open Connector runtime is closing."));
-            await Promise.allSettled([...pending]);
+            await Promise.allSettled([...pending, saasCleanup.close(), triggerMaintenance.close()]);
             try {
               await database.close();
             } finally {
-              try {
-                closeFiles();
-              } finally {
-                releaseRuntime();
-              }
+              closeFiles();
             }
           });
         }
@@ -282,12 +297,6 @@ async function openRuntime(options: ConnectorRuntimeOptions): Promise<ConnectorR
     }
     throw error;
   }
-}
-
-function releaseRuntime(): void {
-  setPrivateNetworkAccessAllowed(false);
-  setEgressTrustedHosts([]);
-  runtimeActive = false;
 }
 
 export type { RuntimeProviderSetup } from "./api/runtime-api.ts";

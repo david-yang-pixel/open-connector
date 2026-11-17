@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
 import { optionalInteger, optionalRecord, optionalString, pickOptionalInteger } from "../../core/cast.ts";
@@ -125,7 +125,6 @@ export async function validateAircallCredential(
       accountId: apiId,
       displayName: `Aircall API ${apiId}`,
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: aircallApiBaseUrl,
       validationEndpoint: aircallValidationPath,

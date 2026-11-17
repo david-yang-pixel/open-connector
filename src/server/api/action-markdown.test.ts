@@ -1,6 +1,7 @@
 import type { ActionDefinition } from "../../core/types.ts";
 
 import { describe, expect, it } from "vitest";
+import { jsonSchema } from "../../core/json-schema.ts";
 import { renderActionMarkdown } from "./action-markdown.ts";
 
 const action: ActionDefinition = {
@@ -50,11 +51,23 @@ describe("renderActionMarkdown", () => {
   });
 
   it("renders an execute_action example for MCP callers instead of HTTP requests", () => {
-    const markdown = renderActionMarkdown(action, { transport: { kind: "mcp" } });
+    const markdown = renderActionMarkdown(
+      {
+        ...action,
+        inputSchema: {
+          type: "object",
+          properties: { repo: { type: "string", pattern: "^prj_", minLength: 5 } },
+          required: ["repo"],
+        },
+      },
+      { transport: { kind: "mcp" } },
+    );
 
     expect(markdown).toContain("Call the `execute_action` tool with these arguments:");
     expect(markdown).toContain(
-      "```json\n" + JSON.stringify({ actionId: "github.delete_repository", input: { repo: "" } }, null, 2) + "\n```",
+      "```json\n" +
+        JSON.stringify({ actionId: "github.delete_repository", input: { repo: "prj_a" } }, null, 2) +
+        "\n```",
     );
     expect(markdown).toContain("Add `connectionName` to run the action with a named connection");
     expect(markdown).toContain("Use the `execute_action` tool above");
@@ -77,5 +90,21 @@ describe("renderActionMarkdown", () => {
     expect(markdown).toContain("## Execution Policy");
     expect(markdown).toContain("Denied: Action is blocked.");
     expect(markdown).toContain("`runtime`: `block_match` via `github.delete_repository`");
+  });
+
+  it("renders the description of a nullable property", () => {
+    const markdown = renderActionMarkdown(
+      {
+        ...action,
+        inputSchema: {
+          type: "object",
+          properties: { name: jsonSchema.nullableString("The nullable display name.") },
+          required: ["name"],
+        },
+      },
+      { transport: { kind: "mcp" } },
+    );
+
+    expect(markdown).toContain("The nullable display name.");
   });
 });

@@ -1,4 +1,7 @@
+import type { RuntimeStatus } from "./runtime-api.ts";
 import type { Context } from "hono";
+
+import { optionalString } from "../../core/cast.ts";
 
 /**
  * Loose JSON body shape accepted by local HTTP handlers.
@@ -79,12 +82,7 @@ export async function readRequestText(context: Context, maxBytes: number): Promi
 /**
  * Write the standard JSON error envelope used by local HTTP routes.
  */
-export function jsonError(
-  context: Context,
-  status: 400 | 401 | 403 | 404 | 413 | 500,
-  code: string,
-  message: string,
-): Response {
+export function jsonError(context: Context, status: RuntimeStatus, code: string, message: string): Response {
   return context.json(
     {
       error: {
@@ -112,11 +110,21 @@ export function internalError(context: Context, _error: unknown): Response {
 
 export class HttpRequestError extends Error {
   readonly code: string;
-  readonly status: 400 | 413;
+  readonly status: RuntimeStatus;
 
-  constructor(code: string, message: string, status: 400 | 413 = 400) {
+  constructor(code: string, message: string, status: RuntimeStatus = 400) {
     super(message);
     this.code = code;
     this.status = status;
   }
+}
+
+export function readConnectionName(context: Context, body?: Record<string, unknown>): string | undefined {
+  return (
+    optionalString(body?.connectionName) ??
+    optionalString(body?.alias) ??
+    optionalString(context.req.header("x-oo-connector-alias")) ??
+    optionalString(context.req.query("connectionName")) ??
+    optionalString(context.req.query("alias"))
+  );
 }

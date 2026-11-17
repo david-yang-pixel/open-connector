@@ -93,12 +93,16 @@ export function uploadResult(publicOrigin: string, fileId: string, info: Transit
  * ASCII-only form for clients that do not read `filename*`.
  */
 export function contentDispositionForFileName(name: string): string {
-  const asciiName = name.replace(/[^\u0020-\u007e]/gu, "_").replace(/["\\]/g, "_");
-  if (!/[\u0080-\u{10ffff}]/u.test(name)) {
+  // Metadata written before the write-time repair (or supplied by a caller)
+  // can still hold an unpaired surrogate. `encodeURIComponent` throws on it,
+  // which would fail every download for the whole lifetime of the file.
+  const repaired = name.toWellFormed();
+  const asciiName = repaired.replace(/[^\u0020-\u007e]/gu, "_").replace(/["\\]/g, "_");
+  if (!/[\u0080-\u{10ffff}]/u.test(repaired)) {
     return `attachment; filename="${asciiName}"`;
   }
 
-  return `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeExtendedValue(name)}`;
+  return `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeExtendedValue(repaired)}`;
 }
 
 /** Percent-encode a file name as an RFC 8187 `ext-value`, which allows fewer literals than a URI component. */
@@ -201,7 +205,9 @@ export function normalizeDescriptor(
   fallback: TransitFileDescriptor = { name: "file", mimeType: "application/octet-stream" },
 ): TransitFileDescriptor {
   return {
-    name: typeof input.name === "string" && input.name.trim() ? input.name.trim() : fallback.name,
+    // Repair unpaired UTF-16 surrogates at the storage boundary so every
+    // backend and every later reader sees a well-formed name.
+    name: typeof input.name === "string" && input.name.trim() ? input.name.trim().toWellFormed() : fallback.name,
     mimeType: typeof input.mimeType === "string" && input.mimeType.trim() ? input.mimeType.trim() : fallback.mimeType,
   };
 }

@@ -7,7 +7,9 @@ import type {
 import type { BrowserbaseContext } from "./runtime.ts";
 
 import { optionalString } from "../../core/cast.ts";
-import { defineProviderExecutors, defineProviderProxy, requireApiKeyCredential } from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import { browserbaseActionHandlers, validateBrowserbaseCredential } from "./runtime.ts";
 
 const service = "browserbase";

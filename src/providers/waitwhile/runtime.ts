@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ApiKeyProviderContext, ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ApiKeyProviderContext, ProviderActionHandlers } from "../provider-executors.ts";
 
 import { optionalRecord, optionalString } from "../../core/cast.ts";
 import {
@@ -32,7 +32,6 @@ export async function validateCredential(
   requirePage(payload);
   return {
     profile: { displayName: "Waitwhile API Key" },
-    grantedScopes: [],
     metadata: { apiBaseUrl: waitwhileApiBaseUrl },
   };
 }

@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { OAuthProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { OAuthProviderContext } from "../provider-executors.ts";
 
 import { createHash } from "node:crypto";
 import {
@@ -229,7 +229,6 @@ export async function fetchDida365CurrentAccount(
       accountId: `dida365:${createHash("sha256").update(accessToken).digest("hex").slice(0, 16)}`,
       displayName: sampleProjectName ? `Dida365 (${sampleProjectName})` : "Dida365 Account",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: dida365ApiBaseUrl,
       validationEndpoint: "/open/v1/project",

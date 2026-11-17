@@ -5,15 +5,24 @@ export interface CloudflareEnv {
   TRANSIT_FILES: R2BucketBinding | KVNamespaceBinding;
   TRANSIT_FILES_BACKEND?: "r2" | "kv"; // New: used to distinguish backend type at runtime
   ASSETS?: AssetsBinding;
+  OAUTH_KV?: KVNamespaceBinding;
   OOMOL_CONNECT_ORIGIN?: string;
   OOMOL_CONNECT_ADMIN_TOKEN?: string;
   OOMOL_CONNECT_RUNTIME_TOKEN?: string;
+  OOMOL_CONNECT_EVENT_VERIFY_TOKEN?: string;
+  OOMOL_CONNECT_MCP_OUTPUT_MODE?: string;
   OOMOL_CONNECT_ENCRYPTION_KEY?: string;
   OOMOL_CONNECT_ALLOWED_ACTIONS?: string;
   OOMOL_CONNECT_BLOCKED_ACTIONS?: string;
   OOMOL_CONNECT_ALLOWED_PROXIES?: string;
   OOMOL_CONNECT_BLOCKED_PROXIES?: string;
+  OOMOL_CONNECT_ALLOWED_TRIGGERS?: string;
+  OOMOL_CONNECT_BLOCKED_TRIGGERS?: string;
   OOMOL_CONNECT_ALLOWED_CUSTOM_OAUTH?: string;
+  OOMOL_CONNECT_OAUTH_RESULT_ORIGINS?: string;
+  OOMOL_CONNECT_CUSTOM_MCP_CLIENT_NAME?: string;
+  OOMOL_CONNECT_CUSTOM_MCP_CLIENT_LOGO_URI?: string;
+  OOMOL_CONNECT_CUSTOM_MCP_CLIENT_URI?: string;
   OOMOL_CONNECT_ALLOW_PRIVATE_NETWORK?: string;
   OOMOL_CONNECT_EGRESS_TRUSTED_HOSTS?: string;
   OOMOL_CONNECT_TRANSIT_FILE_TTL_SECONDS?: string;
@@ -21,6 +30,7 @@ export interface CloudflareEnv {
   OOMOL_CONNECT_RUN_LIMIT?: string;
   OOMOL_CONNECT_MCP_OAUTH?: string;
   OOMOL_CONNECT_MCP_OAUTH_REDIRECT_URIS?: string;
+  OOMOL_CONNECT_OAUTH_CLOSE_DELAY_SECONDS?: string;
 }
 
 export function resolvePublicOrigin(request: Request, env: CloudflareEnv): string {
@@ -35,4 +45,15 @@ export function readPositiveInteger(value: string | undefined, fallback: number)
 export function readBooleanFlag(value: string | undefined): boolean {
   const normalized = value?.trim().toLowerCase();
   return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+}
+
+/** Reads a non-negative integer setting. Empty, negative, and non-integer values fall back, since `Number("")` is 0. */
+export function readNonNegativeInteger(value: string | undefined, fallback: number): number {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return fallback;
+  }
+
+  const parsed = Number(trimmed);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
 }

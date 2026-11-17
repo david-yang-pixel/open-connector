@@ -1,15 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { optionalBoolean, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-  requiredInputString,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError, requiredInputString } from "../provider-runtime.ts";
 
 const service = "telnyx";
 const telnyxApiBaseUrl = "https://api.telnyx.com/v2";
@@ -73,7 +68,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "telnyx",
         displayName: "Telnyx API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: telnyxApiBaseUrl,
         validationEndpoint: validationPath,
@@ -130,7 +124,7 @@ function sendMessage(input: Record<string, unknown>, context: ApiKeyProviderCont
 async function requestTelnyx(input: {
   path: string;
   method?: "GET" | "POST";
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   body?: Record<string, unknown>;
   query?: Array<[string, unknown]>;
   phase: TelnyxRequestPhase;

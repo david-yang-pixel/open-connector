@@ -14,7 +14,8 @@ import { join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import nodemailer from "nodemailer";
-import { createPinnedLookup, resolveGuardedEgressTarget } from "../../core/guarded-fetch.ts";
+import { resolveGuardedEgressTarget } from "../../core/guarded-fetch.ts";
+import { createPinnedLookup } from "../../core/guarded-socket.ts";
 import { isIpAddress, isPrivateNetworkAccessAllowed } from "../../core/request.ts";
 import { mailAttachmentDownloadByteLimit, mailConnectionTimeoutMs, mailImapPort, mailSmtpPort } from "./config.ts";
 import { MailProtocolError } from "./errors.ts";
@@ -800,16 +801,17 @@ function normalizeAddress(value: unknown): MailAddress {
   };
 }
 
-function collectBodyParts(bodyStructure: unknown): BodyPart[] {
+function collectBodyParts(bodyStructure: unknown, isRoot = true): BodyPart[] {
   const record = toRecord(bodyStructure);
   if (!record) {
     return [];
   }
 
   const childNodes = record.childNodes;
-  const childParts = Array.isArray(childNodes) ? childNodes.flatMap(collectBodyParts) : [];
+  const childParts = Array.isArray(childNodes) ? childNodes.flatMap((child) => collectBodyParts(child, false)) : [];
   const type = readString(record.type)?.toLowerCase();
-  const part = readString(record.part);
+  // IMAP addresses a single-part root as section 1; ImapFlow leaves its part unset.
+  const part = readString(record.part) ?? (isRoot ? "1" : null);
   if (!type || !part || !type.startsWith("text/") || isAttachment(record)) {
     return childParts;
   }

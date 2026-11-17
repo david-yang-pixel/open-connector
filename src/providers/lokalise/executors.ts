@@ -1,14 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "lokalise";
 const lokaliseApiBaseUrl = "https://api.lokalise.com/api2";
@@ -78,7 +74,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: firstProjectId ?? service,
         displayName: firstProjectName ?? "Lokalise API Token",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: lokaliseApiBaseUrl,
         validationEndpoint: "/projects",
@@ -333,7 +328,7 @@ async function requestLokalise(
     query?: Record<string, unknown>;
     body?: Record<string, unknown>;
   },
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   mode: LokaliseRequestMode,
 ): Promise<{ payload: unknown; totalCount?: number }> {
   const url = new URL(path, `${lokaliseApiBaseUrl}/`);

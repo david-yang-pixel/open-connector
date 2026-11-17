@@ -2,13 +2,19 @@ import { describe, expect, it } from "vitest";
 import {
   base64Bytes,
   booleanString,
+  integer,
   looseArray,
+  nullableBoolean,
+  nullableRawString,
+  optionalIntegerLike,
   optionalIntegerOrNull,
   optionalNumberLike,
   optionalStringArray,
+  pickOptionalInteger,
   positiveInteger,
   rawStringOrNull,
   recordOrEmpty,
+  requiredArray,
   requiredBoolean,
   requiredNumber,
   requiredRawString,
@@ -22,6 +28,18 @@ describe("cast helpers", () => {
     expect(optionalNumberLike("")).toBeUndefined();
     expect(optionalNumberLike("not-a-number")).toBeUndefined();
   });
+
+  it("treats whitespace-only optional numbers as missing", () => {
+    expect(optionalNumberLike(" \t\n")).toBeUndefined();
+  });
+
+  it("preserves present optional numbers including zero and padded decimals", () => {
+    expect(optionalNumberLike(0)).toBe(0);
+    expect(optionalNumberLike("0")).toBe(0);
+    expect(optionalNumberLike(5.5)).toBe(5.5);
+    expect(optionalNumberLike(" 5.5 ")).toBe(5.5);
+  });
+
   it("decodes strict base64 bytes", () => {
     expect(Array.from(base64Bytes("aGVsbG8=", "payload"))).toEqual([104, 101, 108, 108, 111]);
   });
@@ -43,6 +61,32 @@ describe("cast helpers", () => {
     expect(optionalIntegerOrNull(0)).toBe(0);
     expect(optionalIntegerOrNull("0")).toBe(0);
     expect(optionalIntegerOrNull("2.5")).toBeNull();
+  });
+
+  it("treats whitespace-only optional integers as missing", () => {
+    expect(optionalIntegerLike("", "count")).toBeUndefined();
+    expect(optionalIntegerLike("   ", "count")).toBeUndefined();
+    expect(optionalIntegerLike("\t\n", "count")).toBeUndefined();
+  });
+
+  it("preserves present optional integers including zero and padded values", () => {
+    expect(optionalIntegerLike(0, "count")).toBe(0);
+    expect(optionalIntegerLike("0", "count")).toBe(0);
+    expect(optionalIntegerLike(2, "count")).toBe(2);
+    expect(optionalIntegerLike(" 2 ", "count")).toBe(2);
+    expect(() => optionalIntegerLike("2.5", "count")).toThrow("count must be an integer");
+  });
+
+  it("rejects a whitespace-only required integer instead of reading it as zero", () => {
+    expect(integer(" 2 ", "count")).toBe(2);
+    expect(() => integer("   ", "count")).toThrow("count must be an integer");
+    expect(() => integer("", "count")).toThrow("count must be an integer");
+  });
+
+  it("skips a blank integer when picking from a record", () => {
+    expect(pickOptionalInteger({ count: "   " }, "count")).toBeUndefined();
+    expect(pickOptionalInteger({ count: "   ", fallback: "3" }, "count", "fallback")).toBe(3);
+    expect(pickOptionalInteger({ count: " 4 " }, "count")).toBe(4);
   });
 
   it("rejects zero for positive integer strings", () => {
@@ -106,4 +150,26 @@ describe("cast helpers", () => {
     expect(booleanString("true")).toBeUndefined();
     expect(booleanString(undefined)).toBeUndefined();
   });
+
+  it("keeps null apart from absent values in the nullable raw string and boolean readers", () => {
+    expect(nullableRawString(null)).toBeNull();
+    expect(nullableRawString("")).toBe("");
+    expect(nullableRawString(" x ")).toBe(" x ");
+    expect(nullableRawString(1)).toBeUndefined();
+    expect(nullableRawString(undefined)).toBeUndefined();
+
+    expect(nullableBoolean(null)).toBeNull();
+    expect(nullableBoolean(false)).toBe(false);
+    expect(nullableBoolean(true)).toBe(true);
+    expect(nullableBoolean("true")).toBeUndefined();
+    expect(nullableBoolean(undefined)).toBeUndefined();
+  });
+});
+
+it("requires arrays without filtering provider-defined elements", () => {
+  const values = [null, 1, "value", { nested: true }];
+  expect(requiredArray(values, "data")).toBe(values);
+  expect(requiredArray([], "data")).toEqual([]);
+  for (const value of [null, undefined, {}, "[]"])
+    expect(() => requiredArray(value, "data", (message) => new Error(message))).toThrow("data must be an array");
 });

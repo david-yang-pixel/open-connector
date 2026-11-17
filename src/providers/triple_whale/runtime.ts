@@ -1,6 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -10,7 +9,7 @@ import {
   optionalRecord,
   optionalString,
 } from "../../core/cast.ts";
-import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
+import { providerUserAgent, ProviderRequestError, providerInputError } from "../provider-runtime.ts";
 
 const tripleWhaleApiBaseUrl = "https://api.triplewhale.com/api/v2/";
 const tripleWhaleValidateApiKeyPath = "/users/api-keys/me";
@@ -106,7 +105,7 @@ export async function validateTripleWhaleCredential(
 async function requestTripleWhaleJson(input: {
   path: string;
   method: "GET" | "POST";
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   phase: TripleWhaleRequestPhase;
   body?: Record<string, unknown>;
 }): Promise<unknown> {
@@ -122,7 +121,7 @@ async function requestTripleWhaleJson(input: {
 async function requestTripleWhale(input: {
   path: string;
   method: "GET" | "POST";
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   body?: Record<string, unknown>;
 }): Promise<Response> {
   const normalizedPath = input.path.startsWith("/") ? input.path.slice(1) : input.path;
@@ -176,7 +175,7 @@ function createTripleWhaleError(
   }
 
   if (phase === "validate" && [400, 401, 403].includes(response.status)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
 
   if (phase === "execute" && [401, 403].includes(response.status)) {
@@ -184,7 +183,7 @@ function createTripleWhaleError(
   }
 
   if (phase === "execute" && [400, 404, 422].includes(response.status)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
 
   return new ProviderRequestError(response.status || 500, message);

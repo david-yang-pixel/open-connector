@@ -1,16 +1,16 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   providerUserAgent,
   ProviderRequestError,
   readProviderJsonBody,
-  requireApiKeyCredential,
+  providerInputError,
 } from "../provider-runtime.ts";
 
 const service = "arcgis_online";
@@ -104,7 +104,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "api_key",
         displayName: "ArcGIS Online API Key",
       },
-      grantedScopes: [],
       metadata: {
         validationEndpoint: arcgisOnlineValidationPath,
         apiBaseUrl: arcgisOnlineApiBaseUrl,
@@ -117,7 +116,7 @@ export const credentialValidators: CredentialValidators = {
 async function requestArcgisOnline(input: {
   path: string;
   query: Record<string, ArcgisOnlineQueryValue>;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
 }): Promise<unknown> {
   const timeout = createProviderTimeout(input.context.signal);
   try {
@@ -188,7 +187,7 @@ function createArcgisOnlineError(status: number, payload: unknown): ProviderRequ
     return new ProviderRequestError(401, message);
   }
   if (status === 400 || upstreamCode === 400) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   return new ProviderRequestError(status >= 500 ? status : 502, message);
 }

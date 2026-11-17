@@ -1,15 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { optionalRecord, optionalString, stringRecord } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  isAbortLikeError,
-  providerUserAgent,
-  ProviderRequestError,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { isAbortLikeError, providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 
 const service = "harmonic_ai";
 const harmonicAiApiBaseUrl = "https://api.harmonic.ai";
@@ -17,8 +12,7 @@ const harmonicAiApiBaseUrl = "https://api.harmonic.ai";
 type HarmonicAiMethod = "GET" | "POST";
 type HarmonicAiRequestPhase = "validate" | "execute";
 type HarmonicAiQueryValue = string | number | readonly string[] | undefined;
-type HarmonicAiActionContext = ApiKeyProviderContext;
-type HarmonicAiActionHandler = (input: Record<string, unknown>, context: HarmonicAiActionContext) => Promise<unknown>;
+type HarmonicAiActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 
 interface HarmonicAiRequestOptions {
   method?: HarmonicAiMethod;
@@ -85,7 +79,6 @@ export const credentialValidators: CredentialValidators = {
       profile: {
         displayName: "Harmonic.ai API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: harmonicAiApiBaseUrl,
         validationEndpoint: "/enrichment_status",
@@ -96,7 +89,7 @@ export const credentialValidators: CredentialValidators = {
 
 async function harmonicAiEnrich(
   input: Record<string, unknown>,
-  context: HarmonicAiActionContext,
+  context: ApiKeyProviderContext,
   path: "/companies" | "/persons",
 ): Promise<unknown> {
   const response = (await harmonicAiRequest(context, {
@@ -118,7 +111,7 @@ async function harmonicAiEnrich(
 
 async function harmonicAiGetEnrichmentStatus(
   input: Record<string, unknown>,
-  context: HarmonicAiActionContext,
+  context: ApiKeyProviderContext,
 ): Promise<unknown> {
   const payload = await harmonicAiRequest(context, {
     path: "/enrichment_status",
@@ -135,7 +128,7 @@ async function harmonicAiGetEnrichmentStatus(
 
 function harmonicAiGetEntity(
   input: Record<string, unknown>,
-  context: HarmonicAiActionContext,
+  context: ApiKeyProviderContext,
   basePath: "/companies" | "/persons",
 ): Promise<unknown> {
   return harmonicAiRequest(context, {
@@ -148,7 +141,7 @@ function harmonicAiGetEntity(
 
 function harmonicAiGetCompanyEmployees(
   input: Record<string, unknown>,
-  context: HarmonicAiActionContext,
+  context: ApiKeyProviderContext,
 ): Promise<unknown> {
   return harmonicAiRequest(context, {
     path: `/companies/${encodeURIComponent(String(input.id_or_urn))}/employees`,
@@ -162,10 +155,7 @@ function harmonicAiGetCompanyEmployees(
   });
 }
 
-async function harmonicAiRequest(
-  context: Pick<HarmonicAiActionContext, "apiKey" | "fetcher" | "signal">,
-  input: HarmonicAiRequestOptions,
-): Promise<unknown> {
+async function harmonicAiRequest(context: ApiKeyProviderContext, input: HarmonicAiRequestOptions): Promise<unknown> {
   const url = new URL(input.path, harmonicAiApiBaseUrl);
   appendQuery(url, input.query);
 

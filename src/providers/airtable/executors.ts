@@ -4,8 +4,10 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { BearerProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { IntegrationDefinition } from "../../triggers/common/integration.ts";
+import type { PollDefinition } from "../../triggers/common/poll.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { BearerProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -16,14 +18,16 @@ import {
   optionalString,
   optionalStringArray,
 } from "../../core/cast.ts";
+import { defineBearerProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineBearerProviderExecutors,
-  defineProviderProxy,
   ProviderRequestError,
   providerResponseError,
   providerUserAgent,
   requiredResponseRecord,
+  providerInputError,
 } from "../provider-runtime.ts";
+import { airtableRecordChanged } from "./trigger-on-record-changed.ts";
 
 type AirtableRequestMode = "validate" | "execute";
 type AirtableActionInput = Record<string, unknown>;
@@ -496,10 +500,10 @@ function createAirtableError(
     return new ProviderRequestError(mode === "validate" ? 400 : response.status, message);
   }
   if (notFoundAsInvalidInput && response.status === 404) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (response.status === 422) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (response.status === 429) {
     return new ProviderRequestError(429, message);
@@ -788,3 +792,5 @@ function requireString(value: unknown, fieldName: string): string {
   }
   return text;
 }
+
+export const triggers: readonly (IntegrationDefinition | PollDefinition)[] = [airtableRecordChanged];

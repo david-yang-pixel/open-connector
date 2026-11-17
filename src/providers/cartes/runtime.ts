@@ -1,6 +1,7 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import {
   compactObject,
@@ -258,7 +259,6 @@ export async function validateCartesCredential(
       accountId: username ?? "cartes-api-token",
       displayName: username ? `Cartes.io ${username}` : "Cartes.io API Token",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: cartesApiBaseUrl,
       username,

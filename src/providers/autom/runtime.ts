@@ -1,11 +1,12 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { createHash } from "node:crypto";
-import { optionalNumber, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
+import { optionalInteger, optionalNumber, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
 import { queryParams } from "../../core/request.ts";
-import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
+import { providerUserAgent, ProviderRequestError, requiredInputString } from "../provider-runtime.ts";
 
 export const automApiBaseUrl = "https://api.autom.dev";
 export const automUsagePath = "/v1/usage";
@@ -69,6 +70,153 @@ export const automActionHandlers: ProviderActionHandlers<"autom", AutomActionHan
     });
     return { locations: requireAutomArray(payload, "find_google_locations") };
   },
+  async google_search(input, context): Promise<unknown> {
+    const payload = await requestAutomJson({
+      path: "/v1/google/search",
+      apiKey: context.apiKey,
+      query: {
+        query: requiredInputString(input.query, "query"),
+        gl: optionalString(input.country),
+        hl: optionalString(input.language),
+        tbs: optionalString(input.tbs),
+        safe: optionalString(input.safe),
+        location: optionalString(input.location),
+        page: optionalInteger(input.page),
+        num: optionalInteger(input.numResults),
+      },
+      fetcher: context.fetcher,
+      phase: "execute",
+      signal: context.signal,
+    });
+    return requireAutomObject(payload, "google_search");
+  },
+  async google_search_light(input, context): Promise<unknown> {
+    const payload = await requestAutomJson({
+      path: "/v1/google/search/light",
+      apiKey: context.apiKey,
+      query: {
+        query: requiredInputString(input.query, "query"),
+        gl: optionalString(input.country),
+        hl: optionalString(input.language),
+      },
+      fetcher: context.fetcher,
+      phase: "execute",
+      signal: context.signal,
+    });
+    return requireAutomObject(payload, "google_search_light");
+  },
+  async google_news(input, context): Promise<unknown> {
+    const payload = await requestAutomJson({
+      path: "/v1/google/news",
+      apiKey: context.apiKey,
+      query: {
+        query: requiredInputString(input.query, "query"),
+        gl: optionalString(input.country),
+        hl: optionalString(input.language),
+        page: optionalInteger(input.page),
+        num: optionalInteger(input.numResults),
+      },
+      fetcher: context.fetcher,
+      phase: "execute",
+      signal: context.signal,
+    });
+    return requireAutomObject(payload, "google_news");
+  },
+  async google_maps(input, context): Promise<unknown> {
+    const payload = await requestAutomJson({
+      path: "/v1/google/maps",
+      apiKey: context.apiKey,
+      query: {
+        query: requiredInputString(input.query, "query"),
+        gl: optionalString(input.country),
+        hl: optionalString(input.language),
+        page: optionalInteger(input.page),
+      },
+      fetcher: context.fetcher,
+      phase: "execute",
+      signal: context.signal,
+    });
+    return { places: requireAutomArray(payload, "google_maps") };
+  },
+  async google_autocomplete(input, context): Promise<unknown> {
+    const payload = await requestAutomJson({
+      path: "/v1/google/search/autocomplete",
+      apiKey: context.apiKey,
+      query: {
+        query: requiredInputString(input.query, "query"),
+        gl: optionalString(input.country),
+        hl: optionalString(input.language),
+      },
+      fetcher: context.fetcher,
+      phase: "execute",
+      signal: context.signal,
+    });
+    return requireAutomObject(payload, "google_autocomplete");
+  },
+  async bing_search(input, context): Promise<unknown> {
+    const payload = await requestAutomJson({
+      path: "/v1/bing/search",
+      apiKey: context.apiKey,
+      query: {
+        query: requiredInputString(input.query, "query"),
+        mkt: optionalString(input.market),
+        page: optionalInteger(input.page),
+        num: optionalInteger(input.numResults),
+      },
+      fetcher: context.fetcher,
+      phase: "execute",
+      signal: context.signal,
+    });
+    return requireAutomObject(payload, "bing_search");
+  },
+  async duckduckgo_search(input, context): Promise<unknown> {
+    const payload = await requestAutomJson({
+      path: "/v1/duckduckgo/search",
+      apiKey: context.apiKey,
+      query: {
+        query: requiredInputString(input.query, "query"),
+        gl: optionalString(input.country),
+        hl: optionalString(input.language),
+        page: optionalInteger(input.page),
+      },
+      fetcher: context.fetcher,
+      phase: "execute",
+      signal: context.signal,
+    });
+    return requireAutomObject(payload, "duckduckgo_search");
+  },
+  async yahoo_search(input, context): Promise<unknown> {
+    const payload = await requestAutomJson({
+      path: "/v1/yahoo/search",
+      apiKey: context.apiKey,
+      query: {
+        query: requiredInputString(input.query, "query"),
+        gl: optionalString(input.country),
+        hl: optionalString(input.language),
+        page: optionalInteger(input.page),
+      },
+      fetcher: context.fetcher,
+      phase: "execute",
+      signal: context.signal,
+    });
+    return requireAutomObject(payload, "yahoo_search");
+  },
+  async brave_search(input, context): Promise<unknown> {
+    const payload = await requestAutomJson({
+      path: "/v1/brave/search",
+      apiKey: context.apiKey,
+      query: {
+        query: requiredInputString(input.query, "query"),
+        gl: optionalString(input.country),
+        hl: optionalString(input.language),
+        page: optionalInteger(input.page),
+      },
+      fetcher: context.fetcher,
+      phase: "execute",
+      signal: context.signal,
+    });
+    return requireAutomObject(payload, "brave_search");
+  },
 };
 
 export async function validateAutomCredential(
@@ -97,7 +245,6 @@ export async function validateAutomCredential(
       accountId: accountSlug ? `autom:account:${accountSlug}` : `autom:key:${hashAutomApiKey(apiKey)}`,
       displayName: accountName ?? apiKeyAlias ?? "Autom API Key",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: automApiBaseUrl,
       validationEndpoint: automUsagePath,
@@ -200,7 +347,16 @@ function mapAutomError(status: number, message: string | undefined, phase: Autom
       : status === 429
         ? "Autom rate limit exceeded."
         : `Autom request failed with HTTP ${status}`;
-  return new ProviderRequestError(status, message ?? fallback);
+  // Autom answers an exceeded rate limit with 401, which would otherwise read as a rejected key.
+  if (status === 401 && message && /rate limit/i.test(message)) {
+    return new ProviderRequestError(429, message);
+  }
+  return new ProviderRequestError(
+    status,
+    message ?? fallback,
+    undefined,
+    status === 401 || status === 403 ? "provider_error" : undefined,
+  );
 }
 
 function hashAutomApiKey(apiKey: string): string {

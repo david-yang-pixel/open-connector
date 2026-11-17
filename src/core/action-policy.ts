@@ -1,5 +1,11 @@
 import type { ActionDefinition } from "./types.ts";
 
+/**
+ * What a connection grant is checked against: one action (its id and operation type), a raw proxy request,
+ * read-only discovery of the connection itself, or a Trigger subscription that only receives events.
+ */
+export type ConnectionOperation = Pick<ActionDefinition, "id" | "operationType"> | "proxy" | "discovery" | "trigger";
+
 export type PolicySource = "deployment" | "runtime" | "token";
 
 export type PolicyErrorCode =
@@ -9,7 +15,9 @@ export type PolicyErrorCode =
   | "proxy_blocked"
   | "connection_not_allowed"
   | "connection_operation_not_allowed"
-  | "connection_tool_not_allowed";
+  | "connection_tool_not_allowed"
+  | "trigger_not_allowed"
+  | "trigger_blocked";
 
 export interface PolicyCheck {
   source: PolicySource;
@@ -31,6 +39,8 @@ export interface PolicyRules {
   blockedActions: string[];
   allowedProxies: string[];
   blockedProxies: string[];
+  allowedTriggers?: string[];
+  blockedTriggers?: string[];
 }
 
 export type ConnectionAccessLevel = "read" | "write" | "full";
@@ -53,6 +63,7 @@ export interface TokenPolicy {
   allowedProxies: string[];
   allowedConnections?: string[];
   connectionPermissions?: ConnectionPermissionGrant[];
+  allowedTriggers?: string[];
 }
 
 export interface RuntimePolicyState {
@@ -66,6 +77,8 @@ export interface ActionPolicyConfig {
   blockedActions?: string[];
   allowedProxies?: string[];
   blockedProxies?: string[];
+  allowedTriggers?: string[];
+  blockedTriggers?: string[];
 }
 
 interface CompiledRule {
@@ -73,9 +86,12 @@ interface CompiledRule {
   matches(value: string): boolean;
 }
 
+/** What an action rule reads: the id, plus the operation type that `@operation:<type>` rules match. */
+type ActionPolicySubject = Pick<ActionDefinition, "id"> & Partial<Pick<ActionDefinition, "operationType">>;
+
 interface CompiledActionRule {
   pattern: string;
-  matches(action: ActionDefinition): boolean;
+  matches(action: ActionPolicySubject): boolean;
 }
 
 interface CompiledLayer {
@@ -84,6 +100,8 @@ interface CompiledLayer {
   blockedActions: CompiledActionRule[];
   allowedProxies: CompiledRule[];
   blockedProxies: CompiledRule[];
+  allowedTriggers: CompiledRule[];
+  blockedTriggers: CompiledRule[];
 }
 
 /**
@@ -94,6 +112,7 @@ export class ActionPolicySnapshot {
   private readonly layers: CompiledLayer[];
   private readonly proxyLayers: CompiledLayer[];
   private readonly tokenProxyRules?: CompiledRule[];
+  private readonly tokenTriggerRules?: CompiledRule[];
   private readonly allowedConnections: readonly string[];
   private readonly connectionPermissions: ReadonlyMap<string, ConnectionPermissionGrant>;
 
@@ -117,10 +136,11 @@ export class ActionPolicySnapshot {
       const tokenLayer = compileLayer("token", tokenRules);
       this.layers.push(tokenLayer);
       this.tokenProxyRules = tokenLayer.allowedProxies;
+      this.tokenTriggerRules = (token.allowedTriggers ?? []).map(compileTriggerRule);
     }
   }
 
-  evaluate(action: ActionDefinition): ActionPolicyDecision {
+  evaluate(action: ActionPolicySubject): ActionPolicyDecision {
     for (const layer of this.layers) {
       const blocked = layer.blockedActions.find((rule) => rule.matches(action));
       if (blocked) {
@@ -199,10 +219,46 @@ export class ActionPolicySnapshot {
     return { allowed: true, checks };
   }
 
-  evaluateConnection(
-    connectionId?: string,
-    operation?: ActionDefinition | "proxy" | "discovery",
-  ): ActionPolicyDecision {
+  evaluateTrigger(id: string): ActionPolicyDecision {
+    const checks: PolicyCheck[] = [];
+    for (const layer of this.proxyLayers) {
+      const blocked = layer.blockedTriggers.find((rule) => rule.matches(id));
+      if (blocked)
+        return {
+          allowed: false,
+          code: "trigger_blocked",
+          message: `${id} is blocked by the Trigger policy.`,
+          checks: [{ source: layer.source, outcome: "block_match", rule: blocked.pattern }],
+        };
+    }
+    for (const layer of this.proxyLayers) {
+      const allowed = layer.allowedTriggers;
+      if (allowed.length === 0) continue;
+      const match = allowed.find((rule) => rule.matches(id));
+      if (!match)
+        return {
+          allowed: false,
+          code: "trigger_not_allowed",
+          message: `${id} is not included in the Trigger allowlist.`,
+          checks: [...checks, { source: layer.source, outcome: "allow_miss" }],
+        };
+      checks.push({ source: layer.source, outcome: "allow_match", rule: match.pattern });
+    }
+    if (this.tokenTriggerRules) {
+      const match = this.tokenTriggerRules.find((rule) => rule.matches(id));
+      if (!match)
+        return {
+          allowed: false,
+          code: "trigger_not_allowed",
+          message: `${id} is not granted to this runtime token.`,
+          checks: [...checks, { source: "token", outcome: "allow_miss" }],
+        };
+      checks.push({ source: "token", outcome: "allow_match", rule: match.pattern });
+    }
+    return { allowed: true, checks };
+  }
+
+  evaluateConnection(connectionId?: string, operation?: ConnectionOperation): ActionPolicyDecision {
     if (this.connectionPermissions.size > 0) {
       const grant = connectionId ? this.connectionPermissions.get(connectionId) : undefined;
       if (!connectionId || !grant) {
@@ -216,7 +272,7 @@ export class ActionPolicySnapshot {
             operation === "proxy"
               ? `${connectionId} connection requires full access before it can receive proxy requests.`
               : `${connectionId} connection does not grant ${
-                  operation === "discovery" ? "discovery" : (operation?.operationType ?? "unclassified")
+                  typeof operation === "string" ? operation : (operation?.operationType ?? "unclassified")
                 } operations.`,
           checks: [{ source: "token", outcome: "allow_miss", rule: `${connectionId}:${grant.access}` }],
         };
@@ -260,11 +316,8 @@ function connectionDenied(connectionId?: string): ActionPolicyDecision {
   };
 }
 
-function connectionAccessAllows(
-  grant: ConnectionPermissionGrant,
-  operation: ActionDefinition | "proxy" | "discovery" | undefined,
-): boolean {
-  if (operation === "discovery") return true;
+function connectionAccessAllows(grant: ConnectionPermissionGrant, operation: ConnectionOperation | undefined): boolean {
+  if (operation === "discovery" || operation === "trigger") return true;
   if (operation === "proxy") return grant.access === "full" && grant.allowProxy !== false;
   if (!operation || !operation.operationType) return false;
   if (grant.access === "full") return true;
@@ -304,6 +357,8 @@ export function emptyPolicyRules(): PolicyRules {
     blockedActions: [],
     allowedProxies: [],
     blockedProxies: [],
+    allowedTriggers: [],
+    blockedTriggers: [],
   };
 }
 
@@ -320,6 +375,8 @@ function policyRules(config: ActionPolicyConfig): PolicyRules {
     blockedActions: config.blockedActions ?? [],
     allowedProxies: config.allowedProxies ?? [],
     blockedProxies: config.blockedProxies ?? [],
+    allowedTriggers: config.allowedTriggers ?? [],
+    blockedTriggers: config.blockedTriggers ?? [],
   });
 }
 
@@ -329,11 +386,15 @@ function immutablePolicyRules(rules: PolicyRules): PolicyRules {
     blockedActions: [...rules.blockedActions],
     allowedProxies: [...rules.allowedProxies],
     blockedProxies: [...rules.blockedProxies],
+    allowedTriggers: [...(rules.allowedTriggers ?? [])],
+    blockedTriggers: [...(rules.blockedTriggers ?? [])],
   };
   Object.freeze(immutable.allowedActions);
   Object.freeze(immutable.blockedActions);
   Object.freeze(immutable.allowedProxies);
   Object.freeze(immutable.blockedProxies);
+  Object.freeze(immutable.allowedTriggers);
+  Object.freeze(immutable.blockedTriggers);
   return Object.freeze(immutable);
 }
 
@@ -344,6 +405,8 @@ function compileLayer(source: PolicySource, rules: PolicyRules): CompiledLayer {
     blockedActions: rules.blockedActions.map(compileActionRule),
     allowedProxies: rules.allowedProxies.map(compileProxyRule),
     blockedProxies: rules.blockedProxies.map(compileProxyRule),
+    allowedTriggers: (rules.allowedTriggers ?? []).map(compileTriggerRule),
+    blockedTriggers: (rules.blockedTriggers ?? []).map(compileTriggerRule),
   };
 }
 
@@ -360,6 +423,15 @@ function compileActionRule(pattern: string): CompiledActionRule {
     return { pattern, matches: (action) => action.id.startsWith(prefix) };
   }
   return { pattern, matches: (action) => action.id === pattern };
+}
+
+function compileTriggerRule(pattern: string): CompiledRule {
+  if (pattern === "*") return { pattern, matches: () => true };
+  if (pattern.endsWith(".*")) {
+    const prefix = pattern.slice(0, -1);
+    return { pattern, matches: (id) => id.startsWith(prefix) };
+  }
+  return { pattern, matches: (id) => id === pattern };
 }
 
 function compileProxyRule(pattern: string): CompiledRule {

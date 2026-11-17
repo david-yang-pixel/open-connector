@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import {
   booleanString,
@@ -12,10 +12,10 @@ import {
   requiredString,
   stringRecord,
 } from "../../core/cast.ts";
-import { readBoundedResponseBytes } from "../../core/request.ts";
+import { storeResponseInTransit } from "../../core/request.ts";
 import { providerInputError, providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 
-const elevenreaderApiBaseUrl = "https://api.elevenlabs.io/v1";
+const elevenreaderApiOrigin = "https://api.elevenlabs.io";
 
 type ElevenreaderRequestPhase = "validate" | "execute";
 type ElevenreaderActionHandler = ProviderRuntimeHandler<ApiKeyProviderContext>;
@@ -68,7 +68,6 @@ export async function validateElevenreaderCredential(
       accountId: normalizedUser.userId,
       displayName: normalizedUser.firstName ? normalizedUser.firstName : `ElevenReader ${normalizedUser.userId}`,
     },
-    grantedScopes: [],
     metadata: compactObject({
       validationEndpoint: "/user",
       userId: normalizedUser.userId,
@@ -118,7 +117,8 @@ async function searchElevenreaderVoices(
   context: ApiKeyProviderContext,
 ): Promise<Record<string, unknown>> {
   const payload = await requestElevenreaderJson<Record<string, unknown>>({
-    path: "/voices/search",
+    path: "/voices",
+    version: "v2",
     query: compactObject({
       search: optionalString(input.search),
       category: optionalString(input.category),
@@ -204,14 +204,15 @@ async function readElevenreaderText(
   }
 
   const contentType = response.headers.get("content-type") ?? "application/octet-stream";
-  const bytes = await readBoundedResponseBytes(response, {
-    maxBytes: context.transitFiles.maxBytes,
-    fieldName: "ElevenReader audio",
-    createError: (message) => new ProviderRequestError(413, message),
-  });
   const extension = inferElevenreaderAudioExtension(contentType, outputFormat);
   const name = `elevenreader-${voiceId}.${extension}`;
-  const upload = await context.transitFiles.create(new File([Uint8Array.from(bytes)], name, { type: contentType }));
+  const upload = await storeResponseInTransit(response, context.transitFiles, {
+    name,
+    mimeType: contentType,
+    fieldName: "ElevenReader audio",
+    createError: (message) => new ProviderRequestError(413, message),
+    signal: context.signal,
+  });
 
   return compactObject({
     file: {
@@ -230,6 +231,7 @@ async function readElevenreaderText(
 
 async function requestElevenreaderJson<T>(input: {
   path: string;
+  version?: "v1" | "v2";
   query?: Record<string, string | undefined>;
   body?: Record<string, unknown>;
   phase: ElevenreaderRequestPhase;
@@ -238,7 +240,7 @@ async function requestElevenreaderJson<T>(input: {
   signal?: AbortSignal;
 }): Promise<T> {
   const hasBody = input.body !== undefined;
-  const response = await input.fetcher(buildElevenreaderUrl(input.path, input.query), {
+  const response = await input.fetcher(buildElevenreaderUrl(input.path, input.query, input.version), {
     method: hasBody ? "POST" : "GET",
     headers: hasBody ? elevenreaderJsonHeaders(input.apiKey) : elevenreaderHeaders(input.apiKey),
     body: hasBody ? JSON.stringify(input.body) : undefined,
@@ -252,8 +254,12 @@ async function requestElevenreaderJson<T>(input: {
   return readElevenreaderJson<T>(response);
 }
 
-function buildElevenreaderUrl(path: string, query?: Record<string, string | undefined>): URL {
-  const url = new URL(`${elevenreaderApiBaseUrl}${path}`);
+function buildElevenreaderUrl(
+  path: string,
+  query?: Record<string, string | undefined>,
+  version: "v1" | "v2" = "v1",
+): URL {
+  const url = new URL(`${elevenreaderApiOrigin}/${version}${path}`);
   for (const [key, value] of Object.entries(query ?? {})) {
     if (value !== undefined) {
       url.searchParams.set(key, value);
@@ -312,7 +318,7 @@ async function createElevenreaderError(
     return new ProviderRequestError(429, message);
   }
   if (response.status >= 400 && response.status < 500) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   return new ProviderRequestError(response.status >= 400 && response.status < 600 ? response.status : 502, message);
 }

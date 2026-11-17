@@ -1,6 +1,7 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
 
-import { defineApiKeyProviderExecutors, defineProviderProxy } from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import { handlers, harpaAiApiBaseUrl } from "./runtime.ts";
 
 const service = "harpa_ai";
@@ -17,7 +18,6 @@ export const credentialValidators: CredentialValidators = {
   apiKey() {
     return Promise.resolve({
       profile: { displayName: "HARPA AI API Key" },
-      grantedScopes: [],
       metadata: { apiBaseUrl: harpaAiApiBaseUrl, validationMode: "format_only" },
     });
   },

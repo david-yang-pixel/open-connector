@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean, optionalRecord, optionalString } from "../../core/cast.ts";
 import {
@@ -9,6 +9,7 @@ import {
   providerUserAgent,
   ProviderRequestError,
   requiredResponseRecord,
+  providerInputError,
 } from "../provider-runtime.ts";
 
 export type StannpRegion = "eu" | "us";
@@ -197,7 +198,6 @@ export async function validateStannpCredential(
       accountId: `stannp:${region}`,
       displayName: `Stannp ${region.toUpperCase()} Account`,
     },
-    grantedScopes: [],
     metadata: {
       region,
       apiBaseUrl,
@@ -313,7 +313,7 @@ function createStannpError(status: number, payload: unknown, phase: StannpReques
     return new ProviderRequestError(429, message);
   }
   if (phase === "validate" && (status === 401 || status === 403)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (phase === "execute" && (status === 401 || status === 403)) {
     return new ProviderRequestError(401, message);

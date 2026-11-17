@@ -1,6 +1,7 @@
 import type { CredentialValidationResult, ExecutionResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ProviderFetch, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 import type { Client } from "@modelcontextprotocol/client";
 
 import { UnauthorizedError } from "@modelcontextprotocol/client";
@@ -100,7 +101,6 @@ export async function validateDingTalkMcpCredential(
       accountId: `dingtalk_mcp:mcp:${credentialHash}`,
       displayName: `DingTalk MCP · ${credentialHash.slice(-6)}`,
     },
-    grantedScopes: [],
     metadata: {
       mcpHost: context.endpoint.hostname,
       discoveredToolCount: tools.length,
@@ -177,7 +177,7 @@ async function withDingTalkMcpClient<T>(context: DingTalkMcpContext, run: (clien
       transport: "streamable_http",
       fetcher: context.fetcher,
       headers,
-      redirect: "error",
+      redirect: "manual",
       signal: context.signal,
       mapError: mapDingTalkMcpError,
     },

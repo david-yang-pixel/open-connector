@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 import type { AliyunSlsCredential } from "./resources.ts";
 
 import { Buffer } from "node:buffer";
@@ -129,7 +129,6 @@ export function validateAliyunSlsCredential(values: Record<string, string>): Cre
       accountId: credential.accessKeyId,
       displayName: `${credential.accessKeyId}@${credential.endpoint}`,
     },
-    grantedScopes: [],
   };
 }
 
@@ -159,7 +158,7 @@ export async function requestAliyunSlsJson(
   const requestInit: RequestInit = {
     method: input.method,
     headers: signed.headers,
-    redirect: "error",
+    redirect: "manual",
     signal: context.signal,
   };
   if (signed.bodyBytes.byteLength > 0) {

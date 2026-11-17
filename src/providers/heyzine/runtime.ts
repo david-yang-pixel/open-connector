@@ -1,5 +1,5 @@
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -63,7 +63,6 @@ export async function validateHeyzineCredential(
   options: { fetcher: typeof fetch; signal?: AbortSignal },
 ): Promise<{
   profile: { accountId: string; displayName: string };
-  grantedScopes: string[];
   metadata: Record<string, unknown>;
 }> {
   const payload = await heyzineRequest({
@@ -81,7 +80,6 @@ export async function validateHeyzineCredential(
       accountId: "api_key",
       displayName: "Heyzine API Key",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: heyzineApiBaseUrl,
       validationEndpoint: "/api1/flipbook-list",

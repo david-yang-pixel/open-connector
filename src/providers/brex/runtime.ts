@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
 import {
@@ -14,8 +14,7 @@ export const brexApiBaseUrl = "https://api.brex.com";
 const brexValidationPath = "/v2/users/me";
 
 type BrexRequestPhase = "validate" | "execute";
-type BrexActionContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
-type BrexActionHandler = (input: Record<string, unknown>, context: BrexActionContext) => Promise<unknown>;
+type BrexActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 
 interface BrexRequestInput {
   path: string;
@@ -240,7 +239,6 @@ export async function validateBrexCredential(
       accountId: userId ?? "brex:user_token",
       displayName: email ?? userName ?? "Brex User Token",
     },
-    grantedScopes: [],
     metadata: compactObject({
       userId,
       userEmail: email,

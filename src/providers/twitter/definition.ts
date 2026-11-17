@@ -8,6 +8,7 @@ const twitterOAuthScopes = [
   "tweet.read",
   "users.read",
   "tweet.write",
+  "tweet.moderate.write",
   "media.write",
   "offline.access",
   "follows.read",
@@ -33,6 +34,7 @@ export const provider: ProviderDefinition = {
   auth: [
     {
       type: "oauth2",
+      requiredScopes: ["tweet.read", "users.read", "offline.access"],
       authorizationUrl: "https://x.com/i/oauth2/authorize",
       tokenUrl: "https://api.x.com/2/oauth2/token",
       scopes: twitterOAuthScopes,

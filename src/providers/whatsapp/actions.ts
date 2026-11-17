@@ -19,6 +19,9 @@ const paging = s.looseObject("Pagination data returned by Meta.", {
   }),
   previous: s.string("URL for the previous page, when provided."),
   next: s.string("URL for the next page, when provided."),
+  hasMore: s.boolean(
+    "Whether another page exists. Meta returns `next` only when one does, so this is false on the final page even though `cursors.after` is still present.",
+  ),
 });
 const messageSendResponse = s.actionOutput({
   contacts: s.array(
@@ -103,6 +106,65 @@ const listSection = s.object("An interactive list section.", {
   title: s.string("Section title.", { maxLength: 24 }),
   rows: s.array("Rows listed inside the section.", listRow, { minItems: 1, maxItems: 10 }),
 });
+const analyticsStart = s.integer(
+  "Start of the reporting window as a UNIX timestamp in seconds. Defaults to 30 days before end.",
+  { minimum: 0 },
+);
+const analyticsEnd = s.integer("End of the reporting window as a UNIX timestamp in seconds. Defaults to now.", {
+  minimum: 0,
+});
+const analyticsPhoneNumbers = s.stringArray(
+  "Business phone numbers to include, in international format without the plus sign. Omit to include every number in the WABA.",
+);
+const analyticsCountryCodes = s.stringArray("Two-letter country codes to include. Omit to include every country.");
+const templateAnalyticsDate = s.union([
+  s.integer("UNIX timestamp in seconds; Meta rounds it back to 00:00 UTC of that day.", { minimum: 0 }),
+  s.string("Calendar date as YYYY-MM-DD.", { pattern: "^\\d{4}-\\d{2}-\\d{2}$" }),
+]);
+const dataPointStart = s.integer("Start of the data point window as a UNIX timestamp in seconds.");
+const dataPointEnd = s.integer("End of the data point window as a UNIX timestamp in seconds.");
+const messageAnalyticsDataPoint = s.looseObject("Message counts for one window.", {
+  start: dataPointStart,
+  end: dataPointEnd,
+  sent: s.integer("Messages sent in the window."),
+  delivered: s.integer("Messages delivered in the window."),
+});
+const pricingAnalyticsDataPoint = s.looseObject("Message volume and cost for one window and dimension combination.", {
+  start: dataPointStart,
+  end: dataPointEnd,
+  volume: s.integer("Number of delivered messages the row covers."),
+  cost: s.number(
+    "Cost of the row in the WABA's billing currency. Omitted when COST is not requested or not available.",
+  ),
+  phone_number: s.string("Business phone number, present when PHONE is a requested dimension."),
+  country: s.string("Two-letter country code, present when COUNTRY is a requested dimension."),
+  pricing_category: s.string("Pricing category, present when PRICING_CATEGORY is a requested dimension."),
+  pricing_type: s.string("Pricing type, present when PRICING_TYPE is a requested dimension."),
+  tier: s.string("Volume tier, present when TIER is a requested dimension."),
+});
+const templateAnalyticsDataPoint = s.looseObject("Daily metrics for one template.", {
+  template_id: s.string("Meta template ID."),
+  start: dataPointStart,
+  end: dataPointEnd,
+  sent: s.integer("Template messages sent on the day."),
+  delivered: s.integer("Template messages delivered on the day."),
+  read: s.integer("Template messages read on the day."),
+  clicked: s.array(
+    "Button clicks on the day, one entry per button. Only reported for MARKETING and UTILITY templates.",
+    s.looseObject("Clicks on one template button.", {
+      type: s.string("Button type, such as quick_reply_button or unique_url_button."),
+      button_content: s.string("Button label as shown to the user."),
+      count: s.integer("Number of clicks."),
+    }),
+  ),
+  cost: s.array(
+    "Cost metrics on the day, present when COST is requested.",
+    s.looseObject("One template cost metric.", {
+      type: s.string("Cost metric type, such as amount_spent or cost_per_delivered."),
+      value: s.number("Metric value in the WABA's billing currency."),
+    }),
+  ),
+});
 
 function input(properties: Record<string, JsonSchema>, required: string[], description: string): JsonSchema {
   return s.actionInput(properties, required, description);
@@ -117,6 +179,7 @@ export const whatsappActions: ActionDefinition[] = [
     inputSchema: input(
       {
         waba_id: wabaId,
+        after: s.string("Pagination cursor returned by a previous response."),
         limit: s.integer("Maximum number of phone numbers to return.", { minimum: 1, maximum: 100, default: 25 }),
       },
       [],
@@ -193,6 +256,132 @@ export const whatsappActions: ActionDefinition[] = [
       "Input for reading a WhatsApp template.",
     ),
     outputSchema: template,
+  }),
+  defineProviderAction(service, {
+    name: "get_message_analytics",
+    operationType: "read",
+    description: "Get sent and delivered message counts for a WhatsApp Business Account over a time window.",
+    providerPermissions: [managementPermission],
+    inputSchema: input(
+      {
+        waba_id: wabaId,
+        start: analyticsStart,
+        end: analyticsEnd,
+        granularity: s.stringEnum(["HALF_HOUR", "DAY", "MONTH"], {
+          description: "Width of each data point.",
+          default: "DAY",
+        }),
+        phone_numbers: analyticsPhoneNumbers,
+        product_types: s.array(
+          "Message types to include: 0 for template messages sent to users, 2 for non-template messages sent to users, 100 for messages received from users. Omit to include all.",
+          s.integer("Meta product type code.", { minimum: 0 }),
+        ),
+        country_codes: analyticsCountryCodes,
+      },
+      [],
+      "Input for reading WhatsApp message analytics.",
+    ),
+    outputSchema: s.actionOutput(
+      {
+        granularity: s.string("Width of each data point as returned by Meta."),
+        phone_numbers: s.stringArray("Business phone numbers the data covers."),
+        country_codes: s.stringArray("Two-letter country codes the data covers."),
+        data_points: s.array("One entry per window.", messageAnalyticsDataPoint),
+      },
+      "Action output.",
+      ["granularity", "data_points"],
+    ),
+  }),
+  defineProviderAction(service, {
+    name: "get_pricing_analytics",
+    operationType: "read",
+    description:
+      "Get per-message volume and cost for a WhatsApp Business Account over a time window, optionally broken down by phone number, country, pricing category, pricing type, or tier.",
+    providerPermissions: [managementPermission],
+    inputSchema: input(
+      {
+        waba_id: wabaId,
+        start: analyticsStart,
+        end: analyticsEnd,
+        granularity: s.stringEnum(["HALF_HOUR", "DAILY", "MONTHLY"], {
+          description: "Width of each data point.",
+          default: "DAILY",
+        }),
+        phone_numbers: analyticsPhoneNumbers,
+        country_codes: analyticsCountryCodes,
+        metric_types: s.array(
+          "Metrics to return. Omit for both. COST is withheld for WABAs billed through a Solution Partner's credit line.",
+          s.stringEnum("Pricing metric.", ["COST", "VOLUME"]),
+        ),
+        pricing_types: s.array(
+          "Pricing types to include. Omit for all.",
+          s.stringEnum("Pricing type.", ["FREE_CUSTOMER_SERVICE", "FREE_ENTRY_POINT", "REGULAR"]),
+        ),
+        pricing_categories: s.array(
+          "Pricing categories to include. Omit for all.",
+          s.stringEnum("Pricing category.", [
+            "AUTHENTICATION",
+            "AUTHENTICATION_INTERNATIONAL",
+            "MARKETING",
+            "MARKETING_LITE",
+            "SERVICE",
+            "UTILITY",
+            "REFERRAL_CONVERSION",
+          ]),
+        ),
+        dimensions: s.array(
+          "Dimensions to break each data point down by. Omit for totals per window.",
+          s.stringEnum("Breakdown dimension.", ["COUNTRY", "PHONE", "PRICING_CATEGORY", "PRICING_TYPE", "TIER"]),
+        ),
+      },
+      [],
+      "Input for reading WhatsApp pricing analytics.",
+    ),
+    outputSchema: s.actionOutput({
+      data_points: s.array("One entry per window and dimension combination.", pricingAnalyticsDataPoint),
+    }),
+  }),
+  defineProviderAction(service, {
+    name: "get_template_analytics",
+    operationType: "read",
+    description:
+      "Get daily sent, delivered, read, click, and cost metrics for up to ten message templates. Template analytics must be enabled on the WABA first, and Meta keeps 90 days of history.",
+    providerPermissions: [managementPermission],
+    inputSchema: input(
+      {
+        waba_id: wabaId,
+        template_ids: s.stringArray("Meta template IDs to report on.", { minItems: 1, maxItems: 10 }),
+        start: s.describe(
+          templateAnalyticsDate,
+          "Start of the reporting window. Defaults to 30 days before end. Meta keeps 90 days of history.",
+        ),
+        end: s.describe(templateAnalyticsDate, "End of the reporting window. Defaults to today."),
+        metric_types: s.array(
+          "Metrics to return. Omit for all. Conversion metrics such as APP_PURCHASES exist for Marketing Messages API businesses only.",
+          s.string("Template metric, such as COST, CLICKED, DELIVERED, READ, or SENT."),
+        ),
+        product_type: s.stringEnum(["CLOUD_API", "MARKETING_MESSAGES_API_FOR_WHATSAPP"], {
+          description: "Which product's template sends to report on. Omit for Cloud API.",
+        }),
+        use_waba_timezone: s.boolean({
+          description:
+            "Whether daily windows follow the WABA's configured timezone instead of UTC. Timestamps passed as start or end are converted to YYYY-MM-DD, which Meta requires in this mode.",
+          default: false,
+        }),
+        after: s.string("Pagination cursor returned by a previous response."),
+      },
+      ["template_ids"],
+      "Input for reading WhatsApp template analytics.",
+    ),
+    outputSchema: s.actionOutput(
+      {
+        waba_timezone: s.string("Timezone the windows are expressed in, present when use_waba_timezone is true."),
+        data_points: s.array("One entry per template and day.", templateAnalyticsDataPoint),
+        paging,
+      },
+      "Action output.",
+      ["data_points"],
+    ),
   }),
   defineProviderAction(service, {
     name: "create_message_template",

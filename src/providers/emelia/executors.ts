@@ -1,15 +1,15 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   providerUserAgent,
   ProviderRequestError,
   readProviderJsonBody,
+  providerInputError,
 } from "../provider-runtime.ts";
 
 const service = "emelia";
@@ -80,7 +80,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: providerId ?? "api_key",
         displayName: senderEmail ?? senderName ?? "Emelia API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: emeliaApiBaseUrl,
         validationEndpoint: "/email-providers",
@@ -127,7 +126,7 @@ async function requestEmeliaContacts(
 async function requestEmeliaJson(
   path: string,
   input: { method: string; query: URLSearchParams },
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: EmeliaRequestPhase,
 ): Promise<unknown> {
   const url = new URL(path, emeliaApiBaseUrl);
@@ -180,7 +179,7 @@ function createEmeliaError(response: Response, payload: unknown, phase: EmeliaRe
     return new ProviderRequestError(401, message);
   }
   if (response.status === 400 || response.status === 404 || response.status === 422) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   return new ProviderRequestError(response.status || 502, message);
 }

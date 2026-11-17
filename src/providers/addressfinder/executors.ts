@@ -4,7 +4,7 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -14,18 +14,18 @@ import {
   optionalRecord,
   optionalString,
 } from "../../core/cast.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineProviderExecutors,
-  defineProviderProxy,
   isAbortLikeError,
   providerUserAgent,
   ProviderRequestError,
-  requireApiKeyCredential,
+  defaultProviderRequestTimeoutMs,
 } from "../provider-runtime.ts";
 
 const service = "addressfinder";
 const addressfinderApiBaseUrl = "https://api.addressfinder.io/api/";
-const addressfinderDefaultRequestTimeoutMs = 30_000;
 const addressfinderValidationEndpoint = "/nz/address/autocomplete";
 
 type AddressfinderCountry = "au" | "nz";
@@ -113,7 +113,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "addressfinder",
         displayName: "Addressfinder API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: addressfinderApiBaseUrl,
         validationEndpoint: addressfinderValidationEndpoint,
@@ -256,7 +255,7 @@ async function requestAddressfinderJson(input: {
   fetcher: typeof fetch;
   signal?: AbortSignal;
 }): Promise<Record<string, unknown>> {
-  const timeoutSignal = AbortSignal.timeout(addressfinderDefaultRequestTimeoutMs);
+  const timeoutSignal = AbortSignal.timeout(defaultProviderRequestTimeoutMs);
   const signal = input.signal ? AbortSignal.any([input.signal, timeoutSignal]) : timeoutSignal;
 
   try {

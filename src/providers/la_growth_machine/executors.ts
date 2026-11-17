@@ -4,14 +4,13 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalString, requiredString } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   isAbortLikeError,
   providerInputError,
   providerUserAgent,
@@ -22,10 +21,9 @@ const service = "la_growth_machine";
 const laGrowthMachineApiBaseUrl = "https://apiv2.lagrowthmachine.com/flow";
 
 type JsonObject = Record<string, unknown>;
-type LaGrowthMachineContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
 type LaGrowthMachineActionHandler = (
   input: Record<string, unknown>,
-  context: LaGrowthMachineContext,
+  context: ApiKeyProviderContext,
 ) => Promise<unknown>;
 
 export const laGrowthMachineActionHandlers: ProviderActionHandlers<"la_growth_machine", LaGrowthMachineActionHandler> =
@@ -151,7 +149,7 @@ export const credentialValidators: CredentialValidators = {
 };
 
 async function validateLaGrowthMachineCredential(
-  context: LaGrowthMachineContext,
+  context: ApiKeyProviderContext,
   phase: "validate",
 ): Promise<CredentialValidationResult> {
   const payload = await requestLaGrowthMachine({ path: "/members", context, phase });
@@ -165,7 +163,6 @@ async function validateLaGrowthMachineCredential(
       accountId: memberId ? `la_growth_machine:${memberId}` : "la_growth_machine:api_key",
       displayName: accountLabel,
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: laGrowthMachineApiBaseUrl,
       validationEndpoint: "/members",
@@ -179,7 +176,7 @@ async function requestLaGrowthMachine(request: {
   search?: Array<[string, unknown]>;
   body?: Record<string, unknown>;
   phase?: "validate" | "execute";
-  context: LaGrowthMachineContext;
+  context: ApiKeyProviderContext;
 }): Promise<unknown> {
   const url = new URL(request.path.replace(/^\//, ""), `${laGrowthMachineApiBaseUrl}/`);
   for (const [key, value] of request.search ?? []) {

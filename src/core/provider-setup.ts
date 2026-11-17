@@ -2,6 +2,7 @@ import type {
   ApiKeyAuthDefinition,
   CredentialDefinition,
   OAuth2AuthDefinition,
+  OAuthAuthorizationOption,
   OAuthClientConfigFieldDefinition,
   ProviderAuthDefinition,
 } from "./types.ts";
@@ -24,41 +25,72 @@ export type ProviderAuthSetup =
       clientFields: OAuthClientConfigFieldDefinition[];
       clientSetup?: OAuth2AuthDefinition["clientSetup"];
       scopes: string[];
-      authorizationOptions?: OAuth2AuthDefinition["authorizationOptions"];
+      supportsScopeSelection: boolean;
+      /** Scopes added to every authorization request for connection validation or renewal. */
+      requiredScopes?: string[];
+      authorizationOptions?: OAuthAuthorizationOptionSetup[];
       /** `dynamic` connections register their own OAuth client, so no OAuth app needs configuring. */
       clientRegistration?: OAuth2AuthDefinition["clientRegistration"];
       /** Inputs sent as `values` when starting a `dynamic` authorization. */
       connectionFields?: CredentialDefinition[];
     };
 
+interface OAuthAuthorizationOptionSetup extends OAuthAuthorizationOption {
+  required: boolean;
+  defaultSelected: boolean;
+}
+
+export interface ProviderSetupLabels {
+  apiKey: string;
+  clientId: string;
+  clientSecret: string;
+}
+
 /** Describe the inputs accepted by the existing connection and OAuth-client APIs. */
-export function describeProviderAuth(auth: ProviderAuthDefinition): ProviderAuthSetup {
+export function describeProviderAuth(auth: ProviderAuthDefinition, labels?: ProviderSetupLabels): ProviderAuthSetup {
   switch (auth.type) {
     case "no_auth":
       return { type: "no_auth" };
     case "api_key":
-      return { type: "api_key", fields: apiKeyCredentialFields(auth) };
+      return { type: "api_key", fields: apiKeyCredentialFields(auth, labels) };
     case "custom_credential":
       return { type: "custom_credential", label: auth.label, description: auth.description, fields: auth.fields };
     case "oauth2":
       return {
         type: "oauth2",
-        clientFields: oauthClientFields(auth),
+        clientFields: oauthClientFields(auth, labels),
         clientSetup: auth.clientSetup,
         scopes: auth.scopes,
-        authorizationOptions: auth.authorizationOptions,
+        supportsScopeSelection: auth.authorizationRequestFields?.scope !== false,
+        requiredScopes: auth.requiredScopes,
+        authorizationOptions: describeOAuthAuthorizationOptions(auth),
         clientRegistration: auth.clientRegistration,
         connectionFields: auth.connectionFields,
       };
   }
 }
 
+function describeOAuthAuthorizationOptions(auth: OAuth2AuthDefinition): OAuthAuthorizationOptionSetup[] | undefined {
+  const defaults = new Set(auth.scopes);
+  const required = new Set(auth.requiredScopes);
+
+  // Only curated options become controls; request scopes are not a UI catalog.
+  return auth.authorizationOptions?.map((option) => ({
+    ...option,
+    required: required.has(option.id),
+    defaultSelected: defaults.has(option.id),
+  }));
+}
+
 /** The key itself plus the provider's extra fields, in the shape credential forms and validation share. */
-export function apiKeyCredentialFields(auth: ApiKeyAuthDefinition): CredentialDefinition[] {
+export function apiKeyCredentialFields(
+  auth: ApiKeyAuthDefinition,
+  labels?: ProviderSetupLabels,
+): CredentialDefinition[] {
   return [
     {
       key: "apiKey",
-      label: auth.label ?? "API key",
+      label: auth.label ?? labels?.apiKey ?? "API key",
       inputType: "password",
       required: true,
       secret: true,
@@ -70,12 +102,15 @@ export function apiKeyCredentialFields(auth: ApiKeyAuthDefinition): CredentialDe
 }
 
 /** Client configuration fields in the same shape as provider-declared credential fields. */
-export function oauthClientFields(auth: OAuth2AuthDefinition): OAuthClientConfigFieldDefinition[] {
+export function oauthClientFields(
+  auth: OAuth2AuthDefinition,
+  labels?: ProviderSetupLabels,
+): OAuthClientConfigFieldDefinition[] {
   const fields: OAuthClientConfigFieldDefinition[] = [
-    { key: "clientId", label: "Client ID", inputType: "text", required: true, secret: false },
+    { key: "clientId", label: labels?.clientId ?? "Client ID", inputType: "text", required: true, secret: false },
     {
       key: "clientSecret",
-      label: "Client secret",
+      label: labels?.clientSecret ?? "Client secret",
       inputType: "password",
       required: auth.tokenEndpointAuthMethod !== "none",
       secret: true,

@@ -16,14 +16,14 @@ import {
   requiredString,
 } from "../../core/cast.ts";
 import { assertPublicHttpUrl, encodePathSegment } from "../../core/request.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineProviderExecutors,
-  defineProviderProxy,
   providerInputError,
   providerResponseError,
   providerUserAgent,
   ProviderRequestError,
-  requireApiKeyCredential,
 } from "../provider-runtime.ts";
 
 const service = "docsumo";
@@ -90,7 +90,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: optionalString(data.user_id) ?? "api_key",
         displayName: optionalString(data.email) ?? "Docsumo API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl,
         validationEndpoint: "/api/v1/eevee/apikey/limit/",

@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { Buffer } from "node:buffer";
 import {
@@ -235,9 +235,7 @@ export async function validateVirustotalCredential(
   };
 }
 
-async function getLargeFileUploadUrl(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
-): Promise<string> {
+async function getLargeFileUploadUrl(context: ApiKeyProviderContext): Promise<string> {
   const payload = await virustotalJsonRequest("/files/upload_url", {}, context, "execute");
   const uploadUrl = optionalString(optionalRecord(payload)?.data);
   if (!uploadUrl) {
@@ -249,7 +247,7 @@ async function getLargeFileUploadUrl(
 async function virustotalJsonRequest(
   pathOrUrl: string,
   options: VirustotalRequestOptions,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: VirustotalRequestPhase,
 ): Promise<unknown> {
   const url = buildVirustotalUrl(pathOrUrl, options.query);

@@ -5,7 +5,7 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
 import {
@@ -19,20 +19,22 @@ import {
   optionalString,
   optionalStringOrNull,
 } from "../../core/cast.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
 import {
-  createProviderFetch,
   createProviderProxyUrl,
-  createProviderTimeout,
-  defineProviderExecutors,
-  isAbortLikeError,
   normalizeProviderProxyHeaders,
-  ProviderRequestError,
-  providerUserAgent,
   readProviderProxyErrorMessage,
   readProviderProxyResponse,
-  requireApiKeyCredential,
-  requiredResponseRecord,
   toProviderProxyError,
+} from "../provider-proxy.ts";
+import {
+  createProviderFetch,
+  createProviderTimeout,
+  isAbortLikeError,
+  ProviderRequestError,
+  providerUserAgent,
+  requiredResponseRecord,
 } from "../provider-runtime.ts";
 
 const service = "leexi";
@@ -154,7 +156,6 @@ async function validateLeexiCredential(context: LeexiActionContext): Promise<Cre
       accountId: firstUserUuid,
       displayName: firstUserName ?? "Leexi API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: leexiApiBaseUrl,
       validationEndpoint: leexiValidationPath,

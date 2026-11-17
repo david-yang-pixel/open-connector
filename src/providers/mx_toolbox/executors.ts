@@ -4,17 +4,13 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { compactObject, optionalInteger, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
-import {
-  defineProviderExecutors,
-  defineProviderProxy,
-  providerInputError,
-  ProviderRequestError,
-  providerUserAgent,
-  requireApiKeyCredential,
-} from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerInputError, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "mx_toolbox";
 const mxToolboxLookupApiBaseUrl = "https://mxtoolbox.com";
@@ -101,7 +97,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "api_key",
         displayName: "MxToolbox API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: mxToolboxLookupApiBaseUrl,
         accountApiBaseUrl: mxToolboxAccountApiBaseUrl,

@@ -102,5 +102,76 @@ path that includes managed OAuth.
         <a href="https://app.nibrun.com/deploy?name=open-connector&amp;binary=https%3A%2F%2Fgithub.com%2Foomol-lab%2Fopen-connector%2Freleases%2Flatest%2Fdownload%2Fopen-connector-linux-x64&amp;port=3000&amp;env=HOST%3D0.0.0.0&amp;env=OOMOL_CONNECT_DATA_DIR%3D%24%7BNIBRUN_DATA_DIR%7D&amp;env=OOMOL_CONNECT_ORIGIN%3Dhttps%3A%2F%2F%24%7BNIBRUN_HOSTNAME%7D&amp;env=OOMOL_CONNECT_CATALOG_LAZY_SCHEMAS%3Dtrue&amp;env=OOMOL_CONNECT_ENCRYPTION_KEY&amp;env=OOMOL_CONNECT_ADMIN_TOKEN&amp;env=OOMOL_CONNECT_RUNTIME_TOKEN"><strong>One-click deploy</strong></a>
       </td>
     </tr>
+    <tr>
+      <td valign="middle" align="center">
+        <a href="https://nexusai.run/"><img src="../../assets/deployment-options/nexus-ai.svg" alt="NEXUS AI" width="140"></a>
+      </td>
+      <td valign="top">
+        Build the repository's <code>docker/Dockerfile</code> into a container with its own HTTPS URL. The
+        deploy link sets <code>OOMOL_CONNECT_ORIGIN</code> to that URL, asks for the admin token on the form,
+        and generates the encryption key and runtime token, so the Web Console and every API require
+        authentication from the first start. Secrets are typed on the form or generated on the server and
+        never appear in the link.
+        <br><br>
+        <strong>Advantages:</strong> one-click deploy from source, logs and redeploys in one dashboard,
+        and custom domains on paid plans. The SQLite database lives in the container: it survives restarts
+        but not rebuilds. For data that must last, set <code>OOMOL_CONNECT_DATABASE_URL</code> to PostgreSQL,
+        run the <a href="../configuration.md#runtime-database">PostgreSQL migrations</a> before the first start
+        and before each redeploy that adds new ones, and keep <code>OOMOL_CONNECT_ENCRYPTION_KEY</code>
+        unchanged, because stored credentials are encrypted with it.
+        <br><br>
+        <strong>Pricing:</strong> the Free plan includes 1 active deployment with a public HTTPS URL
+        and no credit card; it is for testing and evaluation only, and test deployments expire
+        automatically. Starter is $29/month for 2 active deployments and custom domains, and Pro is
+        $149/month for 5. Each app gets 512 MB of RAM. See
+        <a href="https://nexusai.run/pricing">NEXUS AI pricing</a>.
+      </td>
+      <td valign="middle" align="center">
+        <a href="https://nexusai.run/deploy?repo=https%3A%2F%2Fgithub.com%2Foomol-lab%2Fopen-connector&amp;dockerfile=docker%2FDockerfile&amp;env=OOMOL_CONNECT_ORIGIN%3D%7Burl%7D&amp;require=OOMOL_CONNECT_ADMIN_TOKEN&amp;generate=OOMOL_CONNECT_ENCRYPTION_KEY&amp;generate=OOMOL_CONNECT_RUNTIME_TOKEN&amp;template=open-connector"><strong>One-click deploy</strong></a>
+      </td>
+    </tr>
+    <tr>
+      <td valign="middle" align="center">
+        <a href="https://pethost.dev/"><img src="../../assets/deployment-options/pethost.svg" alt="Pethost" width="140"></a>
+      </td>
+      <td valign="top">
+        A one-click template that runs the published <code>ghcr.io/oomol-lab/open-connector</code>
+        image with its own HTTPS address. It sets <code>OOMOL_CONNECT_ORIGIN</code> to that address,
+        asks for the admin token, and generates the encryption key and runtime token, so the Web
+        Console and every API require authentication from the first start. The data directory, with
+        the SQLite database, is on a volume, so it survives restarts and redeploys.
+        <br><br>
+        <strong>Advantages:</strong> one flat monthly price for the whole server, which
+        OpenConnector can share with other apps and databases; nothing is metered and nothing
+        sleeps. Nightly backups, logs and every HTTP request in one panel, and an MCP server so an
+        agent can deploy and manage it.
+        <br><br>
+        <strong>Pricing:</strong> from €9.99/month for 2 vCPU, 3 GB memory and 30 GB SSD, or
+        €17.99/month for 4 vCPU, 6 GB and 60 GB, with as many projects as fit. OpenConnector takes
+        about 230 MB of memory at rest. See <a href="https://pethost.dev/#pricing">Pethost
+        pricing</a>.
+      </td>
+      <td valign="middle" align="center">
+        <a href="https://pethost.dev/templates/open-connector/"><strong>One-click deploy</strong></a>
+      </td>
+    </tr>
+    <tr>
+      <td valign="middle" align="center">
+        <a href="https://zop.dev/"><img src="../../assets/deployment-options/zopday.svg" alt="ZopDay" width="140"></a>
+      </td>
+      <td valign="top">
+        Run the published <code>ghcr.io/oomol-lab/open-connector</code> image with HTTPS and a
+        management dashboard. Before the first start, configure the public origin, authentication
+        tokens, encryption key, and persistent storage. You register OAuth apps yourself.
+        <br><br>
+        <strong>Advantages:</strong> container management dashboard and Helm deployments on your own cloud.
+        <br><br>
+        <strong>Pricing:</strong> see
+        <a href="https://zop.dev/zopday#pricing">ZopDay pricing</a>.
+      </td>
+      <td valign="middle" align="center">
+        <a href="../zopday.md"><strong>Deploy guide</strong></a>
+      </td>
+    </tr>
   </tbody>
 </table>

@@ -1,4 +1,4 @@
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
 import { compactObject, optionalBoolean, optionalString } from "../../core/cast.ts";
@@ -520,14 +520,20 @@ function createDataForSeoError(httpStatus: number, envelope: DataForSeoEnvelope,
   const statusMessage = optionalString(envelope.status_message) ?? "DataForSEO request failed";
   const envelopeStatusCode = readOptionalNumber(envelope.status_code);
   const isAuthError = httpStatus === 401 || httpStatus === 403 || envelopeStatusCode === 40100;
-  return new ProviderRequestError(phase === "validate" || isAuthError ? 400 : 502, statusMessage);
+  return new ProviderRequestError(
+    phase === "validate" || isAuthError ? 400 : 502,
+    `DataForSEO request failed (HTTP ${httpStatus}, status_code ${envelopeStatusCode ?? "unknown"}): ${statusMessage}`,
+  );
 }
 
 function createDataForSeoTaskError(task: DataForSeoTask, phase: DataForSeoPhase) {
   const statusMessage = optionalString(task.status_message) ?? "DataForSEO task failed";
   const statusCode = readOptionalNumber(task.status_code);
   const isAuthError = statusCode === 40100;
-  return new ProviderRequestError(phase === "validate" || isAuthError ? 400 : 502, statusMessage);
+  return new ProviderRequestError(
+    phase === "validate" || isAuthError ? 400 : 502,
+    `DataForSEO task failed (status_code ${statusCode ?? "unknown"}): ${statusMessage}`,
+  );
 }
 
 function isSuccessfulStatus(statusCode: unknown) {

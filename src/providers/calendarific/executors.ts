@@ -1,15 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalInteger, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-  runProviderRequest,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent, runProviderRequest } from "../provider-runtime.ts";
 
 const service = "calendarific";
 const calendarificApiBaseUrl = "https://calendarific.com/api/v2";
@@ -107,7 +102,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "calendarific",
         displayName: "Calendarific API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         validationEndpoint: "/countries",
         countryCount: countries.length,
@@ -121,7 +115,7 @@ export const credentialValidators: CredentialValidators = {
 async function requestCalendarificJson(input: {
   path: string;
   params: Record<string, string | undefined>;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   phase: CalendarificPhase;
 }): Promise<Record<string, unknown>> {
   return runProviderRequest({ signal: input.context.signal, label: "Calendarific" }, async (signal) => {

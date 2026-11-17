@@ -1,6 +1,6 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -11,19 +11,19 @@ import {
   requiredString,
   stringArray,
 } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   isAbortLikeError,
   providerInputError,
   ProviderRequestError,
   providerUserAgent,
+  defaultProviderRequestTimeoutMs,
 } from "../provider-runtime.ts";
 
 const service = "bouncer";
 const bouncerApiBaseUrl = "https://api.usebouncer.com";
-const bouncerDefaultRequestTimeoutMs = 30_000;
 
 type BouncerRequestPhase = "validate" | "execute";
 type BouncerActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
@@ -166,7 +166,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: service,
         displayName: "Bouncer API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: bouncerApiBaseUrl,
         validationEndpoint: "/v1.1/credits",
@@ -211,7 +210,7 @@ async function requestBouncerVerifyEmail(
     phase: input.phase,
     query: {
       email: input.email,
-      timeout: String(bouncerDefaultRequestTimeoutMs / 1000),
+      timeout: String(defaultProviderRequestTimeoutMs / 1000),
     },
   });
 
@@ -437,7 +436,7 @@ async function requestBouncerJson(input: {
     }
   }
 
-  const timeout = createProviderTimeout(input.signal, bouncerDefaultRequestTimeoutMs);
+  const timeout = createProviderTimeout(input.signal);
   try {
     const headers: Record<string, string> = {
       accept: "application/json",

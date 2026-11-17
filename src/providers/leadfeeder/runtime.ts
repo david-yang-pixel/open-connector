@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderRequestContext } from "../provider-runtime.ts";
 
 import {
   compactObject,
@@ -137,7 +137,6 @@ export async function validateLeadfeederCredential(
       accountId: optionalString(data.id),
       displayName: email ?? fullName ?? "Leadfeeder API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: leadfeederApiBaseUrl,
       validationEndpoint: validationPath,
@@ -152,7 +151,7 @@ async function requestLeadfeederJson(input: {
   apiKey: string;
   path: string;
   phase: LeadfeederPhase;
-  context: Pick<ApiKeyProviderContext, "fetcher" | "signal">;
+  context: ProviderRequestContext;
   method?: "GET" | "POST";
   query?: URLSearchParams;
   body?: Record<string, unknown>;

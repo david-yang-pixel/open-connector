@@ -1,3 +1,4 @@
+import { Validator } from "@cfworker/json-schema";
 import { describe, expect, it } from "vitest";
 import { describeSchemaType, jsonSchema, readSchemaProperties, readSchemaRequired } from "./json-schema.ts";
 
@@ -140,6 +141,35 @@ describe("jsonSchema.requireAnyProperty", () => {
   });
 });
 
+describe("jsonSchema.requireExactlyOneProperty", () => {
+  it("emits mutually exclusive required branches without mutating the base schema", () => {
+    const schema = jsonSchema.object(
+      "A lookup.",
+      {
+        id: jsonSchema.string("An ID."),
+        name: jsonSchema.string("A name."),
+      },
+      { optional: ["id", "name"] },
+    );
+
+    expect(jsonSchema.requireExactlyOneProperty(schema, ["id", "name"])).toMatchObject({
+      oneOf: [{ required: ["id"] }, { required: ["name"] }],
+    });
+    expect(schema).not.toHaveProperty("oneOf");
+  });
+});
+
+describe("jsonSchema schema annotations", () => {
+  it("adds examples and enums without mutating the base schema", () => {
+    const schema = jsonSchema.string("A value.");
+
+    expect(jsonSchema.withExamples(schema, ["one"])).toMatchObject({ examples: ["one"] });
+    expect(jsonSchema.withEnum(schema, ["one", "two"])).toMatchObject({ enum: ["one", "two"] });
+    expect(schema).not.toHaveProperty("examples");
+    expect(schema).not.toHaveProperty("enum");
+  });
+});
+
 describe("readSchemaProperties", () => {
   it("returns the properties map of an object schema", () => {
     expect(readSchemaProperties({ type: "object", properties: { id: { type: "string" } } })).toEqual({
@@ -181,4 +211,64 @@ describe("describeSchemaType", () => {
     expect(describeSchemaType({})).toBe("unknown");
     expect(describeSchemaType({ type: ["string", "null"] })).toBe("unknown");
   });
+});
+
+describe("schema constraints used by provider inputs", () => {
+  it("preserves object alternatives, property limits and enum defaults", () => {
+    const schema = jsonSchema.object(
+      "Choose one identifier.",
+      {
+        id: jsonSchema.string("Identifier."),
+        url: jsonSchema.string("URL."),
+      },
+      {
+        required: [],
+        minProperties: 1,
+        maxProperties: 1,
+        propertyNames: { enum: ["id", "url"] },
+        oneOf: [{ required: ["id"] }, { required: ["url"] }],
+      },
+    );
+    const validator = new Validator(schema);
+    expect(validator.validate({ id: "x" }).valid).toBe(true);
+    expect(validator.validate({}).valid).toBe(false);
+    expect(validator.validate({ id: "x", url: "y" }).valid).toBe(false);
+    expect(jsonSchema.stringEnum("Sort.", ["new", "old"], { default: "new" }).default).toBe("new");
+  });
+  it("validates null literals, excluded values and numeric increments", () => {
+    expect(new Validator(jsonSchema.literal(null)).validate(null).valid).toBe(true);
+    const value = new Validator(jsonSchema.string("Path.", { not: { enum: [".", ".."] } }));
+    expect(value.validate("..").valid).toBe(false);
+    expect(value.validate("entry").valid).toBe(true);
+    const amount = new Validator(jsonSchema.number("Amount.", { multipleOf: 0.5 }));
+    expect(amount.validate(1.5).valid).toBe(true);
+    expect(amount.validate(1.2).valid).toBe(false);
+  });
+});
+
+describe("conditional and strict numeric constraints", () => {
+  it("enforces dependent fields and exclusive upper bounds through the runtime validator", () => {
+    const schema = jsonSchema.object(
+      "Request.",
+      {
+        duration: jsonSchema.number("Duration.", { exclusiveMaximum: 10 }),
+        count: jsonSchema.integer("Count.", { exclusiveMaximum: 4 }),
+        key: jsonSchema.string("Key."),
+        signature: jsonSchema.string("Signature."),
+      },
+      { optional: ["duration", "count", "key", "signature"], dependentRequired: { key: ["signature"] } },
+    );
+    const validator = new Validator(schema, "2020-12");
+    expect(validator.validate({ duration: 9.9, count: 3, key: "k", signature: "s" }).valid).toBe(true);
+    for (const value of [{ duration: 10 }, { count: 4 }, { key: "k" }]) {
+      expect(validator.validate(value).valid).toBe(false);
+    }
+  });
+});
+
+it("enforces explicit required fields on loose objects while retaining upstream additions", () => {
+  const schema = jsonSchema.looseObject("Result", { code: jsonSchema.string("Status code") }, { required: ["code"] });
+  const validator = new Validator(schema);
+  expect(validator.validate({ code: "ok", future: { enabled: true } }).valid).toBe(true);
+  expect(validator.validate({ future: true }).valid).toBe(false);
 });

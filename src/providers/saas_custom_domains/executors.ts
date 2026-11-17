@@ -4,8 +4,7 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -15,13 +14,9 @@ import {
   optionalString,
   requiredString,
 } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-  requiredInputString,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent, requiredInputString } from "../provider-runtime.ts";
 
 const service = "saas_custom_domains";
 const saasCustomDomainsApiBaseUrl = "https://app.saascustomdomains.com/api/v1";
@@ -98,7 +93,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: firstAccountUuid ?? "saas_custom_domains",
         displayName: firstAccountName ?? "SaaS Custom Domains API Token",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: saasCustomDomainsApiBaseUrl,
         authMethod: "bearer",
@@ -111,7 +105,7 @@ export const credentialValidators: CredentialValidators = {
 };
 
 async function listAccounts(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: SaasCustomDomainsPhase,
 ): Promise<{ accounts: Array<Record<string, unknown>> }> {
   const payload = await requestSaasCustomDomainsJson({ method: "GET", path: "/accounts" }, context, phase);
@@ -293,7 +287,7 @@ async function requestSaasCustomDomainsJson(
     query?: Record<string, QueryValue>;
     form?: Record<string, FormValue>;
   },
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: SaasCustomDomainsPhase,
 ): Promise<unknown> {
   const url = new URL(`${saasCustomDomainsApiUrl.pathname}${request.path}`, saasCustomDomainsApiUrl.origin);

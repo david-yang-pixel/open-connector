@@ -4,23 +4,26 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
 import { createHash, createHmac } from "node:crypto";
 import { compactObject, optionalRecord, optionalString, requiredRecord } from "../../core/cast.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
 import {
-  createProviderFetch,
   createProviderProxyUrl,
-  defineProviderExecutors,
   normalizeProviderProxyHeaders,
-  ProviderRequestError,
-  providerUserAgent,
   readProviderProxyErrorMessage,
   readProviderProxyResponse,
-  requireApiKeyCredential,
-  requiredInputString,
   toProviderProxyError,
+} from "../provider-proxy.ts";
+import {
+  createProviderFetch,
+  ProviderRequestError,
+  providerUserAgent,
+  requiredInputString,
+  defaultProviderRequestTimeoutMs,
 } from "../provider-runtime.ts";
 
 const service = "feishu_custom_bot";
@@ -28,7 +31,6 @@ const feishuCustomBotApiBaseUrl = "https://open.feishu.cn";
 const feishuCustomBotWebhookPathPrefix = "/open-apis/bot/v2/hook/";
 const feishuCustomBotAllowedWebhookHosts = new Set([new URL(feishuCustomBotApiBaseUrl).host]);
 const feishuCustomBotMaxPayloadBytes = 20 * 1024;
-const feishuCustomBotRequestTimeoutMs = 30_000;
 
 const feishuCustomBotFetch = createProviderFetch({ skipDnsValidation: true });
 const feishuCustomBotProbeBadRequestCode = 9499;
@@ -242,7 +244,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: buildFeishuCustomBotProviderAccountId(credential.webhookToken),
         displayName: buildFeishuCustomBotAccountLabel(credential.webhookToken),
       },
-      grantedScopes: [],
       metadata: compactObject({
         webhookHost: new URL(credential.webhookUrl).host,
         webhookPathSuffix: maskFeishuCustomBotToken(credential.webhookToken),
@@ -523,7 +524,7 @@ function requiredFeishuCustomBotObject(value: unknown, fieldName: string): Recor
 
 function createFeishuCustomBotRequestSignal(parent?: AbortSignal): FeishuCustomBotRequestSignal {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), feishuCustomBotRequestTimeoutMs);
+  const timeout = setTimeout(() => controller.abort(), defaultProviderRequestTimeoutMs);
   const abortFromParent = (): void => controller.abort(parent?.reason);
   if (parent?.aborted) {
     controller.abort(parent.reason);

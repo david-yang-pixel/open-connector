@@ -4,20 +4,21 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { compactObject, optionalInteger, optionalRecord, optionalString, rawStringOrNull } from "../../core/cast.ts";
 import { assertPublicHttpUrl } from "../../core/request.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineProviderExecutors,
-  defineProviderProxy,
   isAbortLikeError,
   providerInputError,
   providerUserAgent,
   ProviderRequestError,
   readProviderTextBody,
-  requireApiKeyCredential,
+  providerResponseError,
 } from "../provider-runtime.ts";
 
 const gainsightNxtMaxResponseBytes = 10 * 1024 * 1024;
@@ -137,7 +138,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: hostname,
         displayName: `Gainsight NXT ${hostname}`,
       },
-      grantedScopes: [],
       metadata: {
         baseUrl,
         validationMode: "format_and_base_url_only",
@@ -233,7 +233,7 @@ function createGainsightError(status: number, payload: unknown, phase: Gainsight
     return new ProviderRequestError(status || 400, message);
   }
 
-  return new ProviderRequestError(502, message);
+  return providerResponseError(message);
 }
 
 function readGainsightErrorMessage(payload: unknown) {

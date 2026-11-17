@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
 import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
@@ -45,7 +45,6 @@ export async function validateTicketSourceCredential(
   await request("/events", { page: "1", per_page: "1" }, apiKey, fetcher, "validate");
   return {
     profile: { displayName: "TicketSource API Key" },
-    grantedScopes: [],
     metadata: { apiBaseUrl: ticketSourceApiBaseUrl },
   };
 }

@@ -1,9 +1,14 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean, optionalRecord, optionalString } from "../../core/cast.ts";
-import { createProviderTimeout, providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
+import {
+  createProviderTimeout,
+  providerUserAgent,
+  ProviderRequestError,
+  providerInputError,
+  providerResponseError,
+} from "../provider-runtime.ts";
 
 export const timelinesAiApiBaseUrl = "https://app.timelines.ai/integrations/api";
 
@@ -141,7 +146,6 @@ export async function validateTimelinesAiCredential(
   const displayName = requireProviderString(workspace.displayName, "workspace display name");
   return {
     profile: { displayName },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: timelinesAiApiBaseUrl,
       validationEndpoint: "/workspace",
@@ -151,7 +155,7 @@ export async function validateTimelinesAiCredential(
   };
 }
 
-interface RequestInput extends Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal"> {
+interface RequestInput extends ApiKeyProviderContext {
   path: string;
   phase?: RequestPhase;
   method?: "GET" | "POST";
@@ -188,7 +192,7 @@ async function request(input: RequestInput) {
 
     const envelope = requireProviderObject(payload, "response envelope");
     if (envelope.status !== "ok" || !("data" in envelope)) {
-      throw providerError("provider_error", readErrorMessage(payload), 502);
+      throw providerResponseError(readErrorMessage(payload));
     }
     return envelope.data;
   } catch (error) {
@@ -196,20 +200,14 @@ async function request(input: RequestInput) {
       throw error;
     }
     if (timeout.didTimeout()) {
-      throw providerError("provider_error", "TimelinesAI request timed out", 504);
+      throw new ProviderRequestError(504, "TimelinesAI request timed out");
     }
-    throw providerError(
-      "provider_error",
+    throw providerResponseError(
       error instanceof Error ? `TimelinesAI request failed: ${error.message}` : "TimelinesAI request failed",
-      502,
     );
   } finally {
     timeout.cleanup();
   }
-}
-
-function providerError(_code: string, message: string, status: number): ProviderRequestError {
-  return new ProviderRequestError(status, message);
 }
 
 async function readPayload(response: Response) {
@@ -223,25 +221,25 @@ async function readPayload(response: Response) {
     if (!response.ok) {
       return { message: text };
     }
-    throw providerError("provider_error", "TimelinesAI returned invalid JSON", 502);
+    throw providerResponseError("TimelinesAI returned invalid JSON");
   }
 }
 
 function createRequestError(response: Response, payload: unknown, phase: RequestPhase) {
   const message = readErrorMessage(payload);
   if (response.status === 429) {
-    return providerError("rate_limited", message, 429);
+    return new ProviderRequestError(429, message);
   }
   if (phase === "validate" && (response.status === 401 || response.status === 403)) {
-    return providerError("invalid_input", message, 400);
+    return providerInputError(message);
   }
   if (response.status === 401) {
-    return providerError("credential_expired", message, 401);
+    return new ProviderRequestError(401, message);
   }
   if (response.status === 400 || response.status === 404) {
-    return providerError("invalid_input", message, 400);
+    return providerInputError(message);
   }
-  return providerError("provider_error", message, response.status >= 500 ? 502 : response.status);
+  return new ProviderRequestError(response.status >= 500 ? 502 : response.status, message);
 }
 
 function readErrorMessage(payload: unknown) {
@@ -256,21 +254,21 @@ function commaSeparated(value: unknown) {
 function requireProviderObject(value: unknown, name: string) {
   const record = optionalRecord(value);
   if (!record) {
-    throw providerError("provider_error", `TimelinesAI returned invalid ${name}`, 502);
+    throw providerResponseError(`TimelinesAI returned invalid ${name}`);
   }
   return record;
 }
 
 function requireProviderArray(value: unknown, name: string) {
   if (!Array.isArray(value)) {
-    throw providerError("provider_error", `TimelinesAI returned invalid ${name}`, 502);
+    throw providerResponseError(`TimelinesAI returned invalid ${name}`);
   }
   return value;
 }
 
 function requireProviderString(value: unknown, name: string) {
   if (typeof value !== "string" || !value) {
-    throw providerError("provider_error", `TimelinesAI returned invalid ${name}`, 502);
+    throw providerResponseError(`TimelinesAI returned invalid ${name}`);
   }
   return value;
 }

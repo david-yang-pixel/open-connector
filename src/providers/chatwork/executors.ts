@@ -5,17 +5,13 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalInteger, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
 import { queryParams } from "../../core/request.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 
 const service = "chatwork";
 const apiBaseUrl = "https://api.chatwork.com/v2";
@@ -163,7 +159,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: String(profile.account_id ?? "api_key"),
         displayName: optionalString(profile.name) ?? "Chatwork API Token",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl,
         validationEndpoint: "/me",
@@ -176,7 +171,7 @@ export const credentialValidators: CredentialValidators = {
 };
 
 async function requestObject(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   path: string,
   options: RequestOptions = {},
 ): Promise<Record<string, unknown>> {
@@ -187,7 +182,7 @@ async function requestObject(
 }
 
 async function requestArray(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   path: string,
   options: RequestOptions = {},
 ): Promise<unknown[]> {
@@ -203,7 +198,7 @@ interface RequestOptions {
 }
 
 async function requestPayload(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   path: string,
   options: RequestOptions = {},
 ): Promise<unknown> {

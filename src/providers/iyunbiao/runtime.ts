@@ -2,11 +2,11 @@ import type { TransitFileWriter } from "../../core/types.ts";
 
 import { createHash } from "node:crypto";
 import { optionalRecord, optionalString } from "../../core/cast.ts";
-import { assertPublicHttpUrl, readBoundedResponseBytes } from "../../core/request.ts";
+import { assertPublicHttpUrl, storeResponseInTransit } from "../../core/request.ts";
+import { readTransitFileInput } from "../provider-files.ts";
 import {
   providerInputError,
   ProviderRequestError,
-  readTransitFileInput,
   requiredInputString,
   requiredResponseRecord,
   runProviderRequest,
@@ -102,7 +102,7 @@ async function jsonRequest(
       headers: buildIyunbiaoHeaders(credentials, token),
       body,
       signal,
-      redirect: "error",
+      redirect: "manual",
     });
     return readJson(response);
   });
@@ -288,21 +288,20 @@ export async function executeIyunbiaoAction(
           {
             headers: buildIyunbiaoHeaders(session.credentials, session.token),
             signal,
-            redirect: "error",
+            redirect: "manual",
           },
         );
         if (!response.ok) await readJson(response);
         const fileName = requiredInputString(input.fileName, "fileName");
         const mimeType = response.headers.get("content-type") || "application/octet-stream";
         if (!options.transitFiles) throw providerInputError("Transit file storage is not enabled");
-        const bytes = await readBoundedResponseBytes(response, {
-          maxBytes: options.transitFiles.maxBytes,
+        const file = await storeResponseInTransit(response, options.transitFiles, {
+          name: fileName,
+          mimeType,
           fieldName: "Yunbiao attachment download",
           createError: (message) => new ProviderRequestError(413, message),
+          signal,
         });
-        const file = await options.transitFiles.create(
-          new File([Uint8Array.from(bytes)], fileName, { type: mimeType }),
-        );
         return { file, fileName, mimeType };
       });
   }

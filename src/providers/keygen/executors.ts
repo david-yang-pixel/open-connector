@@ -4,16 +4,13 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-  requireApiKeyCredential,
-} from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError, providerInputError } from "../provider-runtime.ts";
 
 const keygenApiBaseUrl = "https://api.keygen.sh/v1/accounts";
 const keygenValidationPath = "/me";
@@ -433,7 +430,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: profileId ? `${account}:${profileId}` : account,
         displayName: name ?? email ?? account,
       },
-      grantedScopes: [],
       metadata: compactObject({
         account,
         apiBaseUrl: `${keygenApiBaseUrl}/${encodeURIComponent(account)}`,
@@ -702,7 +698,7 @@ function createKeygenError(response: Response, payload: unknown, phase: KeygenRe
   }
 
   if (phase === "validate" && (response.status === 401 || response.status === 403)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
 
   if (phase === "execute" && usedAuth && (response.status === 401 || response.status === 403)) {
@@ -710,11 +706,11 @@ function createKeygenError(response: Response, payload: unknown, phase: KeygenRe
   }
 
   if (phase === "execute" && !usedAuth && (response.status === 401 || response.status === 403)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
 
   if ([400, 404, 422].includes(response.status)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
 
   return new ProviderRequestError(response.status || 500, message);

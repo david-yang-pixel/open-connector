@@ -4,14 +4,14 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderRequestContext } from "../provider-runtime.ts";
 
 import { compactObject, optionalNumber, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   isAbortLikeError,
   providerUserAgent,
   ProviderRequestError,
@@ -95,7 +95,6 @@ async function validateMailcheckCredential(
       accountId: userEmail,
       displayName: userEmail,
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: mailcheckApiBaseUrl,
       validationEndpoint: "/status",
@@ -111,7 +110,7 @@ async function validateMailcheckCredential(
 
 async function requestMailcheckStatus(input: {
   apiKey: string;
-  context: Pick<ApiKeyProviderContext, "fetcher" | "signal">;
+  context: ProviderRequestContext;
   phase: MailcheckRequestPhase;
 }): Promise<Record<string, unknown>> {
   const payload = await requestMailcheckJson({
@@ -126,7 +125,7 @@ async function requestMailcheckStatus(input: {
 
 async function requestMailcheckEmail(input: {
   apiKey: string;
-  context: Pick<ApiKeyProviderContext, "fetcher" | "signal">;
+  context: ProviderRequestContext;
   phase: MailcheckRequestPhase;
   email: string;
 }): Promise<Record<string, unknown>> {
@@ -142,7 +141,7 @@ async function requestMailcheckEmail(input: {
 
 async function requestMailcheckDomain(input: {
   apiKey: string;
-  context: Pick<ApiKeyProviderContext, "fetcher" | "signal">;
+  context: ProviderRequestContext;
   phase: MailcheckRequestPhase;
   domain: string;
 }): Promise<Record<string, unknown>> {
@@ -158,7 +157,7 @@ async function requestMailcheckDomain(input: {
 
 async function requestMailcheckJson(input: {
   apiKey: string;
-  context: Pick<ApiKeyProviderContext, "fetcher" | "signal">;
+  context: ProviderRequestContext;
   path: string;
   phase: MailcheckRequestPhase;
 }): Promise<unknown> {

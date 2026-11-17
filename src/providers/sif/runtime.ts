@@ -1,6 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 import type { Client } from "@modelcontextprotocol/client";
 
 import { UnauthorizedError } from "@modelcontextprotocol/client";
@@ -56,12 +55,11 @@ export async function validateSifCredential(
   const hash = createHash("sha256").update(apiKey).digest("hex").slice(0, 16);
   return {
     profile: { accountId: `sif:mcp:${hash}`, displayName: `Sif MCP · ${hash.slice(-6)}` },
-    grantedScopes: [],
     metadata: { mcpEndpoint: sifMcpEndpoint, discoveredToolCount: tools.length },
   };
 }
 
-async function listBusinessTools(context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">) {
+async function listBusinessTools(context: ApiKeyProviderContext) {
   const result = await withClient(context, (client) =>
     client.listTools({}, { timeout: requestTimeoutMs, signal: context.signal }),
   );
@@ -70,11 +68,7 @@ async function listBusinessTools(context: Pick<ApiKeyProviderContext, "apiKey" |
     .map((tool) => ({ name: tool.name, inputSchema: tool.inputSchema }));
 }
 
-async function callTool(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
-  toolName: string,
-  args: Record<string, unknown>,
-) {
+async function callTool(context: ApiKeyProviderContext, toolName: string, args: Record<string, unknown>) {
   return withClient(context, (client) =>
     client.callTool(
       { name: toolName, arguments: args },
@@ -86,10 +80,7 @@ async function callTool(
   );
 }
 
-async function withClient<T>(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
-  run: (client: Client) => Promise<T>,
-): Promise<T> {
+async function withClient<T>(context: ApiKeyProviderContext, run: (client: Client) => Promise<T>): Promise<T> {
   return withMcpClient(
     {
       endpoint: new URL(sifMcpEndpoint),

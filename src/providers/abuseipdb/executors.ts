@@ -4,23 +4,23 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { isIP } from "node:net";
 import { nullableString, optionalBoolean, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineProviderExecutors,
-  defineProviderProxy,
   isAbortLikeError,
   providerUserAgent,
   ProviderRequestError,
-  requireApiKeyCredential,
   requiredResponseRecord,
+  defaultProviderRequestTimeoutMs,
 } from "../provider-runtime.ts";
 
 const service = "abuseipdb";
 const abuseipdbApiBaseUrl = "https://api.abuseipdb.com/api/v2";
-const abuseipdbDefaultRequestTimeoutMs = 30_000;
 const abuseipdbValidationIpAddress = "8.8.8.8";
 
 type AbuseipdbRequestPhase = "validate" | "execute";
@@ -92,7 +92,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "api_key",
         displayName: "AbuseIPDB API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: abuseipdbApiBaseUrl,
         validationEndpoint: "/check",
@@ -232,8 +231,8 @@ async function requestAbuseipdbJson<T>(input: {
   let response: Response;
   let payload: unknown;
   const signal = input.context.signal
-    ? AbortSignal.any([input.context.signal, AbortSignal.timeout(abuseipdbDefaultRequestTimeoutMs)])
-    : AbortSignal.timeout(abuseipdbDefaultRequestTimeoutMs);
+    ? AbortSignal.any([input.context.signal, AbortSignal.timeout(defaultProviderRequestTimeoutMs)])
+    : AbortSignal.timeout(defaultProviderRequestTimeoutMs);
   try {
     response = await input.context.fetcher(buildAbuseipdbUrl(input.path, input.query ?? {}), {
       method: "GET",

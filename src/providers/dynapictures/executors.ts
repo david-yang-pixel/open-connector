@@ -4,18 +4,18 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { createHash } from "node:crypto";
 import { compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineProviderExecutors,
-  defineProviderProxy,
   providerUserAgent,
   ProviderRequestError,
   readProviderTextBody,
-  requireApiKeyCredential,
 } from "../provider-runtime.ts";
 
 const dynapicturesApiBaseUrl = "https://api.dynapictures.com";
@@ -88,7 +88,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: `dynapictures:${hashApiKey(input.apiKey)}`,
         displayName: "DynaPictures API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: dynapicturesApiBaseUrl,
         validationEndpoint: "/templates",

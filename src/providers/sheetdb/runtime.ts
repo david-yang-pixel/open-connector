@@ -1,9 +1,14 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
-import { createProviderTimeout, providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
+import {
+  createProviderTimeout,
+  providerUserAgent,
+  ProviderRequestError,
+  providerInputError,
+} from "../provider-runtime.ts";
 
 export const sheetDbApiBaseUrl = "https://sheetdb.io";
 
@@ -71,7 +76,6 @@ export async function validateSheetDbCredential(
       accountId: `sheetdb:${apiId}`,
       displayName: documentName,
     },
-    grantedScopes: [],
     metadata: {
       apiId,
       documentName,
@@ -299,7 +303,7 @@ function mapSheetDbError(status: number, payload: unknown, phase: "validate" | "
     return new ProviderRequestError(429, message);
   }
   if (status === 400 || status === 404 || status === 422) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   return new ProviderRequestError(status >= 500 ? status : 502, message);
 }

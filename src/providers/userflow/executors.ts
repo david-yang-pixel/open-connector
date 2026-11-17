@@ -1,14 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "userflow";
 const userflowApiBaseUrl = "https://api.userflow.com";
@@ -71,7 +67,6 @@ export const credentialValidators: CredentialValidators = {
       profile: {
         displayName: readFirstUserLabel(payload) ?? "Userflow API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: userflowApiBaseUrl,
         apiVersion: userflowApiVersion,
@@ -107,7 +102,7 @@ function appendExpand(url: URL, expand: unknown): void {
 }
 
 async function deleteUserflowObject(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   resource: "users" | "groups",
   idField: "user_id" | "group_id",
   id: string,
@@ -117,7 +112,7 @@ async function deleteUserflowObject(
 }
 
 async function requestUserflow(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   pathOrUrl: string | URL,
   input: { method?: "GET" | "POST" | "DELETE"; body?: Record<string, unknown> } = {},
   mode: "validate" | "execute" = "execute",

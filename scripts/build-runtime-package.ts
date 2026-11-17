@@ -22,6 +22,7 @@ await cp(join(root, "catalog/apps"), join(assets, "catalog/apps"), { recursive: 
 await cp(join(root, "catalog/apps-index.json"), join(assets, "catalog/apps-index.json"));
 await cp(join(root, "migrations"), join(assets, "migrations"), { recursive: true });
 await cp(join(root, "LICENSE.txt"), join(output, "LICENSE.txt"));
+await cp(join(root, "LICENSE-APACHE-2.0.txt"), join(output, "LICENSE-APACHE-2.0.txt"));
 await cp(join(root, "NOTICE.md"), join(output, "NOTICE.md"));
 await cp(join(root, "docs/headless.md"), join(output, "README.md"));
 const source = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
@@ -32,11 +33,14 @@ await writeFile(
       name: source.name,
       version: source.version,
       description: "Embeddable Open Connector runtime for Node.js and Bun.",
-      license: "Apache-2.0",
+      license: source.license,
       type: "module",
-      exports: { ".": { types: "./src/server/connector-runtime.d.ts", import: "./src/server/connector-runtime.js" } },
+      exports: {
+        ".": { types: "./src/server/connector-runtime.d.ts", import: "./src/server/connector-runtime.js" },
+        "./build": { types: "./src/server/connector-build.d.ts", import: "./src/server/connector-build.js" },
+      },
       dependencies: source.dependencies,
-      engines: { node: ">=22.18.0" },
+      engines: source.engines,
       keywords: ["connector", "oauth", "mcp", "agents", "integrations"],
       homepage: "https://github.com/oomol-lab/open-connector#readme",
       bugs: { url: "https://github.com/oomol-lab/open-connector/issues" },

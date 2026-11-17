@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
 import {
@@ -10,7 +10,7 @@ import {
   providerUserAgent,
 } from "../provider-runtime.ts";
 
-export interface BotpressContext extends Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal"> {
+export interface BotpressContext extends ApiKeyProviderContext {
   workspaceId: string;
 }
 
@@ -83,7 +83,6 @@ export async function validateBotpressCredential(
       accountId: `botpress:${workspaceId}`,
       displayName: `Botpress workspace ${workspaceId}`,
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: botpressApiBaseUrl,
       validationEndpoint: botpressValidationPath,

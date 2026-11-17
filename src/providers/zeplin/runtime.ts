@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { OAuthProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { OAuthProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -13,8 +13,12 @@ import {
   requiredString,
 } from "../../core/cast.ts";
 import { encodePathSegment, queryParams } from "../../core/request.ts";
-import { providerResponseError, providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
-import { zeplinReadScope } from "./scopes.ts";
+import {
+  providerResponseError,
+  providerUserAgent,
+  ProviderRequestError,
+  providerInputError,
+} from "../provider-runtime.ts";
 
 export const zeplinApiBaseUrl = "https://api.zeplin.dev/v1";
 
@@ -64,7 +68,6 @@ export async function validateZeplinCredential(
       accountId,
       displayName: fullName ?? username ?? email ?? accountId,
     },
-    grantedScopes: [zeplinReadScope],
     metadata: {
       apiBaseUrl: zeplinApiBaseUrl,
       validationEndpoint: "/users/me",
@@ -245,7 +248,7 @@ function mapZeplinError(status: number, text: string, phase: ZeplinRequestPhase)
     return new ProviderRequestError(429, message);
   }
   if (status >= 400 && status < 500) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   return new ProviderRequestError(status || 502, message);
 }

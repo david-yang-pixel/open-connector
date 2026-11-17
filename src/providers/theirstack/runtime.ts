@@ -1,6 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, looseArray, optionalRecord, optionalString } from "../../core/cast.ts";
 import { ProviderRequestError, providerUserAgent, requiredResponseRecord } from "../provider-runtime.ts";
@@ -55,7 +54,6 @@ export async function validateTheirStackCredential(
   const record = requiredResponseRecord(payload, "TheirStack credit balance response");
   return {
     profile: { accountId: "theirstack:api-key", displayName: "TheirStack API Key" },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: theirstackApiBaseUrl,
       validationEndpoint: "/v0/billing/credit-balance",
@@ -69,7 +67,7 @@ async function theirstackRequestJson(
   method: "GET" | "POST",
   path: string,
   body: Record<string, unknown> | undefined,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: "validate" | "execute" = "execute",
 ): Promise<unknown> {
   let response: Response;

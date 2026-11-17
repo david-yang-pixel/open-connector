@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { compactObject, optionalInteger, optionalRecord, requiredRecord } from "../../core/cast.ts";
 import { providerInputError, providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
@@ -61,7 +61,6 @@ export async function validateTwentyCrmCredential(
       accountId: "twenty_crm:workspace",
       displayName: firstObjectName ? `Twenty workspace with ${firstObjectName}` : "Twenty CRM Workspace",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: twentyCrmApiBaseUrl,
       authMethod: "bearer",
@@ -73,7 +72,7 @@ export async function validateTwentyCrmCredential(
 }
 
 async function listMetadataObjects(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: TwentyCrmPhase = "execute",
 ): Promise<{ objects: Record<string, unknown>[]; raw: Record<string, unknown> }> {
   const payload = await requestTwentyCrmJson(
@@ -96,10 +95,11 @@ async function listRecords(
   input: Record<string, unknown>,
   context: ApiKeyProviderContext,
 ): Promise<Record<string, unknown>> {
+  const objectNamePlural = readRequiredString(input.objectNamePlural, "objectNamePlural");
   const payload = await requestTwentyCrmJson(
     {
       method: "GET",
-      path: `/rest/${encodeObjectName(readRequiredString(input.objectNamePlural, "objectNamePlural"))}`,
+      path: `/rest/${encodeObjectName(objectNamePlural)}`,
       query: compactObject({
         limit: optionalInteger(input.limit),
         starting_after: readOptionalString(input.startingAfter),
@@ -113,8 +113,9 @@ async function listRecords(
   );
   const record = requireProviderObject(payload, "Twenty CRM list records response");
 
+  const data = requireProviderObject(record.data, "Twenty CRM data");
   return {
-    records: readArray(record, "data").map((item) => requireProviderObject(item, "Twenty CRM record")),
+    records: readArray(data, objectNamePlural).map((item) => requireProviderObject(item, "Twenty CRM record")),
     pageInfo: optionalRecord(record.pageInfo) ?? {},
     raw: record,
   };
@@ -202,7 +203,7 @@ async function deleteRecord(
 
 async function requestTwentyCrmJson(
   options: TwentyCrmRequestOptions,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: TwentyCrmPhase = "execute",
 ): Promise<unknown> {
   const url = new URL(options.path, twentyCrmApiUrl);

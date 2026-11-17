@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ApiKeyProviderContext, ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ApiKeyProviderContext, ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { compactObject, optionalInteger, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
 import { randomUUIDv7 } from "../../core/uuid-v7.ts";
@@ -137,7 +137,6 @@ export async function validateDoubaoSpeechCredential(
   });
   return {
     profile: { accountId: "doubao_speech:app_key", displayName: "Doubao Speech APP Key" },
-    grantedScopes: [],
     metadata: { apiBaseUrl: doubaoSpeechApiBaseUrl },
   };
 }

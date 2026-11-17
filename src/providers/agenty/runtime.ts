@@ -1,15 +1,19 @@
 import type { CredentialValidationResult, TransitFileWriter } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { compactObject, optionalRecord, optionalString, recordOrEmpty, requiredRecord } from "../../core/cast.ts";
-import { readBoundedResponseBytes } from "../../core/request.ts";
-import { providerFetch, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
+import { storeResponseInTransit } from "../../core/request.ts";
+import {
+  providerFetch,
+  ProviderRequestError,
+  providerUserAgent,
+  defaultProviderRequestTimeoutMs,
+} from "../provider-runtime.ts";
 
 export const agentyApiBaseUrl = "https://api.agenty.com/v2";
 export const agentyBrowserBaseUrl = "https://browser.agenty.com/api";
 const agentyValidationPath = "/agents";
-const agentyTimeoutMs = 30_000;
 
 export type AgentyRuntimeContext = {
   apiKey: string;
@@ -143,7 +147,6 @@ export async function validateAgentyApiKey(
       accountId: "agenty",
       displayName: "Agenty API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: agentyApiBaseUrl,
       validationEndpoint: agentyValidationPath,
@@ -507,7 +510,7 @@ async function downloadJobResult(input: Record<string, unknown>, context: Agenty
   });
   const record = unwrapAgentyPayload(payload);
   const downloadUrl = asRequiredString(record.downloadlink ?? record.downloadLink, "downloadlink");
-  const timeoutSignal = AbortSignal.timeout(agentyTimeoutMs);
+  const timeoutSignal = AbortSignal.timeout(defaultProviderRequestTimeoutMs);
   const signal = context.signal ? AbortSignal.any([context.signal, timeoutSignal]) : timeoutSignal;
 
   try {
@@ -582,12 +585,13 @@ async function uploadAgentyTransitFile(context: AgentyRuntimeContext, response: 
   }
 
   const mimeType = response.headers.get("content-type") ?? "application/octet-stream";
-  const bytes = await readBoundedResponseBytes(response, {
-    maxBytes: context.transitFiles.maxBytes,
+  const upload = await storeResponseInTransit(response, context.transitFiles, {
+    name,
+    mimeType,
     fieldName: "Agenty file output",
     createError: (message) => new ProviderRequestError(413, message),
+    signal: context.signal,
   });
-  const upload = await context.transitFiles.create(new File([Uint8Array.from(bytes)], name, { type: mimeType }));
   return {
     name,
     mimetype: mimeType,
@@ -634,7 +638,7 @@ async function requestAgentyApiResponse(input: {
   body?: unknown;
   baseUrl?: string;
 }) {
-  const timeoutSignal = AbortSignal.timeout(agentyTimeoutMs);
+  const timeoutSignal = AbortSignal.timeout(defaultProviderRequestTimeoutMs);
   const signal = input.context.signal ? AbortSignal.any([input.context.signal, timeoutSignal]) : timeoutSignal;
 
   try {
@@ -676,7 +680,7 @@ async function requestAgentyBrowser(input: {
   input: Record<string, unknown>;
   context: AgentyRuntimeContext;
 }) {
-  const timeoutSignal = AbortSignal.timeout(agentyTimeoutMs);
+  const timeoutSignal = AbortSignal.timeout(defaultProviderRequestTimeoutMs);
   const signal = input.context.signal ? AbortSignal.any([input.context.signal, timeoutSignal]) : timeoutSignal;
 
   try {
@@ -723,7 +727,7 @@ async function requestAgentyJson(input: {
   body?: unknown;
   query?: URLSearchParams;
 }) {
-  const timeoutSignal = AbortSignal.timeout(agentyTimeoutMs);
+  const timeoutSignal = AbortSignal.timeout(defaultProviderRequestTimeoutMs);
   const signal = input.signal ? AbortSignal.any([input.signal, timeoutSignal]) : timeoutSignal;
 
   try {

@@ -1,9 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
-import { defineApiKeyProviderExecutors, defineProviderProxy, ProviderRequestError } from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError } from "../provider-runtime.ts";
 
 const service = "collegiate";
 const collegiateApiBaseUrl = "https://www.dictionaryapi.com/api/v3/references/collegiate/json";
@@ -13,8 +14,7 @@ const collegiateIllustrationImageBaseUrl = "https://www.merriam-webster.com/asse
 const collegiateTableBaseUrl = "https://www.merriam-webster.com/table/collegiate";
 const collegiateValidationTerm = "test";
 
-type CollegiateContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
-type CollegiateActionHandler = (input: Record<string, unknown>, context: CollegiateContext) => Promise<unknown>;
+type CollegiateActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 
 export const collegiateActionHandlers: ProviderActionHandlers<"collegiate", CollegiateActionHandler> = {
   async lookup_word(input, context) {
@@ -50,7 +50,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "api_key",
         displayName: "Merriam-Webster Collegiate API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: collegiateApiBaseUrl,
         dictionaryCode: service,
@@ -63,7 +62,7 @@ export const credentialValidators: CredentialValidators = {
 
 async function collegiateLookup(
   term: string,
-  context: CollegiateContext,
+  context: ApiKeyProviderContext,
   phase: "validate" | "execute",
 ): Promise<unknown[]> {
   const response = await context.fetcher(buildLookupUrl(term, context.apiKey), {

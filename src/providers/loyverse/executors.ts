@@ -4,18 +4,19 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { createHash } from "node:crypto";
 import { compactObject, optionalRecord, optionalString, requiredString, stringArray } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   providerInputError,
   ProviderRequestError,
   providerUserAgent,
   requiredResponseRecord,
+  providerResponseError,
 } from "../provider-runtime.ts";
 
 const service = "loyverse";
@@ -145,9 +146,7 @@ async function validateLoyverseCredential(
         ? `loyverse:merchant:${merchantId}`
         : `loyverse:token:${createHash("sha256").update(apiKey).digest("hex").slice(0, 16)}`,
       displayName: merchantName ?? "Loyverse API Key",
-      grantedScopes: [],
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: loyverseApiBaseUrl,
       validationEndpoint: "/merchant/",
@@ -288,13 +287,13 @@ function mapLoyverseError(status: number, errors: Array<Record<string, unknown>>
   const message = [code, field, details].filter(Boolean).join(": ") || "Loyverse request failed";
 
   if (status === 401 || code === "UNAUTHORIZED") {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (status === 429) {
     return new ProviderRequestError(429, message);
   }
   if (status >= 400 && status < 500) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
-  return new ProviderRequestError(502, message);
+  return providerResponseError(message);
 }

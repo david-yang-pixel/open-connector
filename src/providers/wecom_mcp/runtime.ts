@@ -1,6 +1,7 @@
 import type { CredentialValidationResult, ExecutionResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ProviderFetch, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 import type { Client } from "@modelcontextprotocol/client";
 
 import { UnauthorizedError } from "@modelcontextprotocol/client";
@@ -10,10 +11,14 @@ import { createHash } from "node:crypto";
 import { optionalRecord, requiredString } from "../../core/cast.ts";
 import { assertPublicHttpUrl } from "../../core/request.ts";
 import { withMcpClient } from "../mcp-client.ts";
-import { providerUserAgent, ProviderRequestError, toProviderExecutionError } from "../provider-runtime.ts";
+import {
+  providerUserAgent,
+  ProviderRequestError,
+  toProviderExecutionError,
+  defaultProviderRequestTimeoutMs,
+} from "../provider-runtime.ts";
 
 const wecomMcpHost = "qyapi.weixin.qq.com";
-const wecomRequestTimeoutMs = 30_000;
 const wecomToolIntervalMs = 1_000;
 const maximumTrackedRateLimitKeys = 1_024;
 
@@ -173,7 +178,6 @@ export async function validateWeComCredential(
       accountId: `wecom_mcp:mcp:${credentialHash}`,
       displayName: `WeCom MCP · ${credentialHash.slice(-6)}`,
     },
-    grantedScopes: [],
     metadata: {
       mcpHost: context.endpoint.hostname,
       discoveredToolCount: tools.length,
@@ -208,7 +212,7 @@ export async function callWeComTool(
           arguments: argumentsValue,
         },
         {
-          timeout: wecomRequestTimeoutMs,
+          timeout: defaultProviderRequestTimeoutMs,
           signal: context.signal,
         },
       );
@@ -230,7 +234,7 @@ async function discoverWeComTools(context: WeComContext): Promise<
     const result = await client.listTools(
       {},
       {
-        timeout: wecomRequestTimeoutMs,
+        timeout: defaultProviderRequestTimeoutMs,
         signal: context.signal,
       },
     );
@@ -264,7 +268,7 @@ async function withWeComMcpClient<T>(context: WeComContext, run: (client: Client
       transport: "streamable_http",
       fetcher: createWeComRateLimitedFetch(context.fetcher, hashWeComRateLimitKey(context)),
       headers,
-      redirect: "error",
+      redirect: "manual",
       signal: context.signal,
       mapError: mapWeComMcpError,
     },

@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
 import { providerUserAgent, ProviderRequestError, setSearchParams } from "../provider-runtime.ts";
@@ -90,7 +90,6 @@ export async function validateWiseCredential(
       accountId: profileId ? `wise:profile:${profileId}` : "wise:api_token",
       displayName: buildAccountLabel(firstProfile),
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: wiseApiBaseUrl,
       validationEndpoint: wiseValidationPath,

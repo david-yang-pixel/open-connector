@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 import type { KeyObject } from "node:crypto";
 
 import {
@@ -254,7 +254,6 @@ export async function validateOracleCloudCredential(
   }
   return {
     profile: { accountId: context.userId, displayName: `OCI ${context.region}` },
-    grantedScopes: [],
     metadata: {
       tenancyId: context.tenancyId,
       region: context.region,

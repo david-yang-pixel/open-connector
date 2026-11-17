@@ -1,6 +1,6 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -11,10 +11,10 @@ import {
   rawStringOrNull,
 } from "../../core/cast.ts";
 import { jsonObject } from "../../core/request.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   isAbortLikeError,
   providerUserAgent,
   ProviderRequestError,
@@ -99,7 +99,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: issuer.id === undefined ? "accredible_certificates:api_key" : String(issuer.id),
         displayName: issuer.name ?? issuer.email ?? "Accredible API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: accredibleCertificatesApiBaseUrl,
         validationEndpoint: "/v1/issuer/details",

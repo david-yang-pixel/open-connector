@@ -1,6 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
 import {
@@ -8,6 +7,8 @@ import {
   ProviderRequestError,
   readProviderTextBody,
   runProviderRequest,
+  providerInputError,
+  providerResponseError,
 } from "../provider-runtime.ts";
 
 export const zepApiBaseUrl = "https://api.getzep.com/api/v2";
@@ -151,7 +152,6 @@ export async function validateZepCredential(
       accountId: projectId ? `zep:${projectId}` : "zep",
       displayName: projectName ?? "Zep API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: zepApiBaseUrl,
       validationEndpoint,
@@ -161,10 +161,7 @@ export async function validateZepCredential(
   };
 }
 
-async function requestZepJson(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
-  input: ZepRequestInput,
-): Promise<unknown> {
+async function requestZepJson(context: ApiKeyProviderContext, input: ZepRequestInput): Promise<unknown> {
   const url = new URL(`${zepApiBaseUrl}${input.path}`);
   for (const [name, value] of Object.entries(input.query ?? {})) {
     if (value !== undefined) url.searchParams.set(name, String(value));
@@ -208,15 +205,15 @@ function createZepError(status: number, payload: unknown, phase: "validate" | "e
   const message = extractZepErrorMessage(payload) ?? `Zep request failed with status ${status}`;
   if (status === 429) return new ProviderRequestError(429, message);
   if (phase === "validate" && status >= 400 && status < 500) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (status === 401 || status === 403) {
     return new ProviderRequestError(status, message);
   }
   if (status >= 400 && status < 500) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
-  return new ProviderRequestError(502, message);
+  return providerResponseError(message);
 }
 
 function extractZepErrorMessage(payload: unknown): string | undefined {

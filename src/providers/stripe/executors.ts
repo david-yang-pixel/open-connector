@@ -1,15 +1,19 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { IntegrationDefinition } from "../../triggers/common/integration.ts";
+import type { PollDefinition } from "../../triggers/common/poll.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   ProviderRequestError,
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   providerUserAgent,
   requiredResponseRecord,
+  providerInputError,
 } from "../provider-runtime.ts";
+import { stripeEvent } from "./trigger-on-event.ts";
 
 type StripeActionContext = ApiKeyProviderContext;
 
@@ -143,7 +147,6 @@ async function validateStripeCredential(
     accountId?: string;
     displayName: string;
   };
-  grantedScopes: string[];
   metadata: Record<string, unknown>;
 }> {
   const payload = requiredResponseRecord(
@@ -164,7 +167,6 @@ async function validateStripeCredential(
       accountId,
       displayName: email ?? accountId ?? "Stripe API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: stripeApiBaseUrl,
       apiVersion: stripeApiVersion,
@@ -380,7 +382,7 @@ function mapStripeError(status: number, message: string): ProviderRequestError {
   }
 
   if (status === 400 || status === 404) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
 
   if (status === 429) {
@@ -389,3 +391,5 @@ function mapStripeError(status: number, message: string): ProviderRequestError {
 
   return new ProviderRequestError(502, message, status);
 }
+
+export const triggers: readonly (IntegrationDefinition | PollDefinition)[] = [stripeEvent];

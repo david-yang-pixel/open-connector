@@ -4,8 +4,9 @@ import type {
   ProviderExecutors,
   ResolvedCredential,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ProviderExecutorDefinition, ProviderFetch, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ProviderExecutorDefinition, ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import {
   compactObject,
@@ -16,19 +17,19 @@ import {
   requiredString,
 } from "../../core/cast.ts";
 import { assertPublicHttpUrl, isPrivateNetworkAccessAllowed } from "../../core/request.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
 import {
   createProviderTimeout,
-  defineProviderExecutors,
   isAbortLikeError,
   providerUserAgent,
   ProviderRequestError,
-  requireApiKeyCredential,
   requiredResponseRecord,
+  defaultProviderRequestTimeoutMs,
 } from "../provider-runtime.ts";
 
 const service = "seqera";
 const defaultSeqeraApiBaseUrl = "https://api.cloud.seqera.io";
-const seqeraRequestTimeoutMs = 30_000;
 const seqeraValidationEndpoint = "/user-info";
 
 type SeqeraRequestPhase = "validate" | "execute";
@@ -112,7 +113,6 @@ export async function validateSeqeraCredential(
       accountId: String(userId),
       displayName: accountLabel,
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl,
       validationEndpoint: seqeraValidationEndpoint,
@@ -369,7 +369,7 @@ async function seqeraFetch(input: {
     body = JSON.stringify(input.body);
   }
 
-  const timeout = createProviderTimeout(input.signal, seqeraRequestTimeoutMs);
+  const timeout = createProviderTimeout(input.signal);
   try {
     return await input.fetcher(url, {
       method: input.method ?? "GET",
@@ -381,7 +381,7 @@ async function seqeraFetch(input: {
     if (timeout.didTimeout() || isAbortLikeError(error)) {
       throw new ProviderRequestError(
         502,
-        `seqera ${input.path} request timed out after ${Math.max(1, Math.ceil(seqeraRequestTimeoutMs / 1000))} seconds`,
+        `seqera ${input.path} request timed out after ${Math.max(1, Math.ceil(defaultProviderRequestTimeoutMs / 1000))} seconds`,
       );
     }
 

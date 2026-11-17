@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { Buffer } from "node:buffer";
@@ -146,7 +146,6 @@ export async function validateTextmagicCredential(
       accountId: userId === undefined ? `textmagic:${accountUsername}` : `textmagic:${userId}`,
       displayName: fullName || email || `Textmagic (${accountUsername})`,
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: textmagicApiBaseUrl,
       validationEndpoint: textmagicValidationPath,

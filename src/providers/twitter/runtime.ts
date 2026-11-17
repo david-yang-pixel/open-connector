@@ -1,5 +1,6 @@
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ProviderFetch, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { base64Bytes, rawStringOrNull } from "../../core/cast.ts";
 import { assertPublicHttpUrl } from "../../core/request.ts";
@@ -31,7 +32,6 @@ export async function fetchTwitterCurrentAccount(
   profile: {
     accountId: string;
     displayName: string;
-    grantedScopes: string[];
   };
   metadata: Record<string, unknown>;
 }> {
@@ -53,7 +53,6 @@ export async function fetchTwitterCurrentAccount(
     profile: {
       accountId: id,
       displayName: normalizeOptionalString(account.name) || username,
-      grantedScopes: [],
     },
     metadata: {
       id,

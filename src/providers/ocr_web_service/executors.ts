@@ -4,7 +4,7 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
 import {
@@ -16,15 +16,16 @@ import {
   requiredString,
 } from "../../core/cast.ts";
 import { readBoundedResponseBytes } from "../../core/request.ts";
+import { requireCustomCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineProviderExecutors,
-  defineProviderProxy,
   providerFetch,
   providerUserAgent,
   ProviderRequestError,
   readProviderTextBody,
-  requireCustomCredential,
+  providerInputError,
 } from "../provider-runtime.ts";
 
 const service = "ocr_web_service";
@@ -104,7 +105,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: `ocr_web_service:${credential.username}`,
         displayName: `OCR Web Service (${credential.username})`,
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: ocrWebServiceApiBaseUrl,
         validationEndpoint: "/getAccountInformation",
@@ -198,7 +198,7 @@ async function downloadFileUrl(value: unknown, signal?: AbortSignal): Promise<Ui
     return await readBoundedResponseBytes(response, {
       maxBytes: ocrWebServiceMaxInputBytes,
       fieldName: "fileUrl payload",
-      createError: (message) => new ProviderRequestError(400, message),
+      createError: providerInputError,
     });
   } catch (error) {
     if (error instanceof ProviderRequestError) {
@@ -330,13 +330,13 @@ function mapOcrWebServiceHttpError(
     return new ProviderRequestError(429, message);
   }
   if (phase === "validate" && [400, 401, 402].includes(status)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (phase === "execute" && (status === 401 || status === 402)) {
     return new ProviderRequestError(401, message);
   }
   if (phase === "execute" && status === 400) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   return new ProviderRequestError(status >= 500 ? 502 : status || 502, message);
 }

@@ -4,7 +4,7 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import {
   objectArray,
@@ -15,16 +15,15 @@ import {
   requiredRecord,
 } from "../../core/cast.ts";
 import { assertPublicHttpUrl, compactJson, queryParams } from "../../core/request.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { credentialProviderProxyBaseUrl, defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  credentialProviderProxyBaseUrl,
-  defineProviderExecutors,
-  defineProviderProxy,
   isAbortLikeError,
   providerInputError,
   ProviderRequestError,
   providerUserAgent,
-  requireApiKeyCredential,
   requiredInputString,
 } from "../provider-runtime.ts";
 
@@ -383,7 +382,6 @@ export const credentialValidators: CredentialValidators = {
         accountId,
         displayName,
       },
-      grantedScopes: [],
       metadata: {
         baseUrl,
         apiBaseUrl: baseUrl,

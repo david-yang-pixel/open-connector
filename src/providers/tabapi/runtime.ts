@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { optionalInteger, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
 import { ProviderRequestError, providerUserAgent, readProviderJsonBody } from "../provider-runtime.ts";
@@ -83,7 +83,6 @@ export async function validateTabapiCredential(
   if (!valid) throw mapError(response.status, payload, "validate");
   return {
     profile: { accountId: "tabapi", displayName: "TabAPI API Key" },
-    grantedScopes: [],
     metadata: { apiBaseUrl: baseUrl, validationEndpoint: "/search/google", validationMode: "unbilled_invalid_request" },
   };
 }

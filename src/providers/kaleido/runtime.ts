@@ -1,9 +1,9 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { createHash } from "node:crypto";
 import { compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
-import { isAbortLikeError, providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
+import { isAbortLikeError, providerUserAgent, ProviderRequestError, providerInputError } from "../provider-runtime.ts";
 import { kaleidoDefaultBaseUrl } from "./constants.ts";
 
 export interface KaleidoActionContext {
@@ -94,7 +94,6 @@ export async function validateKaleidoCredential(
       displayName:
         optionalString(firstMembership?.org_name) ?? optionalString(firstMembership?.name) ?? "Kaleido Account",
     },
-    grantedScopes: [],
     metadata: compactObject({
       baseUrl,
       validationEndpoint: membershipsValidationPath,
@@ -207,7 +206,7 @@ async function normalizeKaleidoError(response: Response): Promise<ProviderReques
   }
 
   if (response.status >= 400 && response.status < 500) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
 
   return new ProviderRequestError(response.status || 500, message);

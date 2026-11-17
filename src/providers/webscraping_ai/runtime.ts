@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import {
   compactObject,
@@ -21,11 +21,7 @@ import {
 
 type WebscrapingAiPhase = "validate" | "execute";
 type WebscrapingAiQueryValue = string | number | boolean | readonly string[] | undefined;
-type WebscrapingAiActionContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
-type WebscrapingAiActionHandler = (
-  input: Record<string, unknown>,
-  context: WebscrapingAiActionContext,
-) => Promise<unknown>;
+type WebscrapingAiActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 
 interface WebscrapingAiRequestInput {
   path: string;
@@ -102,7 +98,6 @@ export async function validateWebscrapingAiCredential(
       accountId: email ?? "webscraping_ai:api_key",
       displayName: email ?? "WebScraping.AI API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: webscrapingAiApiBaseUrl,
       validationEndpoint: "/account",
@@ -116,7 +111,7 @@ export async function validateWebscrapingAiCredential(
 
 async function requestWebscrapingAiText(
   input: WebscrapingAiRequestInput,
-  context: WebscrapingAiActionContext,
+  context: ApiKeyProviderContext,
 ): Promise<Record<string, unknown>> {
   const response = await requestWebscrapingAiRaw(input, context, "execute");
   return {
@@ -128,7 +123,7 @@ async function requestWebscrapingAiText(
 
 async function requestWebscrapingAiSelectedMultiple(
   input: Record<string, unknown>,
-  context: WebscrapingAiActionContext,
+  context: ApiKeyProviderContext,
 ): Promise<Record<string, unknown>> {
   const response = await requestWebscrapingAiRaw(
     {
@@ -184,7 +179,7 @@ async function requestWebscrapingAiAccount(
 
 async function requestWebscrapingAiRaw(
   input: WebscrapingAiRequestInput,
-  context: WebscrapingAiActionContext,
+  context: ApiKeyProviderContext,
   phase: WebscrapingAiPhase,
 ): Promise<Response> {
   const url = buildWebscrapingAiUrl(input.path, context.apiKey, input.query ?? {});
@@ -256,7 +251,7 @@ function readTargetUrl(value: unknown): string {
   const rawUrl = requiredInputString(value, "url");
   const url = assertPublicHttpUrl(rawUrl, {
     fieldName: "url",
-    createError: (message) => new ProviderRequestError(400, message),
+    createError: providerInputError,
   });
   if (url.username || url.password) {
     throw new ProviderRequestError(400, "url must not include credentials");
@@ -301,13 +296,13 @@ async function createWebscrapingAiError(response: Response, phase: WebscrapingAi
     return new ProviderRequestError(429, message);
   }
   if (phase === "validate" && response.status === 403) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (phase === "execute" && response.status === 403) {
     return new ProviderRequestError(403, message);
   }
   if (response.status === 400) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (response.status === 504) {
     return new ProviderRequestError(504, message);

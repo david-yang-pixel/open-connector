@@ -1,16 +1,11 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
 import { encodePathSegment, queryParams } from "../../core/request.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-  requiredInputString,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError, requiredInputString } from "../provider-runtime.ts";
 
 const service = "dixa";
 const dixaApiBaseUrl = "https://dev.dixa.io";
@@ -80,7 +75,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: agentId ? `dixa:${agentId}` : "dixa:api-key",
         displayName,
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: dixaApiBaseUrl,
         validationEndpoint: "/v1/agents",
@@ -138,7 +132,7 @@ async function dixaGetWrappedSingle(path: string, context: ApiKeyProviderContext
 async function dixaGetJson(
   path: string,
   query: Record<string, string>,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: "validate" | "execute",
 ): Promise<unknown> {
   const url = new URL(path, dixaApiBaseUrl);

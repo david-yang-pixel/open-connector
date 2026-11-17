@@ -1,8 +1,9 @@
-FROM node:24-alpine AS build
+FROM node:24.22.1-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json tsconfig.json vitest.config.ts ./
 COPY web ./web
 COPY src ./src
+COPY contracts ./contracts
 COPY scripts ./scripts
 COPY examples ./examples
 RUN npm ci --ignore-scripts
@@ -10,13 +11,14 @@ RUN npm run generate:catalog
 RUN npm run build
 RUN npm run build --workspace web
 
-FROM node:24-alpine
+FROM node:24.22.1-alpine
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOST=0.0.0.0
 ENV OOMOL_CONNECT_DATA_DIR=/app/data
 COPY package.json package-lock.json ./
+COPY LICENSE.txt LICENSE-APACHE-2.0.txt NOTICE.md ./
 COPY scripts/healthcheck.ts ./scripts/healthcheck.ts
 COPY scripts/ensure-generated.ts ./scripts/ensure-generated.ts
 COPY scripts/runtime-data.ts ./scripts/runtime-data.ts

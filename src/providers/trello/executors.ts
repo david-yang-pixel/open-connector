@@ -6,18 +6,17 @@ import type {
 } from "../../core/types.ts";
 import type { TrelloActionContext } from "./runtime.ts";
 
+import { encodeRfc3986 } from "../../core/aws-sigv4.ts";
+import { requireCustomCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
 import {
-  createProviderFetch,
   createProviderProxyUrl,
-  defineProviderExecutors,
   normalizeProviderProxyHeaders,
-  ProviderRequestError,
-  providerUserAgent,
   readProviderProxyErrorMessage,
   readProviderProxyResponse,
-  requireCustomCredential,
   toProviderProxyError,
-} from "../provider-runtime.ts";
+} from "../provider-proxy.ts";
+import { createProviderFetch, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 import { trelloActionHandlers, trelloApiBaseUrl, validateTrelloCredential } from "./runtime.ts";
 
 const service = "trello";
@@ -46,9 +45,14 @@ export const proxy: ProviderProxyExecutor = async (input, context) => {
   try {
     const credential = await requireCustomCredential(context, service);
     const url = createProviderProxyUrl(trelloApiBaseUrl, input.endpoint, input.query);
-    url.searchParams.set("key", credential.values.apiKey);
-    url.searchParams.set("token", credential.values.apiToken);
+    url.searchParams.delete("key");
+    url.searchParams.delete("token");
     const headers = normalizeProviderProxyHeaders(input.headers);
+    // Trello attachment downloads require header authentication, unlike metadata reads.
+    headers.set(
+      "authorization",
+      `OAuth oauth_consumer_key="${encodeRfc3986(credential.values.apiKey)}", oauth_token="${encodeRfc3986(credential.values.apiToken)}"`,
+    );
     headers.set("user-agent", providerUserAgent);
 
     const init: RequestInit = {

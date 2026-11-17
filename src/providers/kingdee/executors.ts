@@ -1,12 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
 
 import { isPrivateNetworkAccessAllowed } from "../../core/request.ts";
-import {
-  createProviderFetch,
-  defineProviderExecutors,
-  defineProviderProxy,
-  requireCustomCredential,
-} from "../provider-runtime.ts";
+import { requireCustomCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { createProviderFetch } from "../provider-runtime.ts";
 import { handlers, isBusinessEndpoint, login, readCredential, validateCredential } from "./runtime.ts";
 
 const service = "kingdee";
@@ -38,7 +36,7 @@ export const proxy: ProviderProxyExecutor = defineProviderProxy({
   allowedEndpoint: isBusinessEndpoint,
   allowPrivateNetwork: isPrivateNetworkAccessAllowed,
   sensitiveHeaders: ["kdservice-sessionid"],
-  redirect: "error",
+  redirect: "manual",
   async customizeRequest({ context, fetcher, headers }) {
     const values = (await requireCustomCredential(context, service)).values;
     const kingdee = readCredential(values);

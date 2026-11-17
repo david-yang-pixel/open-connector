@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { compactObject, optionalBoolean, optionalRecord, optionalString } from "../../core/cast.ts";
 import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
@@ -54,7 +54,6 @@ export async function validateVatlayerCredential(
     profile: {
       accountId: "vatlayer-api-key",
       displayName: "VATlayer API Access Key",
-      grantedScopes: [],
     },
     metadata: {
       validationEndpoint: "/types",
@@ -65,7 +64,7 @@ export async function validateVatlayerCredential(
 
 async function vatlayerRequest(
   input: { path: string; query?: Record<string, VatlayerQueryValue> },
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
 ): Promise<Record<string, unknown>> {
   const response = await vatlayerRawRequest(input, context);
   const payload = await readVatlayerPayload(response);
@@ -88,7 +87,7 @@ async function vatlayerRequest(
 
 async function vatlayerRawRequest(
   input: { path: string; query?: Record<string, VatlayerQueryValue> },
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
 ): Promise<Response> {
   const url = new URL(resolveVatlayerPath(input.path), `${vatlayerApiBaseUrl}/`);
   url.searchParams.set("access_key", context.apiKey);

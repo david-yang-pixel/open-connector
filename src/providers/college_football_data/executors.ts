@@ -1,13 +1,12 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
 import { queryParams } from "../../core/request.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   isAbortLikeError,
   providerUserAgent,
   ProviderRequestError,
@@ -17,10 +16,9 @@ const service = "college_football_data";
 const collegeFootballDataApiBaseUrl = "https://api.collegefootballdata.com";
 
 type CollegeFootballDataPhase = "validate" | "execute";
-type CollegeFootballDataContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
 type CollegeFootballDataActionHandler = (
   input: Record<string, unknown>,
-  context: CollegeFootballDataContext,
+  context: ApiKeyProviderContext,
 ) => Promise<unknown>;
 
 export const collegeFootballDataActionHandlers: ProviderActionHandlers<
@@ -99,7 +97,7 @@ export const proxy: ProviderProxyExecutor = defineProviderProxy({
 
 export const credentialValidators: CredentialValidators = {
   async apiKey(input, { fetcher, signal }) {
-    const context: CollegeFootballDataContext = {
+    const context: ApiKeyProviderContext = {
       apiKey: input.apiKey,
       fetcher,
       signal,
@@ -111,7 +109,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "api_key",
         displayName: "CollegeFootballData API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         validationEndpoint: "/info",
         apiBaseUrl: collegeFootballDataApiBaseUrl,
@@ -125,7 +122,7 @@ export const credentialValidators: CredentialValidators = {
 async function requestCollegeFootballDataJson(
   path: string,
   query: Record<string, string | number | undefined>,
-  context: CollegeFootballDataContext,
+  context: ApiKeyProviderContext,
   phase: CollegeFootballDataPhase,
 ): Promise<unknown> {
   const timeout = createProviderTimeout(context.signal);

@@ -211,22 +211,36 @@ const youtubeInputSchemas: Record<YoutubeActionName, JsonSchema> = {
     parentId: nonEmptyString("The parent YouTube comment ID to reply to."),
     textOriginal: nonEmptyString("The plain-text reply content to post."),
   }),
-  upload_video_from_url: s.object(
-    "The input payload for uploading a YouTube video from a URL.",
-    {
-      mediaUrl: s.url("The HTTPS URL of the video file to upload."),
-      title: nonEmptyString("The YouTube video title."),
-      description: s.string("The YouTube video description."),
-      privacyStatus,
-      tags,
-      categoryId: nonEmptyString("The YouTube video category ID."),
-      fileName: nonEmptyString("The filename sent to YouTube for the uploaded media."),
-      mimeType: nonEmptyString("The MIME type of the video media."),
-      notifySubscribers: s.boolean("Whether YouTube should notify subscribers."),
-    },
-    {
-      optional: ["description", "privacyStatus", "tags", "categoryId", "fileName", "mimeType", "notifySubscribers"],
-    },
+  upload_video_from_url: s.requireExactlyOneProperty(
+    s.object(
+      "Upload a YouTube video from a public URL or a local transit file. Provide exactly one of mediaUrl or file.",
+      {
+        mediaUrl: s.url("The public URL of the video file to upload."),
+        file: s.transitFile("A local transit file to upload without downloading its URL."),
+        title: nonEmptyString("The YouTube video title."),
+        description: s.string("The YouTube video description."),
+        privacyStatus,
+        tags,
+        categoryId: nonEmptyString("The YouTube video category ID."),
+        fileName: nonEmptyString("The filename sent to YouTube for the uploaded media."),
+        mimeType: nonEmptyString("The MIME type of the video media."),
+        notifySubscribers: s.boolean("Whether YouTube should notify subscribers."),
+      },
+      {
+        optional: [
+          "mediaUrl",
+          "file",
+          "description",
+          "privacyStatus",
+          "tags",
+          "categoryId",
+          "fileName",
+          "mimeType",
+          "notifySubscribers",
+        ],
+      },
+    ),
+    ["mediaUrl", "file"],
   ),
   update_video: s.object(
     "The input payload for updating a YouTube video.",
@@ -536,7 +550,7 @@ const actionSpecs: Array<{
   {
     name: "upload_video_from_url",
     operationType: "write",
-    description: "Upload a YouTube video from an HTTPS media URL using the resumable upload API.",
+    description: "Upload a YouTube video from a public media URL or local transit file using the resumable upload API.",
     requiredScopes: youtubeWriteScopes,
     inputSchema: youtubeInputSchemas.upload_video_from_url,
     outputSchema: singleResource("video", "The response returned after uploading a YouTube video."),

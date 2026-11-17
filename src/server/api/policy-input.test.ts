@@ -17,6 +17,8 @@ describe("policy input", () => {
         blockedProxies: ["*"],
       }),
     ).toEqual({
+      allowedTriggers: [],
+      blockedTriggers: [],
       allowedActions: ["github.*", "github.create_issue"],
       blockedActions: [],
       allowedProxies: ["github"],
@@ -26,6 +28,7 @@ describe("policy input", () => {
 
   it("allows omitted token rules only during creation", () => {
     expect(readTokenPolicy({}, true)).toEqual({
+      allowedTriggers: [],
       allowedActions: [],
       blockedActions: [],
       allowedProxies: [],
@@ -54,6 +57,7 @@ describe("policy input", () => {
 
   it("treats omitted and empty allowedConnections as unrestricted on create", () => {
     expect(readTokenPolicy({ allowedActions: [], blockedActions: [], allowedProxies: [] }, true)).toEqual({
+      allowedTriggers: [],
       allowedActions: [],
       blockedActions: [],
       allowedProxies: [],
@@ -63,6 +67,7 @@ describe("policy input", () => {
     expect(
       readTokenPolicy({ allowedActions: [], blockedActions: [], allowedProxies: [], allowedConnections: [] }),
     ).toEqual({
+      allowedTriggers: [],
       allowedActions: [],
       blockedActions: [],
       allowedProxies: [],
@@ -86,6 +91,7 @@ describe("policy input", () => {
         allowedConnections: [" connection-work ", "connection-work", "01J0CONNECTIONPERSONAL"],
       }),
     ).toEqual({
+      allowedTriggers: [],
       allowedActions: [],
       blockedActions: [],
       allowedProxies: [],

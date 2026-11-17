@@ -12,7 +12,7 @@ export type RuntimeRow = Record<string, unknown>;
 
 /** The `runtime_tokens` columns every token query reads back, in the order `readRuntimeTokenRow` decodes. */
 export const runtimeTokenColumns =
-  "id, name, token_hash, allowed_actions, blocked_actions, allowed_proxies, allowed_connections, connection_permissions, created_at, last_used_at";
+  "id, name, token_hash, allowed_actions, blocked_actions, allowed_proxies, allowed_connections, allowed_triggers, connection_permissions, created_at, last_used_at";
 
 /** Read a column the query selected as a string, rejecting anything the schema cannot produce. */
 export function readString(row: RuntimeRow, key: string): string {
@@ -51,6 +51,7 @@ export function readRuntimeTokenRow(row: RuntimeRow): RuntimeTokenRecord {
     allowedProxies: parseJson(readString(row, "allowed_proxies")),
     allowedConnections: parseJson(readOptionalString(row, "allowed_connections") ?? "[]"),
     connectionPermissions: parseJson(readOptionalString(row, "connection_permissions") ?? "[]"),
+    allowedTriggers: parseJson(readString(row, "allowed_triggers")),
     createdAt: readString(row, "created_at"),
     lastUsedAt: readOptionalString(row, "last_used_at"),
   };

@@ -7,7 +7,7 @@ import { ProviderLoader } from "../../providers/provider-loader.ts";
 import { createConnectApp } from "../connect-app.ts";
 import { TransitFileService } from "../files/transit-files.ts";
 import { PlainTextSecretCodec } from "../secrets/secret-codec-core.ts";
-import { SqliteRuntimeDatabase } from "../storage/sqlite-runtime-store.ts";
+import { SqliteRuntimeDatabase } from "../storage/sqlite/runtime-store.ts";
 
 const origin = "https://connect.example.com";
 const adminToken = "admin-secret";

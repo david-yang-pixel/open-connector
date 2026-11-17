@@ -7,23 +7,21 @@ import type {
   ProviderProxyExecutor,
   ProxyExecutionResult,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
 import { compactObject, optionalNumber, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
 import { queryParams } from "../../core/request.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
 import {
-  createProviderFetch,
   createProviderProxyUrl,
-  defineProviderExecutors,
   normalizeProviderProxyHeaders,
-  ProviderRequestError,
-  providerUserAgent,
   readProviderProxyErrorMessage,
   readProviderProxyResponse,
-  requireApiKeyCredential,
   toProviderProxyError,
-} from "../provider-runtime.ts";
+} from "../provider-proxy.ts";
+import { createProviderFetch, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "chaserhq";
 const apiBaseUrl = "https://openapi.chaserhq.com";
@@ -164,7 +162,6 @@ export const credentialValidators: CredentialValidators = {
         displayName:
           optionalString(organisation?.name) ?? optionalString(organisation?.legalName) ?? "ChaserHQ Organisation",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: apiVersionBaseUrl,
         validationEndpoint: "/v1/organisation",

@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, expect, test } from "vitest";
 import { AesGcmSecretCodec } from "../src/server/secrets/secret-codec.ts";
 import { WorkerAesGcmSecretCodec } from "../src/server/secrets/worker-secret-codec.ts";
-import { SqliteRuntimeDatabase } from "../src/server/storage/sqlite-runtime-store.ts";
+import { SqliteRuntimeDatabase } from "../src/server/storage/sqlite/runtime-store.ts";
 
 const directories: string[] = [];
 afterEach(async () => {

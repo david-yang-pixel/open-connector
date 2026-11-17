@@ -1,8 +1,8 @@
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
 import { assertPublicHttpUrl } from "../../core/request.ts";
-import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
+import { providerUserAgent, ProviderRequestError, providerInputError } from "../provider-runtime.ts";
 
 export const plausibleDefaultBaseUrl = "https://plausible.io";
 
@@ -44,7 +44,6 @@ export async function validatePlausibleAnalyticsCredential(
   signal?: AbortSignal,
 ): Promise<{
   profile: { accountId: string; displayName: string };
-  grantedScopes: string[];
   metadata: Record<string, unknown>;
 }> {
   const siteId = normalizeRequiredSiteId(siteIdValue);
@@ -63,7 +62,6 @@ export async function validatePlausibleAnalyticsCredential(
   });
   return {
     profile: { accountId: buildProviderAccountId(baseUrl, siteId), displayName: `Plausible ${siteId}` },
-    grantedScopes: [],
     metadata: { baseUrl, siteId, validationEndpoint: statsPath },
   };
 }
@@ -176,7 +174,7 @@ function createPlausibleError(
     return new ProviderRequestError(429, message);
   }
   if ((status === 404 && notFoundAsInvalidInput) || status === 400 || status === 422) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   return new ProviderRequestError(status >= 500 ? 502 : status, message);
 }
@@ -219,7 +217,7 @@ export function normalizePlausibleBaseUrl(value?: string): string {
   }
   const url = assertPublicHttpUrl(value, {
     fieldName: "baseUrl",
-    createError: (message) => new ProviderRequestError(400, message),
+    createError: providerInputError,
   });
   if (url.protocol !== "https:") {
     throw new ProviderRequestError(400, "Base URL must use https");

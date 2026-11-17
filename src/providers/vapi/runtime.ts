@@ -4,8 +4,8 @@ import type {
   ProviderActionHandlers,
   ProviderActionName,
   ProviderActionSources,
-  ProviderFetch,
-} from "../provider-runtime.ts";
+} from "../provider-executors.ts";
+import type { ProviderRequestContext, ProviderFetch } from "../provider-runtime.ts";
 
 import {
   base64Bytes,
@@ -16,7 +16,8 @@ import {
   optionalRecord,
 } from "../../core/cast.ts";
 import { assertPublicHttpUrl } from "../../core/request.ts";
-import { mapProviderActionSources, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
+import { mapProviderActionSources } from "../provider-executors.ts";
+import { ProviderRequestError, providerUserAgent, providerInputError } from "../provider-runtime.ts";
 
 export const vapiApiBaseUrl = "https://api.vapi.ai";
 
@@ -259,7 +260,6 @@ export async function validateVapiCredential(
     profile: {
       accountId: orgId ?? "vapi-api-key",
       displayName: "Vapi API Key",
-      grantedScopes: [],
     },
     metadata: compactObject({
       validationEndpoint: "/assistant?limit=1",
@@ -384,7 +384,7 @@ function prepareOpenAiChatBody(input: Record<string, unknown>): Record<string, u
 
 async function buildVapiMultipartFormData(
   input: Record<string, unknown>,
-  context: Pick<ApiKeyProviderContext, "fetcher" | "signal">,
+  context: ProviderRequestContext,
 ): Promise<FormData> {
   const formData = new FormData();
   const fileInput = optionalRecord(input.file);
@@ -403,7 +403,7 @@ async function buildVapiMultipartFormData(
 
 async function resolveVapiUploadSource(
   input: Record<string, unknown>,
-  context: Pick<ApiKeyProviderContext, "fetcher" | "signal">,
+  context: ProviderRequestContext,
 ): Promise<{ bytes: ArrayBuffer; fileName: string; mimeType: string }> {
   const fileName = firstNonEmptyString(input.name);
   const mimeType = firstNonEmptyString(input.mimetype) ?? "application/octet-stream";
@@ -418,7 +418,7 @@ async function resolveVapiUploadSource(
   if (fileUrl) {
     const url = assertPublicHttpUrl(fileUrl, {
       fieldName: "file.url",
-      createError: (message) => new ProviderRequestError(400, message),
+      createError: providerInputError,
     });
     const response = await context.fetcher(url, { signal: context.signal });
     if (!response.ok) {
@@ -431,7 +431,7 @@ async function resolveVapiUploadSource(
     };
   }
   try {
-    const bytes = base64Bytes(contentBase64, "file.contentBase64", (message) => new ProviderRequestError(400, message));
+    const bytes = base64Bytes(contentBase64, "file.contentBase64", providerInputError);
     return {
       bytes: bytes.buffer,
       fileName,
@@ -497,7 +497,7 @@ async function normalizeVapiError(response: Response, mode: "validate" | "execut
     return new ProviderRequestError(mode === "validate" ? 400 : 401, message);
   }
   if (response.status === 400 || response.status === 404 || response.status === 422) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (response.status === 429) {
     return new ProviderRequestError(429, message);

@@ -8,6 +8,20 @@ Worker runtime uses:
 - R2 or Workers KV for temporary transit files.
 - Static Assets for the Web Console.
 
+## SaaS OAuth deployment
+
+Set OOMOL_CONNECT_ORIGIN explicitly to the public Console origin and configure encrypted storage
+before saving a project key. The SaaS callback returns to that origin's completion page; the
+browser synchronization POST must carry the same origin. Reverse proxies must preserve it.
+Workers do not infer trusted SaaS origin from the incoming request.
+
+Apply D1 migrations through 0015_saas_cleanup_runtime.sql, deploy the scheduled handler and
+copy the once-per-minute triggers.crons from the example configuration. Verify actual scheduled
+invocations and cleanup progress after deployment; HTTP traffic does not replace cron.
+See [SaaS OAuth](saas-oauth.md) and [D1 maintenance](saas-maintenance.md#offline-d1-maintenance).
+The temporary reset Worker has automatic batch/retry coverage; real D1 reset remains a dedicated
+test-database acceptance step, not a claim established by local test adapters.
+
 ## Prerequisites
 
 - A Cloudflare account with Workers, D1, and either R2 or Workers KV access.
@@ -146,6 +160,22 @@ curl https://open-connector.example.workers.dev/health
 The health endpoint should return `{"ok":true}`. Replace the example URL with the deployed Worker
 URL or your custom domain.
 
+## ChatGPT-compatible MCP OAuth
+
+To enable OAuth for clients that cannot supply an Authorization header, create a dedicated Workers KV namespace and bind it as `OAUTH_KV`:
+
+```bash
+npx wrangler kv namespace create open-connector-oauth --binding OAUTH_KV
+```
+
+Add the returned namespace ID to `kv_namespaces` in `wrangler.local.jsonc`. Keep your existing administrator token and encryption key, and set `OOMOL_CONNECT_ORIGIN` to the gateway's canonical public origin. The example configuration includes the required `global_fetch_strictly_public` flag and routes `/.well-known/*` to the Worker before static assets. OAuth stays disabled without the `OAUTH_KV` binding.
+
+Use the public `/mcp` URL with OAuth authentication in ChatGPT. Discovery, CIMD, dynamic client registration, S256 PKCE, rotating refresh tokens, and token revocation are provided by `@cloudflare/workers-oauth-provider`. The authorization page requires explicit consent and the administrator token. It grants Action execution through connected accounts, including write Actions, subject to deployment policies; it grants neither administrator access nor raw proxy or trigger access. The administrator token is never issued to the client.
+
+Each approval creates a separate `MCP OAuth • <client name>` API Key. Delete that key in the console to immediately revoke access and refresh. OAuth access tokens expire after one hour and grants after 30 days; expired or superseded grants may leave inactive keys in the console, which can be deleted. Existing runtime tokens continue to work. With OAuth enabled, runtime endpoints remain authenticated even before the first key is created or after the last key is deleted.
+
+Run `python3 scripts/test-mcp-oauth.py` against a running Worker to verify discovery, browser-bound consent, PKCE, audience validation, replay rejection, refresh, revocation, permission isolation, and legacy token compatibility. Set `MCP_TEST_ORIGIN` and provide `MCP_TEST_ADMIN_TOKEN` or `MCP_TEST_ADMIN_TOKEN_FILE`; for localhost only, the default test token is `test-admin-token`. The suite creates temporary test API Keys and revokes them on exit. It never follows the client callback or accesses a ChatGPT account. Browser tests should also verify a real form submission and callback: request-origin and Content Security Policy behavior cannot be proven by an HTTP client alone.
+
 ## Runtime Behavior
 
 The Cloudflare runtime serves catalog metadata, `/api` and `/v1` metadata endpoints, connections,
@@ -190,5 +220,9 @@ Cloudflare uses the same environment variable names for origin, auth tokens, act
 file limits, and credential encryption. `PORT`, `HOST`, `OOMOL_CONNECT_DATA_DIR`,
 `OOMOL_CONNECT_CATALOG_LAZY_SCHEMAS`, and `OOMOL_CONNECT_CATALOG_SCHEMA_CACHE_FILES` are local
 Node-only settings on Workers.
+
+Connections that supply their own CA certificate, such as a [Kubernetes](configuration.md#kubernetes)
+cluster with a private certificate authority, need a Node runtime: Workers cannot supply a custom
+trust store, so those requests fail with a clear error.
 
 See [configuration.md](configuration.md) for all runtime environment variables.

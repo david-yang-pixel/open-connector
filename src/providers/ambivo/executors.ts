@@ -1,16 +1,17 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { optionalRecord } from "../../core/cast.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   providerUserAgent,
   ProviderRequestError,
   readProviderTextBody,
-  requireApiKeyCredential,
+  providerResponseError,
 } from "../provider-runtime.ts";
 
 const service = "ambivo";
@@ -144,7 +145,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "api_key",
         displayName: "Ambivo API Token",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: ambivoApiBaseUrl,
         validationEndpoint: ambivoValidationPath,
@@ -311,7 +311,7 @@ function mapAmbivoError(status: number, payload: unknown, mode: "validate" | "ex
   } else if (status === 400 || status === 404 || status === 409 || status === 422) {
     return new ProviderRequestError(status, message);
   } else {
-    return new ProviderRequestError(502, message);
+    return providerResponseError(message);
   }
 }
 
@@ -446,7 +446,7 @@ function readObjectArray(value: unknown, fieldName: string) {
 
 function requireObject(value: unknown, message: string) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new ProviderRequestError(502, message);
+    throw providerResponseError(message);
   }
   return value as Record<string, unknown>;
 }

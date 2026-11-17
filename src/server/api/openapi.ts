@@ -1,13 +1,20 @@
-import type { ActionDefinition, JsonSchema, ProviderDefinition } from "../../core/types.ts";
+import type { ActionDefinition, JsonSchema } from "../../core/types.ts";
 
 import { z } from "zod";
 import { jsonSchema } from "../../core/json-schema.ts";
+import { triggerOperationSchema } from "../../triggers/request.ts";
 import {
   actionInputMaxDepth,
   idempotencyKeyMaxBytes,
   idempotencyRetentionHours,
 } from "../actions/action-idempotency.ts";
-import { oauthConnectionInput, apiKeyConnectionInput, customConnectionInput } from "./connection-input.ts";
+import {
+  oauthConnectionInput,
+  apiKeyConnectionInput,
+  customConnectionInput,
+  consoleOAuthConnectionInput,
+} from "./connection-input.ts";
+import { customMcpCreateInput, customMcpUpdateInput, customMcpSyncInput } from "./custom-mcp-input.ts";
 import {
   connectionToolListMaxItems,
   policyRequestMaxBytes,
@@ -30,6 +37,7 @@ export type OpenApiDocument = {
   }>;
   paths: Record<string, unknown>;
   components: {
+    securitySchemes: Record<string, { type: "http"; scheme: "bearer"; description: string }>;
     schemas: Record<string, JsonSchema>;
   };
 };
@@ -37,14 +45,17 @@ export type OpenApiDocument = {
 /**
  * Controls how much provider action detail is embedded in the OpenAPI document.
  */
-export type OpenApiDocumentOptions = {
-  actionId?: string;
-};
+export interface OpenApiDocumentOptions {
+  action?: ActionDefinition;
+}
 
 const errorPayloadSchema = jsonSchema.object(
   {
     code: jsonSchema.string({ description: "Stable machine-readable error code." }),
     message: jsonSchema.string({ description: "Human-readable error message." }),
+    reason: jsonSchema.optional(
+      jsonSchema.string({ description: "SaaS- or provider-specific failure reason, when one is available." }),
+    ),
     details: {},
   },
   {
@@ -65,7 +76,10 @@ const errorResponseSchema = jsonSchema.object(
 
 const actionResultMetaSchema = jsonSchema.object(
   {
-    executionId: jsonSchema.string({ description: "Action execution identifier." }),
+    executionId: jsonSchema.string({ description: "Local action execution identifier." }),
+    remoteExecutionId: jsonSchema.string({
+      description: "SaaS execution identifier when available; distinct from the local executionId.",
+    }),
     actionId: jsonSchema.string({ description: "Executed action identifier." }),
     auditPersisted: jsonSchema.boolean({ description: "Whether the run audit record was stored." }),
   },
@@ -78,6 +92,9 @@ const actionResultMetaSchema = jsonSchema.object(
 const actionFailureMetaSchema = jsonSchema.object(
   {
     executionId: jsonSchema.string({ description: "Execution identifier when action execution began." }),
+    remoteExecutionId: jsonSchema.string({
+      description: "SaaS execution identifier when the remote failure supplies one.",
+    }),
     actionId: jsonSchema.string({ description: "Requested action identifier." }),
     auditPersisted: jsonSchema.boolean({ description: "Whether the run audit record was stored." }),
   },
@@ -91,11 +108,16 @@ const oauthClientConfigRequestSchema = jsonSchema.object(
   {
     clientId: jsonSchema.string({ description: "OAuth app client id." }),
     clientSecret: jsonSchema.string({
-      description: "OAuth app client secret. Optional only for public-client providers.",
+      description:
+        "OAuth app client secret. When updating the default app with the same clientId, omission preserves the stored secret. Required for a new confidential client.",
     }),
     requestedScopes: jsonSchema.array(jsonSchema.string(), {
-      minItems: 1,
-      description: "Non-empty provider-declared scope subset to request. Omit to use every provider default.",
+      description:
+        "OAuth request scopes replacing defaults. Omit for defaults; an empty list requests only required scopes. Unknown scopes are passed to the provider.",
+    }),
+    redirectUri: jsonSchema.string({
+      description:
+        "Absolute redirect URI registered with the provider instead of the runtime callback, such as a native app's custom scheme. Must not carry user info or a fragment; javascript, vbscript, data, file, blob, and about schemes are rejected. Omit or send an empty string to use the runtime callback.",
     }),
     extra: {
       type: "object",
@@ -114,6 +136,9 @@ const oauthClientConfigRequestSchema = jsonSchema.object(
   },
 );
 
+const saasExecutionDescription =
+  "SaaS connections execute remotely after local policy and input validation, using the selected account without local credentials or fallback. SaaS execution POSTs have a 300-second budget and a 64 MiB decoded JSON envelope limit. Responses retain the local executionId and add remoteExecutionId when available. Cancellation or a failed response does not guarantee that remote side effects were undone. ";
+
 const actionIdempotencyDescription =
   `Requests with the same Idempotency-Key, action, input, effective connection, and stored runtime token identity replay the original HTTP status and body of completed successes and failures during the ${idempotencyRetentionHours}-hour replay window. ` +
   "Requests that are still in progress, or whose outcome is uncertain, are not automatically dispatched again. " +
@@ -130,6 +155,14 @@ const namedConnectionDescription =
   "Named connection. Same fact as MCP connectionName; HTTP alias, connectionName, and x-oo-connector-alias are equivalent. Defaults to default.";
 
 const namedConnectionParameters = [
+  {
+    name: "x-oo-connector-app-id",
+    in: "header",
+    required: false,
+    schema: jsonSchema.string(),
+    description:
+      "Stable connection ID. If an alias is also supplied it must identify the same connection. Unknown IDs never select the default account.",
+  },
   {
     name: "x-oo-connector-alias",
     in: "header",
@@ -153,6 +186,21 @@ const namedConnectionParameters = [
   },
 ];
 
+const catalogLocaleParameters = [
+  queryParameter(
+    "locale",
+    "Display language: en or zh-CN. Overrides Accept-Language; unsupported locales use English. Missing translations fall back per field. IDs, schemas and authentication contracts do not change.",
+  ),
+  {
+    name: "Accept-Language",
+    in: "header",
+    required: false,
+    schema: { type: "string" },
+    description:
+      "Weighted language preferences used only when locale is absent. The selected language is returned in Content-Language.",
+  },
+];
+
 const namedConnectionProperties = {
   connectionName: jsonSchema.string({ description: namedConnectionDescription }),
   alias: jsonSchema.string({ description: namedConnectionDescription }),
@@ -169,8 +217,26 @@ const idempotencyKeyParameter = {
 const idempotencyConflictDescription =
   "For idempotency, idempotency_request_in_progress means the original request is still running or its outcome is uncertain, while idempotency_key_conflict means the key was reused for a different action, input, effective connection, or stored runtime token. Other runtime conflicts may return their own error code with the same status.";
 
+const notionConnectionSchema = jsonSchema.optional(
+  jsonSchema.object(
+    {
+      duplicatedTemplateId: jsonSchema.string({
+        description: "Page ID duplicated during Notion OAuth authorization. Preserved during token refresh.",
+      }),
+    },
+    {
+      description: "Present only for Notion OAuth connections with a duplicated template ID.",
+      additionalProperties: false,
+    },
+  ),
+);
+
 const runtimeConnectionProperties: Record<string, JsonSchema> = {
+  notion: notionConnectionSchema,
   id: jsonSchema.string({ description: "Stable local connection identifier." }),
+  providerAccountId: jsonSchema.string({
+    description: "Provider account identity from the stored credential profile.",
+  }),
   service: jsonSchema.string({ description: "Provider service identifier." }),
   status: { type: "string", enum: ["active", "disconnected"] },
   alias: jsonSchema.string({ description: namedConnectionDescription }),
@@ -199,15 +265,11 @@ const runtimeConnectionProperties: Record<string, JsonSchema> = {
  *
  * The action catalog remains the source of truth for provider-specific input
  * and output schemas. The default document stays compact and exposes one
- * generic run creation route. Pass `actionId` to embed one concrete action schema for
+ * generic run creation route. Pass `action` to embed one concrete action schema for
  * tool importers that need a small strongly typed OpenAPI document.
  */
-export function createOpenApiDocument(
-  providers: ProviderDefinition[],
-  options: OpenApiDocumentOptions = {},
-): OpenApiDocument {
-  const actions = providers.flatMap((provider) => provider.actions);
-  const concreteAction = options.actionId ? actions.find((action) => action.id === options.actionId) : undefined;
+export function createOpenApiDocument(options: OpenApiDocumentOptions = {}): OpenApiDocument {
+  const concreteAction = options.action;
   const runPath = createRunPath();
   if (concreteAction) {
     runPath.post = createConcreteRunOperation(concreteAction);
@@ -245,13 +307,28 @@ export function createOpenApiDocument(
         },
       },
     },
-    "/api/providers": getOperation("Catalog", "List provider catalog entries.", {
-      type: "array",
-      items: { $ref: "#/components/schemas/ProviderDefinition" },
-    }),
-    "/api/providers/{service}": getOperation("Catalog", "Get one provider catalog entry.", {
-      $ref: "#/components/schemas/ProviderDefinition",
-    }),
+    "/api/providers": getOperation(
+      "Catalog",
+      "List provider catalog entries.",
+      {
+        type: "array",
+        items: { $ref: "#/components/schemas/ProviderDefinition" },
+      },
+      { parameters: catalogLocaleParameters },
+    ),
+    "/api/providers/{service}": getOperation(
+      "Catalog",
+      "Get one provider catalog entry.",
+      {
+        $ref: "#/components/schemas/ProviderDefinition",
+      },
+      {
+        parameters: [
+          ...catalogLocaleParameters,
+          { name: "service", in: "path", required: true, schema: { type: "string" } },
+        ],
+      },
+    ),
     "/api/actions": getOperation("Catalog", "List all catalog actions.", {
       type: "array",
       items: { $ref: "#/components/schemas/ActionDefinition" },
@@ -271,8 +348,10 @@ export function createOpenApiDocument(
       },
     ),
     "/v1/providers": runtimeGetOperation("Catalog", "List public provider catalog entries.", {
-      description: "Closest HTTP analog of MCP list_apps. Categories are objects; MCP list_apps returns strings.",
+      description:
+        "Closest HTTP analog of MCP list_apps. Category IDs remain stable; displayName is localized. MCP list_apps returns category strings.",
       parameters: [
+        ...catalogLocaleParameters,
         queryParameter(
           "q",
           "Optional case-insensitive filter over service, display name, scenario, category, or auth type.",
@@ -338,6 +417,78 @@ export function createOpenApiDocument(
       type: "string",
       description: "Markdown guide for one action.",
     }),
+    "/api/custom-mcp": {
+      ...getOperation("Catalog", "List administrator-defined MCP services.", {
+        type: "array",
+        items: { $ref: "#/components/schemas/CustomMcpService" },
+      }),
+      post: {
+        tags: ["Catalog"],
+        summary: "Register a remote MCP service.",
+        description:
+          "Administrator access required. Service identifiers default to the name-derived value, may be supplied at creation, and cannot be changed later. Names and service identifiers must be unique across built-in and custom providers. The endpoint and authentication layout are fixed; connection secrets use the existing connection APIs. OAuth discovers and registers a client unless manual configuration is supplied. No-auth services discover tools immediately.",
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: z.toJSONSchema(customMcpCreateInput, { io: "input" }) } },
+        },
+        responses: {
+          201: jsonResponse({ $ref: "#/components/schemas/CustomMcpService" }),
+          400: jsonResponse(errorResponseSchema),
+          409: jsonResponse(errorResponseSchema),
+          502: jsonResponse(errorResponseSchema),
+        },
+      },
+    },
+    "/api/custom-mcp/{service}": {
+      parameters: [{ name: "service", in: "path", required: true, schema: jsonSchema.string() }],
+      ...getOperation("Catalog", "Get a custom MCP service and its saved tools.", {
+        $ref: "#/components/schemas/CustomMcpService",
+      }),
+      patch: {
+        tags: ["Catalog"],
+        summary: "Rename, enable or disable a custom MCP service.",
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: z.toJSONSchema(customMcpUpdateInput, { io: "input" }) } },
+        },
+        responses: {
+          200: jsonResponse({ $ref: "#/components/schemas/CustomMcpService" }),
+          400: jsonResponse(errorResponseSchema),
+          404: jsonResponse(errorResponseSchema),
+          409: jsonResponse(errorResponseSchema),
+        },
+      },
+      delete: {
+        tags: ["Catalog"],
+        summary: "Delete a custom MCP service after removing its connections.",
+        responses: {
+          200: jsonResponse(
+            jsonSchema.object({ deleted: { type: "boolean", const: true } }, { required: ["deleted"] }),
+          ),
+          404: jsonResponse(errorResponseSchema),
+          409: jsonResponse(errorResponseSchema),
+        },
+      },
+    },
+    "/api/custom-mcp/{service}/sync": {
+      parameters: [{ name: "service", in: "path", required: true, schema: jsonSchema.string() }],
+      post: {
+        tags: ["Catalog"],
+        summary: "Discover tools using a selected MCP connection.",
+        description:
+          "Replaces the tool snapshot atomically. A failed discovery returns the previous tools with syncError set. Omit connectionId to reuse the previous discovery connection, or the provider default before the first successful sync.",
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: z.toJSONSchema(customMcpSyncInput, { io: "input" }) } },
+        },
+        responses: {
+          200: jsonResponse({ $ref: "#/components/schemas/CustomMcpService" }),
+          400: jsonResponse(errorResponseSchema),
+          404: jsonResponse(errorResponseSchema),
+          409: jsonResponse(errorResponseSchema),
+        },
+      },
+    },
     "/api/connections": getOperation("Connections", "List local provider connections.", {
       type: "array",
       items: { $ref: "#/components/schemas/ConnectionSummary" },
@@ -345,6 +496,44 @@ export function createOpenApiDocument(
     "/api/connections/{service}": createConnectionPath(),
     "/api/connections/{service}/settings": createConnectionSettingsPath(),
     "/api/connections/{service}/settings/secrets/{field}": createConnectionSecretPath(),
+    "/api/connections/tools/{connectionId}": getOperation(
+      "Connections",
+      "List the tools one saved connection can grant to a runtime token.",
+      jsonSchema.object(
+        {
+          connectionId: jsonSchema.string(),
+          service: jsonSchema.string(),
+          tools: jsonSchema.array(
+            jsonSchema.object(
+              {
+                actionId: jsonSchema.string(),
+                name: jsonSchema.string(),
+                description: jsonSchema.string(),
+                operationType: jsonSchema.stringEnum(["read", "write", "destructive"]),
+              },
+              { required: ["actionId", "name", "operationType"] },
+            ),
+          ),
+          total: jsonSchema.integer(),
+        },
+        { required: ["connectionId", "service", "tools", "total"], description: "Grantable connection tools." },
+      ),
+      {
+        description:
+          "Custom MCP connections are discovered live through custom_mcp.list_tools; other connections list their catalog actions.",
+        parameters: [{ name: "connectionId", in: "path", required: true, schema: { type: "string" } }],
+        errorStatuses: [400],
+      },
+    ),
+    "/api/cloudflare-usage": getOperation(
+      "Connections",
+      "Read Cloudflare account usage through a configured Cloudflare MCP connection.",
+      { type: "object", additionalProperties: true },
+      {
+        parameters: [{ name: "connectionName", in: "query", required: false, schema: { type: "string" } }],
+        errorStatuses: [400],
+      },
+    ),
     "/api/oauth/configs": getOperation("OAuth", "List local OAuth client configurations.", {
       type: "array",
       items: { $ref: "#/components/schemas/OAuthClientConfigSummary" },
@@ -353,11 +542,263 @@ export function createOpenApiDocument(
     "/api/oauth/authorizations": createOAuthAuthorizationPath(),
     "/api/runtime-tokens": createRuntimeTokensPath(),
     "/api/runtime-tokens/{id}": createRuntimeTokenPath(),
+    "/api/oauth-clients": createOAuthClientsPath(),
+    "/api/oauth-clients/{clientId}": createOAuthClientPath(),
+    "/api/oauth-clients/{clientId}/rotate-secret": createOAuthClientRotatePath(),
     "/api/runtime-policy": createRuntimePolicyPath(),
     "/api/files": createTransitFilesPath(),
     "/api/files/{fileId}": createTransitFilePath(),
     "/v1/actions/{actionId}": runPath,
     "/v1/proxy/{service}": createProxyPath(),
+    "/v1/providers/{service}/trigger-permissions": runtimeGetOperation(
+      "Triggers",
+      "Read provider-native Trigger permission guidance.",
+      {
+        data: { type: "array", items: { type: "object", additionalProperties: true } },
+        parameters: [{ name: "service", in: "path", required: true, schema: jsonSchema.string() }],
+        errorStatuses: [401, 404],
+      },
+    ),
+    "/v1/providers/slackbot/events/verify": {
+      post: {
+        tags: ["Triggers"],
+        summary: "Verify an inbound Slack Events API request.",
+        description:
+          "Requires the dedicated OOMOL_CONNECT_EVENT_VERIFY_TOKEN. The raw Slack request body is verified against the deployment-default slackbot OAuth client configuration, not a connection-specific configuration; no event is stored or scheduled.",
+        security: [{ eventVerificationToken: [] }],
+        parameters: [
+          {
+            name: "x-slack-request-timestamp",
+            in: "header",
+            required: true,
+            schema: jsonSchema.string(),
+          },
+          { name: "x-slack-signature", in: "header", required: true, schema: jsonSchema.string() },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": { schema: { type: "object", additionalProperties: true } },
+            "application/x-www-form-urlencoded": {
+              schema: {
+                type: "object",
+                properties: {
+                  payload: {
+                    type: "string",
+                    description: "URL-encoded JSON block_actions interaction payload.",
+                  },
+                },
+                required: ["payload"],
+              },
+            },
+          },
+        },
+        responses: {
+          200: jsonResponse(
+            runtimeSuccessSchema({
+              type: "object",
+              properties: {
+                valid: { type: "boolean", const: true },
+                appId: { type: "string" },
+                challenge: jsonSchema.nullableString("Challenge value returned for Slack URL verification."),
+              },
+              required: ["valid", "appId", "challenge"],
+            }),
+          ),
+          400: jsonResponse(
+            runtimeFailureSchema(),
+            "invalid_event_payload: invalid JSON or unsupported Slack envelope.",
+          ),
+          401: jsonResponse(
+            runtimeFailureSchema(),
+            "unauthorized, invalid_webhook_signature, or invalid_webhook_timestamp.",
+          ),
+          403: jsonResponse(runtimeFailureSchema(), "webhook_app_mismatch."),
+          404: jsonResponse(
+            runtimeFailureSchema(),
+            "event_verification_disabled: no dedicated verification token is configured.",
+          ),
+          409: jsonResponse(
+            runtimeFailureSchema(),
+            "event_verification_not_configured: default Slack App ID or Signing Secret is missing.",
+          ),
+          413: jsonResponse(
+            runtimeFailureSchema(),
+            "webhook_request_too_large: the Slack request body exceeds 64 KiB.",
+          ),
+          500: jsonResponse(runtimeFailureSchema(), "Internal verification failure."),
+        },
+      },
+    },
+    "/v1/providers/microsoft_teams_bot/events/verify": {
+      post: {
+        tags: ["Triggers"],
+        summary: "Verify an inbound Microsoft Teams bot activity.",
+        description:
+          "Requires the dedicated OOMOL_CONNECT_EVENT_VERIFY_TOKEN in Authorization. The activity's own Bot Framework bearer token is forwarded in x-botframework-authorization and checked against the selected microsoft_teams_bot connection's Application (client) ID. The token must use RS256, match the Bot Framework issuer and audience, be current, and name the activity's documented Bot Connector serviceUrl. The token does not sign the activity body. No event is stored or scheduled.",
+        security: [{ eventVerificationToken: [] }],
+        parameters: [
+          { name: "x-botframework-authorization", in: "header", required: true, schema: jsonSchema.string() },
+          ...namedConnectionParameters,
+        ],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { type: "object", additionalProperties: true } } },
+        },
+        responses: {
+          200: jsonResponse(
+            runtimeSuccessSchema({
+              type: "object",
+              properties: {
+                valid: { type: "boolean", const: true },
+                appId: { type: "string" },
+                tenantId: jsonSchema.nullableString("Microsoft Entra tenant ID from the verified activity."),
+                serviceUrl: { type: "string" },
+                activityId: jsonSchema.nullableString("Activity ID from the verified activity."),
+                conversationId: jsonSchema.nullableString("Conversation ID from the verified activity."),
+                aadObjectId: jsonSchema.nullableString(
+                  "Sender's Microsoft Entra object ID from the verified activity.",
+                ),
+                channelId: jsonSchema.nullableString("Channel named by the verified activity."),
+              },
+              required: [
+                "valid",
+                "appId",
+                "tenantId",
+                "serviceUrl",
+                "activityId",
+                "conversationId",
+                "aadObjectId",
+                "channelId",
+              ],
+            }),
+          ),
+          400: jsonResponse(runtimeFailureSchema(), "invalid_event_payload: invalid JSON or missing serviceUrl."),
+          401: jsonResponse(
+            runtimeFailureSchema(),
+            "unauthorized, invalid_webhook_signature, or invalid_webhook_timestamp.",
+          ),
+          403: jsonResponse(runtimeFailureSchema(), "webhook_app_mismatch: the token audience is a different bot."),
+          404: jsonResponse(
+            runtimeFailureSchema(),
+            "event_verification_disabled, or the selected connection does not exist.",
+          ),
+          409: jsonResponse(
+            runtimeFailureSchema(),
+            "event_verification_not_configured: no Microsoft Teams Bot connection with an Application (client) ID.",
+          ),
+          413: jsonResponse(runtimeFailureSchema(), "webhook_request_too_large: the body exceeds 64 KiB."),
+          502: jsonResponse(runtimeFailureSchema(), "event_verification_unavailable: signing keys unreachable."),
+          500: jsonResponse(runtimeFailureSchema(), "Internal verification failure."),
+        },
+      },
+    },
+    "/v1/providers/feishu_app_bot/events/verify": {
+      post: {
+        tags: ["Triggers"],
+        summary: "Verify and decrypt an inbound Feishu event.",
+        description:
+          "Requires the dedicated OOMOL_CONNECT_EVENT_VERIFY_TOKEN in Authorization. The selected feishu_app_bot connection must contain appId, verificationToken and encryptKey. Signed callers must forward the exact original request bytes; re-serializing the JSON body changes the signed content and fails verification. The route validates the Feishu token and required signature, decrypts encrypted envelopes, and returns the trusted decrypted payload. Only URL verification challenges may omit signing headers. No event is stored or scheduled.",
+        security: [{ eventVerificationToken: [] }],
+        parameters: [
+          { name: "x-lark-request-timestamp", in: "header", required: false, schema: jsonSchema.string() },
+          { name: "x-lark-request-nonce", in: "header", required: false, schema: jsonSchema.string() },
+          { name: "x-lark-signature", in: "header", required: false, schema: jsonSchema.string() },
+          ...namedConnectionParameters,
+        ],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { type: "object", additionalProperties: true } } },
+        },
+        responses: {
+          200: jsonResponse(
+            runtimeSuccessSchema({
+              type: "object",
+              properties: {
+                valid: { type: "boolean", const: true },
+                appId: { type: "string" },
+                tenantKey: { type: "string" },
+                challenge: jsonSchema.optional(jsonSchema.string()),
+                payload: jsonSchema.optional({ type: "object", additionalProperties: true }),
+                signatureVerified: { type: "boolean" },
+              },
+              required: ["valid", "appId", "tenantKey", "signatureVerified"],
+            }),
+          ),
+          400: jsonResponse(runtimeFailureSchema(), "invalid_event_payload."),
+          401: jsonResponse(
+            runtimeFailureSchema(),
+            "unauthorized, invalid_webhook_signature, or invalid_webhook_timestamp.",
+          ),
+          403: jsonResponse(runtimeFailureSchema(), "webhook_app_mismatch."),
+          404: jsonResponse(
+            runtimeFailureSchema(),
+            "event_verification_disabled, or the selected connection does not exist.",
+          ),
+          409: jsonResponse(
+            runtimeFailureSchema(),
+            "event_verification_not_configured: appId, verificationToken or encryptKey is missing.",
+          ),
+          413: jsonResponse(runtimeFailureSchema(), "webhook_request_too_large: the body exceeds 64 KiB."),
+          500: jsonResponse(runtimeFailureSchema(), "Internal verification failure."),
+        },
+      },
+    },
+    "/v1/providers/{service}/triggers/{triggerId}/execute": {
+      post: {
+        tags: ["Triggers"],
+        summary: "Execute a registered Provider Trigger operation.",
+        description:
+          "Requires independent Trigger grants. Stateful operations require a persistent runtime token and native local connection; remote state and credentials stay server-owned.",
+        parameters: [
+          { name: "service", in: "path", required: true, schema: jsonSchema.string() },
+          { name: "triggerId", in: "path", required: true, schema: jsonSchema.string() },
+          ...namedConnectionParameters,
+        ],
+        requestBody: { required: true, content: { "application/json": { schema: triggerOperationSchema() } } },
+        responses: {
+          200: jsonResponse(runtimeSuccessSchema({})),
+          400: jsonResponse(runtimeFailureSchema()),
+          401: jsonResponse(runtimeFailureSchema()),
+          403: jsonResponse(runtimeFailureSchema()),
+          404: jsonResponse(runtimeFailureSchema()),
+          409: jsonResponse(runtimeFailureSchema()),
+          413: jsonResponse(runtimeFailureSchema()),
+          501: jsonResponse(runtimeFailureSchema()),
+          503: jsonResponse(runtimeFailureSchema()),
+        },
+      },
+    },
+    "/api/trigger-subscriptions": getOperation(
+      "Triggers",
+      "List owned subscriptions and cleanup status without secrets.",
+      { type: "array", items: { type: "object", additionalProperties: true } },
+    ),
+    "/api/trigger-subscriptions/{id}/cancel": {
+      post: {
+        tags: ["Triggers"],
+        summary: "Cancel a subscription with retained original credentials.",
+        parameters: [{ name: "id", in: "path", required: true, schema: jsonSchema.string() }],
+        responses: {
+          200: jsonResponse(jsonSchema.object({ ok: jsonSchema.boolean() })),
+          404: jsonResponse(errorResponseSchema),
+          409: jsonResponse(errorResponseSchema),
+          503: jsonResponse(errorResponseSchema),
+        },
+      },
+    },
+    "/api/trigger-subscriptions/{id}/abandon": {
+      post: {
+        tags: ["Triggers"],
+        summary: "Explicitly abandon automatic cleanup; retain the uncleaned remote-resource record.",
+        parameters: [{ name: "id", in: "path", required: true, schema: jsonSchema.string() }],
+        responses: {
+          200: jsonResponse(jsonSchema.object({ ok: jsonSchema.boolean() })),
+          404: jsonResponse(errorResponseSchema),
+          409: jsonResponse(errorResponseSchema),
+        },
+      },
+    },
     "/api/runs": createRunsPath(),
     "/api/runs/{id}": createRunDetailPath(),
     "/mcp": createMcpPath(),
@@ -384,12 +825,44 @@ export function createOpenApiDocument(
       { name: "Access", description: "Runtime execution policy and bearer tokens for /v1 and MCP clients." },
       { name: "Files", description: "Local temporary file transit for provider actions." },
       { name: "Runs", description: "Local action execution and recent run history." },
-      { name: "Proxy", description: "Provider API proxy requests through local credentials." },
+      {
+        name: "Triggers",
+        description: "Registered provider Trigger operations and owned remote subscription cleanup.",
+      },
+      { name: "Proxy", description: "Provider API proxy requests using the selected local or SaaS connection." },
       { name: "MCP", description: "Stateless MCP POST endpoint and tool metadata." },
     ],
     paths,
     components: {
+      securitySchemes: {
+        eventVerificationToken: {
+          type: "http",
+          scheme: "bearer",
+          description: "Dedicated OOMOL_CONNECT_EVENT_VERIFY_TOKEN; admin and runtime tokens are not accepted.",
+        },
+      },
       schemas: {
+        CustomMcpService: jsonSchema.object(
+          {
+            service: jsonSchema.string(),
+            displayName: jsonSchema.string(),
+            endpoint: jsonSchema.string(),
+            transport: { type: "string", enum: ["streamable_http", "sse"] },
+            enabled: jsonSchema.boolean(),
+            revision: jsonSchema.string(),
+            auth: {
+              type: "object",
+              description:
+                "Authentication layout without connection secrets. OAuth contains the resolved definition, not client credentials.",
+            },
+            actions: jsonSchema.array({ $ref: "#/components/schemas/ActionDefinition" }),
+            syncConnectionId: jsonSchema.string(),
+            syncedAt: jsonSchema.string(),
+            syncError: jsonSchema.string(),
+          },
+          { required: ["service", "displayName", "endpoint", "transport", "enabled", "revision", "auth", "actions"] },
+        ),
+
         ActionDefinition: jsonSchema.unknownObject("Public action catalog definition with runtime execution status."),
         LocalAuthSession: jsonSchema.object(
           {
@@ -495,6 +968,12 @@ export function createOpenApiDocument(
                 locallyExecutable: jsonSchema.boolean(),
                 catalogOnly: jsonSchema.boolean(),
                 requiredAuthTypes: jsonSchema.array(jsonSchema.string()),
+                authTypesSource: {
+                  type: "string",
+                  enum: ["action", "provider"],
+                  description:
+                    "Whether authentication types are declared by this action or inherited from the provider.",
+                },
                 noAuthRunnable: jsonSchema.boolean(),
                 needsCredential: jsonSchema.boolean(),
               },
@@ -503,6 +982,7 @@ export function createOpenApiDocument(
                   "locallyExecutable",
                   "catalogOnly",
                   "requiredAuthTypes",
+                  "authTypesSource",
                   "noAuthRunnable",
                   "needsCredential",
                 ],
@@ -545,9 +1025,16 @@ export function createOpenApiDocument(
         ConnectionSummary: jsonSchema.object(
           {
             id: jsonSchema.string({ description: "Stable local connection identifier." }),
+            providerAccountId: jsonSchema.string({
+              description: "Provider account identity from the stored credential profile.",
+            }),
             service: jsonSchema.string({ description: "Provider service identifier." }),
             authType: jsonSchema.string({ description: "Connection authentication type." }),
             configured: jsonSchema.boolean({ description: "Whether the provider is connected." }),
+            notion: notionConnectionSchema,
+            oauthAuthorizationId: jsonSchema.string({
+              description: "Completed OAuth consent state. Omitted for legacy and non-OAuth connections.",
+            }),
             virtual: jsonSchema.boolean({
               description: "Whether the connection needs no stored secret.",
             }),
@@ -590,8 +1077,14 @@ export function createOpenApiDocument(
             }),
             clientId: jsonSchema.nullable(jsonSchema.string({ description: "Configured OAuth client id." })),
             expectedRedirectUri: jsonSchema.string({
-              description: "Callback URL to configure in the provider OAuth app.",
+              description:
+                "Callback URL to configure in the provider OAuth app: the configured override, else the runtime callback.",
             }),
+            redirectUri: jsonSchema.nullable(
+              jsonSchema.string({
+                description: "Configured redirect URI override, or null when the runtime callback is used.",
+              }),
+            ),
             auth: jsonSchema.unknownObject("Provider OAuth capability metadata."),
             requestedScopes: jsonSchema.nullable(
               jsonSchema.array(jsonSchema.string(), {
@@ -609,6 +1102,7 @@ export function createOpenApiDocument(
               "customClientAvailable",
               "clientId",
               "expectedRedirectUri",
+              "redirectUri",
               "auth",
               "requestedScopes",
               "effectiveScopes",
@@ -617,6 +1111,7 @@ export function createOpenApiDocument(
           },
         ),
         OAuthClientConfigRequest: oauthClientConfigRequestSchema,
+        OAuthClientSummary: oauthClientSummarySchema(),
         RuntimeTokenSummary: jsonSchema.object(
           {
             id: jsonSchema.string({ description: "Runtime token identifier." }),
@@ -625,6 +1120,9 @@ export function createOpenApiDocument(
             blockedActions: policyRuleArraySchema("Action block rules applied to this stored runtime token."),
             allowedProxies: policyRuleArraySchema(
               "Provider proxies explicitly granted to this token. An empty list grants no proxy access.",
+            ),
+            allowedTriggers: policyRuleArraySchema(
+              "Trigger IDs explicitly granted to this token. Omit or leave empty to deny all Trigger operations.",
             ),
             allowedConnections: connectionIdArraySchema(
               "Stable connection IDs granted to this stored runtime token. An empty list is unrestricted connection access. IDs are opaque values returned by the connection APIs. Virtual no_auth connections do not require grants.",
@@ -644,6 +1142,7 @@ export function createOpenApiDocument(
               "allowedProxies",
               "allowedConnections",
               "connectionPermissions",
+              "allowedTriggers",
               "createdAt",
             ],
             description: "Runtime API token summary. Plaintext tokens and token hashes are not returned.",
@@ -656,6 +1155,9 @@ export function createOpenApiDocument(
             blockedActions: policyRuleArraySchema("Optional action block rules for the new token."),
             allowedProxies: policyRuleArraySchema(
               "Optional provider proxy grants for the new token. Omit or leave empty to deny proxy access.",
+            ),
+            allowedTriggers: policyRuleArraySchema(
+              "Trigger IDs explicitly granted to this token. Omit or leave empty to deny all Trigger operations.",
             ),
             allowedConnections: connectionIdArraySchema(
               "Optional stable connection IDs granted to the new token. Omit or leave empty for unrestricted connection access. A non-empty list matches exact opaque IDs returned by the connection APIs. Virtual no_auth connections do not require grants.",
@@ -676,6 +1178,9 @@ export function createOpenApiDocument(
             allowedProxies: policyRuleArraySchema(
               "Provider proxies explicitly granted to this token. An empty list grants no proxy access.",
             ),
+            allowedTriggers: policyRuleArraySchema(
+              "Trigger IDs explicitly granted to this token. Omit or leave empty to deny all Trigger operations.",
+            ),
             allowedConnections: connectionIdArraySchema(
               "Stable connection IDs granted to this stored token. An empty list is unrestricted connection access. A non-empty list matches exact opaque IDs returned by the connection APIs. Virtual no_auth connections do not require grants.",
             ),
@@ -692,7 +1197,7 @@ export function createOpenApiDocument(
               "connectionPermissions",
             ],
             description:
-              "Complete replacement of one stored runtime token's action, proxy, and connection permissions.",
+              "Complete replacement of one stored runtime token's Action, Trigger, proxy, and connection permissions.",
           },
         ),
         PolicyRules: policyRulesSchema(),
@@ -758,7 +1263,15 @@ export function createOpenApiDocument(
             description: "Local transit file upload response.",
           },
         ),
-        ProviderDefinition: jsonSchema.unknownObject("Public provider catalog definition."),
+        ProviderDefinition: jsonSchema.looseObject(
+          "Public provider catalog definition. Localized responses preserve category IDs and supply their display names separately.",
+          {
+            categoryDisplayNames: jsonSchema.record(
+              "Localized display names keyed by unchanged category ID.",
+              jsonSchema.string(),
+            ),
+          },
+        ),
         RunLog: jsonSchema.object(
           {
             id: jsonSchema.string({ description: "Run identifier." }),
@@ -983,6 +1496,152 @@ function createRuntimeTokenPath(): Record<string, unknown> {
   };
 }
 
+function oauthClientSummarySchema(): Record<string, unknown> {
+  return jsonSchema.object(
+    {
+      clientId: jsonSchema.string({ description: "Opaque client identifier." }),
+      clientName: jsonSchema.string({ description: "User-facing client name." }),
+      registrationType: jsonSchema.string({ description: "How the client was registered: manual, dcr, or cimd." }),
+      redirectUris: jsonSchema.array(jsonSchema.string(), { description: "Registered exact-match redirect URIs." }),
+      scopes: jsonSchema.array(jsonSchema.string(), { description: "Grantable scopes." }),
+      tokenEndpointAuthMethod: jsonSchema.string({ description: "Token endpoint authentication method." }),
+      hasSecret: jsonSchema.boolean({
+        description: "Whether a client secret is configured. The secret itself is never returned after creation.",
+      }),
+      metadataDocumentUrl: jsonSchema.string({ description: "CIMD document URL, for cimd clients." }),
+      createdAt: jsonSchema.string({ description: "Creation timestamp." }),
+      rotatedAt: jsonSchema.string({ description: "Last secret rotation timestamp." }),
+    },
+    {
+      required: [
+        "clientId",
+        "clientName",
+        "registrationType",
+        "redirectUris",
+        "scopes",
+        "tokenEndpointAuthMethod",
+        "hasSecret",
+        "createdAt",
+      ],
+      description: "OAuth client registered for inbound MCP authorization.",
+    },
+  );
+}
+
+function createOAuthClientsPath(): Record<string, unknown> {
+  return {
+    get: {
+      tags: ["Access"],
+      summary: "List OAuth clients registered for inbound MCP authorization.",
+      responses: {
+        200: jsonResponse({ type: "array", items: { $ref: "#/components/schemas/OAuthClientSummary" } }),
+      },
+    },
+    post: {
+      tags: ["Access"],
+      summary: "Manually register an OAuth client.",
+      description:
+        "The client secret, when the token endpoint auth method is not none, is returned once and stored only as a hash.",
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: jsonSchema.object(
+              {
+                clientName: jsonSchema.string(),
+                redirectUris: jsonSchema.array(jsonSchema.string()),
+                scopes: jsonSchema.array(jsonSchema.string()),
+                tokenEndpointAuthMethod: jsonSchema.string({
+                  description: "One of: none, client_secret_basic, client_secret_post.",
+                }),
+              },
+              { required: ["clientName", "redirectUris"], description: "Manual OAuth client registration request." },
+            ),
+          },
+        },
+      },
+      responses: {
+        201: jsonResponse(
+          jsonSchema.object(
+            {
+              client: { $ref: "#/components/schemas/OAuthClientSummary" },
+              clientSecret: jsonSchema.string({
+                description: "Plaintext client secret, shown once. Absent for public clients.",
+              }),
+            },
+            { required: ["client"], description: "OAuth client creation response." },
+          ),
+        ),
+        400: jsonResponse({ $ref: "#/components/schemas/ErrorResponse" }),
+        413: jsonResponse({ $ref: "#/components/schemas/ErrorResponse" }),
+      },
+    },
+  };
+}
+
+function createOAuthClientPath(): Record<string, unknown> {
+  return {
+    put: {
+      tags: ["Access"],
+      summary: "Update an OAuth client's name, redirect URIs, or scopes.",
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: jsonSchema.object(
+              {
+                clientName: jsonSchema.string(),
+                redirectUris: jsonSchema.array(jsonSchema.string()),
+                scopes: jsonSchema.array(jsonSchema.string()),
+              },
+              { description: "OAuth client update request; omitted fields keep their values." },
+            ),
+          },
+        },
+      },
+      responses: {
+        200: jsonResponse({ $ref: "#/components/schemas/OAuthClientSummary" }, "The updated OAuth client."),
+        400: jsonResponse({ $ref: "#/components/schemas/ErrorResponse" }),
+        404: jsonResponse({ $ref: "#/components/schemas/ErrorResponse" }),
+        413: jsonResponse({ $ref: "#/components/schemas/ErrorResponse" }),
+      },
+    },
+    delete: {
+      tags: ["Access"],
+      summary: "Delete an OAuth client and revoke all tokens it received.",
+      responses: {
+        200: jsonResponse(
+          jsonSchema.object(
+            { id: jsonSchema.string(), deleted: jsonSchema.boolean() },
+            { required: ["id", "deleted"], description: "OAuth client deletion response." },
+          ),
+        ),
+        404: jsonResponse({ $ref: "#/components/schemas/ErrorResponse" }),
+      },
+    },
+  };
+}
+
+function createOAuthClientRotatePath(): Record<string, unknown> {
+  return {
+    post: {
+      tags: ["Access"],
+      summary: "Rotate an OAuth client secret.",
+      description: "The new secret is returned once; the previous secret stops working immediately.",
+      responses: {
+        200: jsonResponse(
+          jsonSchema.object(
+            { clientSecret: jsonSchema.string() },
+            { required: ["clientSecret"], description: "Secret rotation response." },
+          ),
+        ),
+        400: jsonResponse({ $ref: "#/components/schemas/ErrorResponse" }),
+        404: jsonResponse({ $ref: "#/components/schemas/ErrorResponse" }),
+      },
+    },
+  };
+}
+
 function createRuntimePolicyPath(): Record<string, unknown> {
   return {
     get: {
@@ -995,7 +1654,7 @@ function createRuntimePolicyPath(): Record<string, unknown> {
     },
     put: {
       tags: ["Access"],
-      summary: "Replace the persisted Runtime action and proxy policy.",
+      summary: "Replace the persisted Runtime Action, Trigger, and proxy policy.",
       description: `Deployment policy remains read-only. Block rules take precedence and non-empty allowlists intersect. Policy request bodies must not exceed ${policyRequestMaxBytes} bytes.`,
       requestBody: {
         required: true,
@@ -1021,6 +1680,10 @@ function policyRulesSchema(): JsonSchema {
       allowedActions: policyRuleArraySchema("Action allow rules."),
       blockedActions: policyRuleArraySchema("Action block rules."),
       allowedProxies: policyRuleArraySchema("Proxy service allow rules."),
+      allowedTriggers: policyRuleArraySchema(
+        "Trigger allow rules. Non-empty allowlists intersect across policy layers.",
+      ),
+      blockedTriggers: policyRuleArraySchema("Trigger block rules override all grants."),
       blockedProxies: policyRuleArraySchema("Proxy service block rules."),
     },
     {
@@ -1233,6 +1896,7 @@ function createRunPath(): Record<string, unknown> {
       summary: "Execute a runtime action.",
       description:
         "Use the action catalog to discover provider-specific input and output schemas. For a compact strongly typed OpenAPI document for one action, request /openapi.json?actionId=<actionId>. " +
+        saasExecutionDescription +
         actionIdempotencyDescription,
       parameters: [actionIdParameter, idempotencyKeyParameter, ...namedConnectionParameters],
       requestBody: actionRunBody(
@@ -1250,7 +1914,7 @@ function createProxyPath(): Record<string, unknown> {
       tags: ["Proxy"],
       summary: "Proxy one provider API request.",
       description:
-        "For providers with a local proxy executor, forwards a provider-relative HTTP request and applies stored provider credentials locally.",
+        "Executes through the selected connection. Local connections use the local provider proxy; SaaS connections use the project proxy without loading local credentials. SaaS accepts GET/POST/PUT/PATCH/DELETE, primitive query values, string non-authentication headers and JSON/text bodies only; accessGrant and unknown fields are rejected. SaaS execution has a 300-second POST budget and a 64 MiB decoded JSON envelope limit, preserves the upstream status inside data.status, and supplies distinct local executionId and remoteExecutionId in meta. Failed or cancelled calls are never automatically replayed; remote side effects may have completed.",
       parameters: [
         {
           name: "service",
@@ -1268,7 +1932,7 @@ function createProxyPath(): Record<string, unknown> {
               {
                 endpoint: jsonSchema.string({ description: "Provider-relative path beginning with /." }),
                 method: jsonSchema.string({
-                  description: "HTTP method: DELETE, GET, HEAD, PATCH, POST, or PUT.",
+                  description: "HTTP method: DELETE, GET, HEAD, PATCH, POST, or PUT. SaaS connections reject HEAD.",
                 }),
                 query: {
                   type: "object",
@@ -1303,7 +1967,8 @@ function createProxyPath(): Record<string, unknown> {
                   description: "Provider response headers.",
                 },
                 bodyEncoding: jsonSchema.string({
-                  description: "Present as base64 when the provider response is binary.",
+                  description:
+                    "Present as base64 when a local provider response is binary. SaaS proxy supports JSON/text responses and omits this field.",
                 }),
                 data: jsonSchema.unknown("Provider response payload."),
               },
@@ -1323,6 +1988,9 @@ function createProxyPath(): Record<string, unknown> {
         429: jsonResponse(runtimeFailureSchema()),
         500: jsonResponse(runtimeFailureSchema()),
         501: jsonResponse(runtimeFailureSchema()),
+        502: jsonResponse(runtimeFailureSchema()),
+        503: jsonResponse(runtimeFailureSchema()),
+        504: jsonResponse(runtimeFailureSchema()),
       },
     },
   };
@@ -1372,6 +2040,22 @@ function createConnectionPath(): Record<string, unknown> {
     delete: {
       tags: ["Connections"],
       summary: "Disconnect a provider.",
+      requestBody: {
+        required: false,
+        content: {
+          "application/json": {
+            schema: jsonSchema.object({
+              connectionName: jsonSchema.string("Named connection. Defaults to default."),
+              revoke: {
+                type: "boolean",
+                default: false,
+                description:
+                  "Explicitly request OAuth token revocation after deleting the local credential. Omitted or false only deletes the local connection. Related connections may lose authorization depending on the provider's revocation policy.",
+              },
+            }),
+          },
+        },
+      },
       responses: {
         200: jsonResponse({
           anyOf: [
@@ -1380,9 +2064,13 @@ function createConnectionPath(): Record<string, unknown> {
               {
                 service: jsonSchema.string(),
                 configured: { const: false, type: "boolean" },
+                revoked: jsonSchema.stringEnum(
+                  "What the disconnect did about token revocation at the provider: done (the provider accepted the revocation request), failed (it refused or could not be reached; the credential is deleted here regardless), unsupported (no supported revocation protocol, no OAuth token held, or a SaaS connection) or skipped (the request body did not set revoke: true, the default).",
+                  ["done", "failed", "unsupported", "skipped"],
+                ),
               },
               {
-                required: ["service", "configured"],
+                required: ["service", "configured", "revoked"],
                 description: "Disconnected provider summary.",
               },
             ),
@@ -1480,8 +2168,12 @@ function createOAuthAuthorizationPath(): Record<string, unknown> {
                   description: "Optional connection-scoped OAuth app client secret.",
                 }),
                 requestedScopes: jsonSchema.array(jsonSchema.string(), {
-                  minItems: 1,
-                  description: "Optional non-empty provider-declared scope subset to request.",
+                  description:
+                    "OAuth request scopes replacing defaults. Required scopes are added automatically. Empty and unknown scopes are accepted.",
+                }),
+                redirectUri: jsonSchema.string({
+                  description:
+                    "Optional redirect URI registered with the connection-scoped OAuth app instead of the runtime callback. Same rules as OAuthClientConfigRequest.redirectUri.",
                 }),
                 authorizationOptionIds: jsonSchema.array(jsonSchema.string(), {
                   description: "Optional provider authorization option ids selected for this connection.",
@@ -1532,7 +2224,7 @@ function createOAuthConfigPath(): Record<string, unknown> {
       tags: ["OAuth"],
       summary: "Upsert local OAuth client configuration.",
       description:
-        "Open-source users provide their own OAuth app. requestedScopes may narrow the provider-declared defaults but cannot add scopes. Additional extra fields are declared by provider catalog auth metadata.",
+        "Open-source users provide their own OAuth app. requestedScopes replaces the default scope list. Omit it to use defaults; an empty array requests only required scopes. Required scopes are added automatically and unknown scopes are sent to the provider. Additional extra fields are declared by provider catalog auth metadata. For the same clientId, omitted clientSecret and omitted secretExtra keys retain saved secrets. Explicit empty secretExtra values clear optional secrets. Changing clientId requires new secrets.",
       requestBody: {
         required: true,
         content: {
@@ -1603,7 +2295,7 @@ interface RuntimeGetOperationOptions {
   data: JsonSchema;
   description?: string;
   parameters?: unknown[];
-  errorStatuses?: Array<400 | 401 | 403 | 404>;
+  errorStatuses?: Array<400 | 401 | 403 | 404 | 409 | 429 | 502 | 503 | 504>;
 }
 
 function runtimeGetOperation(
@@ -1682,6 +2374,10 @@ function actionRunResponses(output: JsonSchema): Record<string, unknown> {
     413: jsonResponse(failure, "The provider response exceeded the runtime size limit, or the upstream answered 413."),
     429: jsonResponse(failure),
     500: jsonResponse(failure),
+    501: jsonResponse(failure),
+    502: jsonResponse(failure, "SaaS upstream, protocol or response size failure; execution may have completed."),
+    503: jsonResponse(failure, "SaaS project credentials or execution are unavailable."),
+    504: jsonResponse(failure, "SaaS execution timed out; execution may have completed."),
   };
 }
 
@@ -1734,7 +2430,7 @@ function createConcreteRunOperation(action: ActionDefinition): Record<string, un
   return {
     tags: ["Runs"],
     summary: `Execute ${action.id}.`,
-    description: `${action.description} ${actionIdempotencyDescription}`,
+    description: `${action.description} ${saasExecutionDescription}${actionIdempotencyDescription}`,
     parameters: [actionIdParameter, idempotencyKeyParameter, ...namedConnectionParameters],
     requestBody: actionRunBody(
       action.inputSchema,
@@ -1796,13 +2492,16 @@ function connectionManagementPaths(): Record<string, unknown> {
     providerAccountId: jsonSchema.string("The provider account identifier."),
     comment: jsonSchema.nullableString("An optional administrator note."),
   });
-  const start = jsonSchema.object("An OAuth authorization attempt. Poll connectionRequestId to obtain its result.", {
-    authorizationUrl: jsonSchema.string(),
-    stateHandle: jsonSchema.string(),
-    connectionRequestId: jsonSchema.string(),
-    status: jsonSchema.literal("initiated"),
-    expiresAt: jsonSchema.string(),
-  });
+  const start = jsonSchema.requiredObject(
+    "An OAuth authorization attempt. Poll connectionRequestId to obtain its result.",
+    {
+      authorizationUrl: jsonSchema.string(),
+      stateHandle: jsonSchema.string(),
+      connectionRequestId: jsonSchema.string(),
+      status: jsonSchema.literal("initiated"),
+      expiresAt: jsonSchema.string(),
+    },
+  );
   const request = jsonSchema.object(
     "One authorization attempt; results remain available until expiresAt plus 24 hours.",
     {
@@ -1840,7 +2539,6 @@ function connectionManagementPaths(): Record<string, unknown> {
     required: jsonSchema.boolean(),
     defaultSelected: jsonSchema.boolean(),
     risk: jsonSchema.stringEnum("How much access the option grants.", ["standard", "sensitive", "destructive"]),
-    requires: jsonSchema.optional(jsonSchema.stringArray("Option ids that must be selected together with this one.")),
   });
   const setup = jsonSchema.object("Setup requirements and OAuth client state for one provider, without saved values.", {
     service: jsonSchema.string(),
@@ -1861,16 +2559,30 @@ function connectionManagementPaths(): Record<string, unknown> {
             steps: jsonSchema.stringArray("Ordered setup steps."),
           }),
         ),
-        scopes: jsonSchema.optional(jsonSchema.stringArray("Provider scopes the connector requests.")),
+        supportsScopeSelection: jsonSchema.optional(
+          jsonSchema.boolean("Whether the provider accepts an OAuth scope parameter."),
+        ),
+        scopes: jsonSchema.optional(
+          jsonSchema.stringArray("Default provider scopes when no explicit selection is made."),
+        ),
+        requiredScopes: jsonSchema.optional(
+          jsonSchema.stringArray("Scopes automatically added to OAuth requests for connection validation or renewal."),
+        ),
         authorizationOptions: jsonSchema.optional(jsonSchema.array(authorizationOption)),
       }),
     ),
     oauthClient: jsonSchema.optional(
-      jsonSchema.object("OAuth client configuration state; present when the provider supports OAuth.", {
+      jsonSchema.object("Default OAuth source configuration; present when the provider supports OAuth.", {
         configured: jsonSchema.boolean(),
-        customClientAvailable: jsonSchema.boolean("Whether connections may carry their own OAuth client."),
-        expectedRedirectUri: jsonSchema.string("Callback URL to register with the provider."),
-        missingFields: jsonSchema.stringArray("Required client inputs absent from the stored configuration."),
+        customClientAvailable: jsonSchema.boolean(
+          "Whether connections may carry their own OAuth client; false for a SaaS default source.",
+        ),
+        expectedRedirectUri: jsonSchema.string(
+          "Callback URL: the SaaS provider config callback for a SaaS source; otherwise the local override or runtime callback.",
+        ),
+        missingFields: jsonSchema.stringArray(
+          "Required local client inputs absent from storage; empty for a SaaS source.",
+        ),
       }),
     ),
   });
@@ -1881,7 +2593,7 @@ function connectionManagementPaths(): Record<string, unknown> {
       "Describe the inputs a provider needs before it can be connected.",
       {
         data: setup,
-        parameters: [parameter("service")],
+        parameters: [parameter("service"), ...catalogLocaleParameters],
         errorStatuses: [401, 403, 404],
         description:
           "Requires administrator authentication. Lists credential fields, OAuth client inputs, scopes, registration help, the callback URL to register and the OAuth client inputs still missing. Never includes saved values.",
@@ -1909,9 +2621,9 @@ function connectionManagementPaths(): Record<string, unknown> {
       {
         data: request,
         parameters: [parameter("connectionRequestId")],
-        errorStatuses: [401, 403, 404],
+        errorStatuses: [401, 403, 404, 409, 429, 502, 503, 504],
         description:
-          "Requires the initiating management principal. A consumed callback does not remove the result. Responses use Cache-Control: private, no-store.",
+          "Requires the initiating management principal. An explicit valid administrator Bearer token advances SaaS authorization; cookie-only and unauthenticated local GET requests only read stored results. Console uses same-origin POST /api/oauth/connection-requests/{id}/sync with X-OpenConnector-Request: sync. A consumed callback does not remove the result. Responses use Cache-Control: private, no-store.",
       },
     ),
   };
@@ -1940,10 +2652,42 @@ function connectionManagementPaths(): Record<string, unknown> {
             403: jsonResponse(runtimeFailureSchema()),
             404: jsonResponse(runtimeFailureSchema()),
             409: jsonResponse(runtimeFailureSchema()),
+            429: jsonResponse(runtimeFailureSchema()),
+            502: jsonResponse(runtimeFailureSchema()),
+            503: jsonResponse(runtimeFailureSchema()),
+            504: jsonResponse(runtimeFailureSchema()),
           },
         },
       };
     }
   }
+  paths["/api/oauth/connection-requests"] = {
+    post: {
+      tags: ["Connections"],
+      summary: "Start an OAuth connection request from the console.",
+      description:
+        "Console alias for starting an OAuth connection: returns the provider authorization URL and a connection request id to poll. An appId reconnects an existing connection and must match service and connectionName. Requires administrator credentials.",
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: z.toJSONSchema(consoleOAuthConnectionInput),
+          },
+        },
+      },
+      responses: {
+        200: jsonResponse(start),
+        400: jsonResponse({ $ref: "#/components/schemas/ErrorResponse" }),
+        401: jsonResponse(runtimeFailureSchema()),
+        403: jsonResponse(runtimeFailureSchema()),
+        404: jsonResponse({ $ref: "#/components/schemas/ErrorResponse" }),
+        409: jsonResponse({ $ref: "#/components/schemas/ErrorResponse" }),
+        429: jsonResponse({ $ref: "#/components/schemas/ErrorResponse" }),
+        502: jsonResponse({ $ref: "#/components/schemas/ErrorResponse" }),
+        503: jsonResponse({ $ref: "#/components/schemas/ErrorResponse" }),
+        504: jsonResponse({ $ref: "#/components/schemas/ErrorResponse" }),
+      },
+    },
+  };
   return paths;
 }

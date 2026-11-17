@@ -6,7 +6,9 @@ import type {
 } from "../../core/types.ts";
 import type { StannpActionContext } from "./runtime.ts";
 
-import { defineProviderExecutors, defineProviderProxy, requireApiKeyCredential } from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import { buildStannpApiBaseUrl, readStannpRegion, stannpActionHandlers, validateStannpCredential } from "./runtime.ts";
 
 const service = "stannp";

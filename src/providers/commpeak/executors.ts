@@ -1,6 +1,6 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -12,10 +12,10 @@ import {
   positiveInteger,
   requiredRecord,
 } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   providerInputError,
   providerUserAgent,
   ProviderRequestError,
@@ -90,7 +90,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: firstStream?.id == null ? "api_key" : String(firstStream.id),
         displayName: firstStream?.name ? `CommPeak: ${firstStream.name}` : "CommPeak TextPeak API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: commpeakTextPeakBaseUrl,
         validationEndpoint: "/streams",

@@ -15,9 +15,15 @@ import {
 } from "./clinicalkey/executors.ts";
 import { executors as deepgramExecutors } from "./deepgram/executors.ts";
 import { credentialValidators as dovetailValidators } from "./dovetail/executors.ts";
+import { executors as figmaExecutors } from "./figma/executors.ts";
 import { executors as helpdeskExecutors } from "./helpdesk/executors.ts";
 import { executors as mondayExecutors } from "./monday/executors.ts";
 import { ProviderRequestError, toProviderExecutionError } from "./provider-runtime.ts";
+import {
+  credentialValidators as roxyapiValidators,
+  executors as roxyapiExecutors,
+  proxy as roxyapiProxy,
+} from "./roxyapi/executors.ts";
 import { executors as sellerspriteExecutors } from "./sellersprite/executors.ts";
 import { executors as teableExecutors } from "./teable/executors.ts";
 import { assertTikHubEndpointEligible } from "./tikhub/endpoint-policy.ts";
@@ -27,6 +33,7 @@ import { executors as zoomExecutors } from "./zoom/executors.ts";
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 interface AuthFailureCase {
@@ -92,7 +99,6 @@ const authFailureCases: AuthFailureCase[] = [
     actionId: "teable.list_spaces",
     credential: apiKeyCredential,
   },
-  { service: "zoom", executors: zoomExecutors, actionId: "zoom.list_meetings", credential: oauthCredential },
 ];
 
 interface ValidatePhaseCase {
@@ -247,6 +253,111 @@ describe.each(proxyAuthFailureCases)("$service proxy-route credential failures",
   });
 });
 
+describe("provider response mappers across action and proxy routes", () => {
+  it("keeps RoxyAPI error-body timeouts on 504 across action, validation and proxy routes", async () => {
+    vi.useFakeTimers();
+    let bodyCount = 0;
+    let resolveBodiesStarted: (() => void) | undefined;
+    const bodiesStarted = new Promise<void>((resolve) => {
+      resolveBodiesStarted = resolve;
+    });
+    const fetcher: typeof fetch = async (_url, init) =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            init?.signal?.addEventListener("abort", () => controller.error(init.signal?.reason), { once: true });
+            bodyCount += 1;
+            if (bodyCount === 3) resolveBodiesStarted?.();
+          },
+        }),
+        { status: 403 },
+      );
+    vi.stubGlobal("fetch", fetcher);
+    const context = contextFor(apiKeyCredential);
+    const pending = Promise.allSettled([
+      roxyapiExecutors["roxyapi.get_usage"]!({}, context),
+      roxyapiProxy({ endpoint: "/usage", method: "GET" }, context),
+      roxyapiValidators.apiKey!({ apiKey: "sk_test", values: {} }, { fetcher }),
+    ]);
+    await bodiesStarted;
+    await vi.advanceTimersByTimeAsync(30_000);
+    const results = await pending;
+
+    for (const result of results.slice(0, 2)) {
+      expect(result).toMatchObject({
+        status: "fulfilled",
+        value: { ok: false, error: { code: "provider_error", details: { status: 504 } } },
+      });
+    }
+    expect(results[2]).toMatchObject({ status: "rejected", reason: { status: 504 } });
+  });
+
+  it.each([
+    [401, "subscription_inactive", "provider_error"],
+    [401, "subscription_not_found", "provider_error"],
+    [401, "unauthorized", "provider_error"],
+    [403, "origin_not_allowed", "provider_error"],
+    [403, "forbidden", "provider_error"],
+    [401, "invalid_api_key", "authorization_failed"],
+    [401, "api_key_revoked", "authorization_failed"],
+    [400, "validation_error", "invalid_input"],
+    [429, "rate_limit_per_minute", "rate_limited"],
+  ])("keeps RoxyAPI %s/%s consistent across routes", async (status, upstreamCode, expectedCode) => {
+    vi.stubGlobal(
+      "fetch",
+      async () =>
+        new Response(JSON.stringify({ code: upstreamCode, error: "Upstream request denied." }), {
+          status,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    const context = contextFor(apiKeyCredential);
+    const action = await roxyapiExecutors["roxyapi.get_usage"]!({}, context);
+    const proxy = await roxyapiProxy({ endpoint: "/usage", method: "GET" }, context);
+    const expected = {
+      ok: false,
+      error: {
+        code: expectedCode,
+        message: `${upstreamCode}: Upstream request denied.`,
+        details: { status, details: { upstreamCode } },
+      },
+    };
+
+    expect(action).toMatchObject(expected);
+    expect(proxy).toMatchObject(expected);
+  });
+
+  it.each(["invalid_api_key", "api_key_revoked"])(
+    "keeps RoxyAPI %s on a connection field error during validation",
+    async (upstreamCode) => {
+      const fetcher: typeof fetch = async () =>
+        new Response(JSON.stringify({ code: upstreamCode, error: "Key rejected." }), {
+          status: 401,
+          headers: { "content-type": "application/json" },
+        });
+
+      await expect(roxyapiValidators.apiKey!({ apiKey: "sk_test", values: {} }, { fetcher })).rejects.toMatchObject({
+        status: 400,
+        code: "invalid_input",
+        message: `${upstreamCode}: Key rejected.`,
+      });
+    },
+  );
+
+  it.each(["", "<html>Access denied</html>", "x".repeat(65 * 1024)])(
+    "keeps unreadable RoxyAPI denials on provider_error without a credential signal",
+    async (body) => {
+      vi.stubGlobal("fetch", async () => new Response(body, { status: 403 }));
+      const result = await roxyapiProxy({ endpoint: "/usage", method: "GET" }, contextFor(apiKeyCredential));
+
+      expect(result).toMatchObject({
+        ok: false,
+        error: { code: "provider_error", message: "RoxyAPI request failed with status 403", details: { status: 403 } },
+      });
+    },
+  );
+});
+
 describe("provider-local endpoint denials", () => {
   it("reports an endpoint the provider will not serve as invalid_input with HTTP 400", () => {
     let raised: unknown;
@@ -260,4 +371,20 @@ describe("provider-local endpoint denials", () => {
     expect(result).toMatchObject({ ok: false, error: { code: "invalid_input" } });
     expect(httpStatusOf(result)).toBe(400);
   });
+});
+
+it.each([401, 403])("preserves ambiguous Zoom HTTP %s errors without requesting reauthorization", async (status) => {
+  const result = await runExpiredCredential(
+    { service: "zoom", executors: zoomExecutors, actionId: "zoom.list_meetings", credential: oauthCredential },
+    status,
+  );
+  expect(result).toMatchObject({ ok: false, error: { code: "provider_error" } });
+});
+
+it.each([401, 403])("preserves ambiguous Figma HTTP %s errors without requesting reauthorization", async (status) => {
+  const result = await runExpiredCredential(
+    { service: "figma", executors: figmaExecutors, actionId: "figma.get_current_user", credential: oauthCredential },
+    status,
+  );
+  expect(result).toMatchObject({ ok: false, error: { code: "provider_error" } });
 });

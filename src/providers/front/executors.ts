@@ -1,23 +1,17 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString, requiredRecord } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  isAbortLikeError,
-  providerUserAgent,
-  ProviderRequestError,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { isAbortLikeError, providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 
 const service = "front";
 const frontApiBaseUrl = "https://api2.frontapp.com";
 const frontRequestTimeoutMs = 15_000;
 
 type FrontRequestPhase = "validate" | "execute";
-type FrontActionContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
-type FrontActionHandler = (input: Record<string, unknown>, context: FrontActionContext) => Promise<unknown>;
+type FrontActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 
 interface FrontContactList {
   id: string;
@@ -107,7 +101,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: firstTeammate?.id ?? "front-api-token",
         displayName: accountLabel || firstTeammate?.email || "Front API Token",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: frontApiBaseUrl,
         validationEndpoint: "/teammates",
@@ -118,7 +111,7 @@ export const credentialValidators: CredentialValidators = {
   },
 };
 
-async function listContacts(input: Record<string, unknown>, context: FrontActionContext): Promise<unknown> {
+async function listContacts(input: Record<string, unknown>, context: ApiKeyProviderContext): Promise<unknown> {
   const url = buildFrontUrl("/contacts");
   setOptionalSearchParam(url, "q", input.query);
   setOptionalSearchParam(url, "limit", input.limit);
@@ -133,7 +126,7 @@ async function listContacts(input: Record<string, unknown>, context: FrontAction
   };
 }
 
-async function getContact(input: Record<string, unknown>, context: FrontActionContext): Promise<unknown> {
+async function getContact(input: Record<string, unknown>, context: ApiKeyProviderContext): Promise<unknown> {
   const contactId = readInputString(input.contactId, "contactId");
   const payload = await executeFrontJsonRequest(
     buildFrontUrl(`/contacts/${encodeURIComponent(contactId)}`),
@@ -145,7 +138,7 @@ async function getContact(input: Record<string, unknown>, context: FrontActionCo
   };
 }
 
-async function createContact(input: Record<string, unknown>, context: FrontActionContext): Promise<unknown> {
+async function createContact(input: Record<string, unknown>, context: ApiKeyProviderContext): Promise<unknown> {
   const body = buildContactBody(input.contact, input.handles);
   const payload = await executeFrontJsonRequest(buildFrontUrl("/contacts"), "POST", context, body);
   return {
@@ -153,7 +146,7 @@ async function createContact(input: Record<string, unknown>, context: FrontActio
   };
 }
 
-async function updateContact(input: Record<string, unknown>, context: FrontActionContext): Promise<unknown> {
+async function updateContact(input: Record<string, unknown>, context: ApiKeyProviderContext): Promise<unknown> {
   const contactId = readInputString(input.contactId, "contactId");
   const response = await frontFetch(buildFrontUrl(`/contacts/${encodeURIComponent(contactId)}`), {
     method: "PATCH",
@@ -170,7 +163,7 @@ async function updateContact(input: Record<string, unknown>, context: FrontActio
   return { success: true };
 }
 
-async function listTeammates(context: FrontActionContext): Promise<unknown> {
+async function listTeammates(context: ApiKeyProviderContext): Promise<unknown> {
   const payload = await executeFrontJsonRequest(buildFrontUrl("/teammates"), "GET", context);
   return {
     teammates: readResults(payload).map((item) => normalizeTeammate(item)),
@@ -180,7 +173,7 @@ async function listTeammates(context: FrontActionContext): Promise<unknown> {
 async function executeFrontJsonRequest(
   url: URL,
   method: "GET" | "POST",
-  context: FrontActionContext,
+  context: ApiKeyProviderContext,
   body?: Record<string, unknown>,
 ): Promise<unknown> {
   const response = await frontFetch(url, {

@@ -1,11 +1,11 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 import type { KomariOperation } from "./operations.ts";
 
 import { optionalRecord, optionalString, requiredRecord, requiredString } from "../../core/cast.ts";
 import { assertPublicHttpUrl, readBoundedResponseBytes } from "../../core/request.ts";
+import { mapProviderActionHandlers } from "../provider-executors.ts";
 import {
-  mapProviderActionHandlers,
   providerInputError,
   providerUserAgent,
   ProviderRequestError,
@@ -120,7 +120,6 @@ export async function validateKomariCredential(
       accountId: `komari:${host}`,
       displayName: `Komari ${host}`,
     },
-    grantedScopes: komariOperations.map((operation) => operation.rpcMethod),
     metadata: {
       baseUrl: context.baseUrl,
       version: version.version,

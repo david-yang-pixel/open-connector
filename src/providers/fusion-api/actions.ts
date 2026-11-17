@@ -4,6 +4,7 @@ import type { FusionApiInputField, FusionApiInputFieldKind, FusionApiOperation }
 
 import { s } from "../../core/json-schema.ts";
 import { defineProviderAction } from "../../core/provider-definition.ts";
+import { ocrActions } from "./ocr-actions.ts";
 import { fusionApiOperations } from "./operations.ts";
 
 const service = "fusion-api";
@@ -41,17 +42,22 @@ const submitOutputSchema = s.object("The Fusion API task submission handle.", {
 });
 const syncActionOutputSchema = s.unknown("The normalized Fusion API action result.");
 
-export const fusionApiActions: ProviderActionDefinition<string>[] = fusionApiOperations.map((operation) =>
-  defineProviderAction(service, {
-    name: operation.actionName,
-    operationType: operation.operationType,
-    description: operation.description,
-    inputSchema: buildInputSchema(operation),
-    outputSchema: buildOutputSchema(operation),
-    followUpActions: buildFollowUpActions(operation),
-    asyncLifecycle: buildAsyncLifecycle(operation),
-  }),
-);
+export const fusionApiActions: ProviderActionDefinition<string>[] = [
+  ...ocrActions,
+  ...fusionApiOperations
+    .filter((operation) => operation.tag !== "oomol-ocr")
+    .map((operation) =>
+      defineProviderAction(service, {
+        name: operation.actionName,
+        operationType: operation.operationType,
+        description: operation.description,
+        inputSchema: buildInputSchema(operation),
+        outputSchema: buildOutputSchema(operation),
+        followUpActions: buildFollowUpActions(operation),
+        asyncLifecycle: buildAsyncLifecycle(operation),
+      }),
+    ),
+];
 
 function buildInputSchema(operation: FusionApiOperation): JsonSchema {
   const properties = Object.fromEntries(

@@ -1,23 +1,17 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalNumber, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerInputError,
-  providerUserAgent,
-  ProviderRequestError,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerInputError, providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 
 const service = "zipcodebase";
 const zipcodebaseApiBaseUrl = "https://app.zipcodebase.com/api/v1";
 
 type ZipcodebaseRequestPhase = "validate" | "execute";
 type ZipcodebaseQueryValue = string | number | undefined;
-type ZipcodebaseActionContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
-type ZipcodebaseActionHandler = (input: Record<string, unknown>, context: ZipcodebaseActionContext) => Promise<unknown>;
+type ZipcodebaseActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 
 export const zipcodebaseActionHandlers: ProviderActionHandlers<"zipcodebase", ZipcodebaseActionHandler> = {
   get_status(_input, context) {
@@ -128,7 +122,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "zipcodebase",
         displayName: "Zipcodebase API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: zipcodebaseApiBaseUrl,
         validationEndpoint: "/status",
@@ -141,7 +134,7 @@ export const credentialValidators: CredentialValidators = {
 async function requestZipcodebaseJson(
   path: string,
   query: Record<string, ZipcodebaseQueryValue>,
-  context: ZipcodebaseActionContext,
+  context: ApiKeyProviderContext,
   phase: ZipcodebaseRequestPhase,
 ): Promise<unknown> {
   let response: Response;

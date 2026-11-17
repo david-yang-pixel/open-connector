@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { Buffer } from "node:buffer";
@@ -81,7 +81,6 @@ export async function validateAgoraCredential(
       accountId: context.customerId,
       displayName: `Agora ${context.customerId}`,
     },
-    grantedScopes: [],
     metadata: compactObject({
       customerId: context.customerId,
       apiBaseUrl: agoraApiBaseUrl,

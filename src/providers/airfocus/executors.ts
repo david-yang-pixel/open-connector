@@ -4,16 +4,12 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-  requiredInputString,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent, requiredInputString } from "../provider-runtime.ts";
 
 const service = "airfocus";
 const airfocusApiBaseUrl = "https://app.airfocus.com/api";
@@ -24,7 +20,7 @@ type AirfocusHandler = ProviderRuntimeHandler<ApiKeyProviderContext>;
 
 interface AirfocusRequestInput {
   path: string;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   phase: RequestPhase;
   method?: "GET" | "POST" | "PUT" | "DELETE";
   body?: Record<string, unknown>;
@@ -133,7 +129,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: email ?? fullName ?? "airfocus-api-key",
         displayName: fullName ?? email ?? "airfocus Personal Access Token",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: airfocusApiBaseUrl,
         validationEndpoint: profilePath,

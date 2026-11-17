@@ -7,7 +7,9 @@ import type {
 import type { BusinessmapContext } from "./runtime.ts";
 
 import { optionalString } from "../../core/cast.ts";
-import { defineProviderExecutors, defineProviderProxy, requireApiKeyCredential } from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import { businessmapActionHandlers, normalizeBusinessmapAccountUrl, validateBusinessmapCredential } from "./runtime.ts";
 
 const service = "businessmap";

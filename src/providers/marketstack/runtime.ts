@@ -1,6 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -15,8 +14,7 @@ import { providerUserAgent, ProviderRequestError, requiredInputString } from "..
 
 export const marketstackApiBaseUrl = "https://api.marketstack.com/v2";
 
-type MarketstackActionContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
-type MarketstackActionHandler = (input: Record<string, unknown>, context: MarketstackActionContext) => Promise<unknown>;
+type MarketstackActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 type MarketstackQueryValue = string | number | undefined;
 
 export const marketstackActionHandlers: ProviderActionHandlers<"marketstack", MarketstackActionHandler> = {
@@ -52,7 +50,6 @@ export async function validateMarketstackCredential(
       accountId: "marketstack",
       displayName: "Marketstack API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       validationEndpoint: "/currencies",
       apiBaseUrl: marketstackApiBaseUrl,
@@ -62,7 +59,7 @@ export async function validateMarketstackCredential(
   };
 }
 
-async function listTickers(input: Record<string, unknown>, context: MarketstackActionContext): Promise<unknown> {
+async function listTickers(input: Record<string, unknown>, context: ApiKeyProviderContext): Promise<unknown> {
   const payload = await marketstackGet(
     "/tickers",
     {
@@ -82,7 +79,7 @@ async function listTickers(input: Record<string, unknown>, context: MarketstackA
   };
 }
 
-async function getTickerInfo(input: Record<string, unknown>, context: MarketstackActionContext): Promise<unknown> {
+async function getTickerInfo(input: Record<string, unknown>, context: ApiKeyProviderContext): Promise<unknown> {
   const ticker = requiredInputString(input.ticker, "ticker");
   const payload = await marketstackGet(`/tickers/${encodeURIComponent(ticker)}`, {}, context);
 
@@ -91,7 +88,7 @@ async function getTickerInfo(input: Record<string, unknown>, context: Marketstac
   };
 }
 
-async function getLatestEod(input: Record<string, unknown>, context: MarketstackActionContext): Promise<unknown> {
+async function getLatestEod(input: Record<string, unknown>, context: ApiKeyProviderContext): Promise<unknown> {
   const payload = await marketstackGet(
     "/eod/latest",
     {
@@ -106,7 +103,7 @@ async function getLatestEod(input: Record<string, unknown>, context: Marketstack
   };
 }
 
-async function getHistoricalEod(input: Record<string, unknown>, context: MarketstackActionContext): Promise<unknown> {
+async function getHistoricalEod(input: Record<string, unknown>, context: ApiKeyProviderContext): Promise<unknown> {
   const payload = await marketstackGet(
     "/eod",
     {
@@ -129,7 +126,7 @@ async function getHistoricalEod(input: Record<string, unknown>, context: Markets
   };
 }
 
-async function listExchanges(input: Record<string, unknown>, context: MarketstackActionContext): Promise<unknown> {
+async function listExchanges(input: Record<string, unknown>, context: ApiKeyProviderContext): Promise<unknown> {
   const payload = await marketstackGet(
     "/exchanges",
     {
@@ -148,7 +145,7 @@ async function listExchanges(input: Record<string, unknown>, context: Marketstac
   };
 }
 
-async function listCurrencies(input: Record<string, unknown>, context: MarketstackActionContext): Promise<unknown> {
+async function listCurrencies(input: Record<string, unknown>, context: ApiKeyProviderContext): Promise<unknown> {
   const payload = await marketstackGet(
     "/currencies",
     {
@@ -169,7 +166,7 @@ async function listCurrencies(input: Record<string, unknown>, context: Marketsta
 async function marketstackGet(
   path: string,
   query: Record<string, MarketstackQueryValue>,
-  context: MarketstackActionContext,
+  context: ApiKeyProviderContext,
 ): Promise<Record<string, unknown>> {
   const url = new URL(path.replace(/^\//, ""), `${marketstackApiBaseUrl}/`);
   for (const [key, value] of Object.entries(compactObject({ ...query, access_key: context.apiKey }))) {

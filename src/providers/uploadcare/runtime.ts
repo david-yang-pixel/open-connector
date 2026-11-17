@@ -1,6 +1,7 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ProviderFetch, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { createHash, createHmac } from "node:crypto";
 import {
@@ -126,7 +127,6 @@ export async function validateUploadcareCredential(input: {
       accountId: projectPublicKey ?? input.publicKey,
       displayName: projectName || `Uploadcare ${projectPublicKey ?? input.publicKey}`,
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: uploadcareApiBaseUrl,
       projectName,

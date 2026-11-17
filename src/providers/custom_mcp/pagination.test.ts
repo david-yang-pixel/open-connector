@@ -238,12 +238,10 @@ describe("custom MCP pagination", () => {
   });
 
   it("rejects remote pagination that cannot advance", async () => {
-    const call = vi.fn(
-      async (): Promise<CallToolResult> => ({
-        content: [{ type: "text", text: '{"rows":[1],"next":"same"}' }],
-        structuredContent: { rows: [1], next: "same" },
-      }),
-    );
+    const call = vi.fn(async (): Promise<CallToolResult> => ({
+      content: [{ type: "text", text: '{"rows":[1],"next":"same"}' }],
+      structuredContent: { rows: [1], next: "same" },
+    }));
 
     await expect(
       callPaginatedCustomMcpTool({

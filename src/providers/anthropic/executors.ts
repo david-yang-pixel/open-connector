@@ -1,11 +1,12 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
+  withRetryAfterSeconds,
   providerInputError,
   ProviderRequestError,
   providerUserAgent,
@@ -61,7 +62,6 @@ export const credentialValidators: CredentialValidators = {
       profile: {
         displayName: "Anthropic API Key",
       },
-      grantedScopes: [],
       metadata: {
         validationEndpoint: "/v1/models",
         availableModels: (payload.data ?? [])
@@ -179,7 +179,7 @@ async function assertAnthropicResponse(response: Response, mode: "validate" | "e
   const error = await readAnthropicError(response);
 
   if (response.status === 429) {
-    throw new ProviderRequestError(429, error.message);
+    throw new ProviderRequestError(429, error.message, withRetryAfterSeconds(response));
   }
   if (mode === "validate" && (response.status === 401 || response.status === 403)) {
     throw new ProviderRequestError(400, error.message);

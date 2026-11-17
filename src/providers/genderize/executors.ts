@@ -1,22 +1,17 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalNumber, optionalRecord, optionalString, stringArray } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 
 const service = "genderize";
 const genderizeApiBaseUrl = "https://api.genderize.io";
 const genderizeValidationName = "peter";
 
 type GenderizeRequestPhase = "validate" | "execute";
-type GenderizeActionContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
-type GenderizeActionHandler = (input: Record<string, unknown>, context: GenderizeActionContext) => Promise<unknown>;
+type GenderizeActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 
 export const genderizeActionHandlers: ProviderActionHandlers<"genderize", GenderizeActionHandler> = {
   async predict_gender(input, context) {
@@ -83,7 +78,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "genderize-api-key",
         displayName: "Genderize API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: genderizeApiBaseUrl,
         validationName: genderizeValidationName,
@@ -100,7 +94,7 @@ export const credentialValidators: CredentialValidators = {
 };
 
 async function requestGenderize(input: {
-  context: GenderizeActionContext;
+  context: ApiKeyProviderContext;
   phase: GenderizeRequestPhase;
   name?: string;
   names?: string[];

@@ -2,6 +2,8 @@ import type { ResolvedCredential } from "../core/types.ts";
 import type { OAuthClientConfigService } from "./oauth-client-config-service.ts";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { githubOAuthRuntime } from "../providers/github/oauth.ts";
+import { githubUserAgent } from "../providers/github/runtime-shared.ts";
 import { ProviderLoader } from "../providers/provider-loader.ts";
 import { OAuthCredentialRefreshService } from "./oauth-credential-refresh-service.ts";
 
@@ -44,6 +46,118 @@ describe("OAuthCredentialRefreshService", () => {
     vi.restoreAllMocks();
   });
 
+  it.each([
+    { scope: "read", expected: ["read"] },
+    { scope: "read write new", expected: ["read", "write", "new"] },
+    { scope: "", expected: [] },
+    { scope: undefined, expected: ["read", "write"] },
+  ])("updates displayed grants from refresh scope $scope", async ({ scope, expected }) => {
+    stubRefreshResponse(scope === undefined ? {} : { scope });
+    const previous = expiredCredential({ scope: "read write" });
+    previous.profile.grantedScopes = ["read", "write"];
+    const refreshed = await new OAuthCredentialRefreshService(clientConfigs).refresh("example", previous);
+    expect(refreshed.profile.grantedScopes).toEqual(expected);
+    expect(refreshed.metadata.scope).toBe(scope ?? "read write");
+  });
+
+  it.each([200, 400, 401])("requires reconnect for GitHub bad_refresh_token on HTTP %i", async (status) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({ error: "bad_refresh_token", error_description: "must not echo client-secret" }, { status }),
+      ),
+    );
+    await expect(
+      new OAuthCredentialRefreshService(clientConfigs).refresh("github", expiredCredential({})),
+    ).rejects.toMatchObject({ code: "oauth_reauth_required" });
+  });
+
+  it.each(["example", "github"])(
+    "does not misclassify transient HTTP 429 for %s as expired authorization",
+    async (service) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => Response.json({ error: "bad_refresh_token" }, { status: 429 })),
+      );
+      await expect(
+        new OAuthCredentialRefreshService(clientConfigs).refresh(service, expiredCredential({})),
+      ).rejects.toMatchObject({ code: "oauth_token_refresh_failed" });
+    },
+  );
+
+  it("keeps another provider's bad_refresh_token classification generic", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ error: "bad_refresh_token" }, { status: 400 })),
+    );
+    await expect(
+      new OAuthCredentialRefreshService(clientConfigs).refresh("example", expiredCredential({})),
+    ).rejects.toMatchObject({ code: "oauth_token_refresh_failed" });
+  });
+
+  // A refresh rotates tokens INSIDE an existing authorization — it is not a
+  // new consent — so the provenance has to survive it.
+  //
+  // The case that matters is a provider runtime returning its OWN `metadata`:
+  // that spreads over `...credential.metadata`, so without carrying the field
+  // forward explicitly the connection loses its provenance on first refresh,
+  // hours after the consent it describes. A stub that returns no metadata
+  // passes either way and proves nothing, so this one returns a conflicting
+  // value and asserts the stored one wins.
+  it("keeps the stored provenance when a provider runtime returns its own", async () => {
+    const providerLoader = new ProviderLoader({
+      example: async () => ({
+        executors: {},
+        oauth: {
+          async refreshAccessToken() {
+            return {
+              accessToken: "provider-refreshed-token",
+              tokenType: "Bearer",
+              expiresAt: "2026-12-29T00:00:00.000Z",
+              metadata: { oauthAuthorizationId: "runtime-supplied", refreshedBy: "provider-runtime" },
+            };
+          },
+        },
+      }),
+    });
+
+    const refreshed = await new OAuthCredentialRefreshService(clientConfigs, providerLoader).refresh(
+      "example",
+      expiredCredential({ oauthAuthorizationId: "completed-authorization", expires_in: 3600 }),
+    );
+
+    expect(refreshed.metadata.oauthAuthorizationId).toBe("completed-authorization");
+    expect(refreshed.metadata.refreshedBy).toBe("provider-runtime");
+  });
+
+  // Legacy absence stays absence, under the same pressure: a connection made
+  // before provenance existed must not acquire one at refresh time, which
+  // would claim a consent nobody recorded.
+  it("does not let a refresh invent provenance for a credential that has none", async () => {
+    const providerLoader = new ProviderLoader({
+      example: async () => ({
+        executors: {},
+        oauth: {
+          async refreshAccessToken() {
+            return {
+              accessToken: "provider-refreshed-token",
+              tokenType: "Bearer",
+              expiresAt: "2026-12-29T00:00:00.000Z",
+              metadata: { oauthAuthorizationId: "runtime-supplied" },
+            };
+          },
+        },
+      }),
+    });
+
+    const refreshed = await new OAuthCredentialRefreshService(clientConfigs, providerLoader).refresh(
+      "example",
+      expiredCredential({ expires_in: 3600 }),
+    );
+
+    expect(refreshed.metadata.oauthAuthorizationId).toBeUndefined();
+  });
+
   it("keeps an expiry when the refresh response omits expires_in", async () => {
     const now = Date.now();
     vi.spyOn(Date, "now").mockReturnValue(now);
@@ -57,7 +171,7 @@ describe("OAuthCredentialRefreshService", () => {
     expect(refreshed.expiresAt).toBe(new Date(now + 3600_000).toISOString());
   });
 
-  it("refreshes through a provider OAuth runtime and preserves connection identity", async () => {
+  it("keeps the stored lifetime when a provider runtime reports only an expiry", async () => {
     const providerLoader = new ProviderLoader({
       example: async () => ({
         executors: {},
@@ -65,7 +179,6 @@ describe("OAuthCredentialRefreshService", () => {
           async refreshAccessToken() {
             return {
               accessToken: "provider-refreshed-token",
-              refreshToken: "provider-refreshed-token",
               tokenType: "Bearer",
               expiresAt: "2026-12-29T00:00:00.000Z",
               metadata: { refreshedBy: "provider-runtime" },
@@ -74,7 +187,69 @@ describe("OAuthCredentialRefreshService", () => {
         },
       }),
     });
-    const credential = expiredCredential({ permissions: "read,write" });
+
+    const refreshed = await new OAuthCredentialRefreshService(clientConfigs, providerLoader).refresh(
+      "example",
+      expiredCredential({ expires_in: 3600 }),
+    );
+
+    expect(refreshed.metadata.expires_in).toBe(3600);
+    expect(refreshed.expiresAt).toBe("2026-12-29T00:00:00.000Z");
+  });
+
+  it("prefers the lifetime a provider runtime reports without an expiry", async () => {
+    const now = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    const providerLoader = new ProviderLoader({
+      example: async () => ({
+        executors: {},
+        oauth: {
+          async refreshAccessToken() {
+            return {
+              accessToken: "provider-refreshed-token",
+              tokenType: "Bearer",
+              metadata: { expires_in: 120 },
+            };
+          },
+        },
+      }),
+    });
+
+    const refreshed = await new OAuthCredentialRefreshService(clientConfigs, providerLoader).refresh(
+      "example",
+      expiredCredential({ expires_in: 3600 }),
+    );
+
+    expect(refreshed.metadata.expires_in).toBe(120);
+    expect(refreshed.expiresAt).toBe(new Date(now + 120_000).toISOString());
+  });
+
+  it("refreshes through a provider OAuth runtime and preserves connection identity", async () => {
+    let receivedMetadata: Record<string, unknown> | undefined;
+    let receivedProviderSecret: Record<string, unknown> | undefined;
+    const providerLoader = new ProviderLoader({
+      example: async () => ({
+        executors: {},
+        oauth: {
+          async refreshAccessToken(input) {
+            receivedMetadata = input.metadata;
+            receivedProviderSecret = input.providerSecret;
+            return {
+              accessToken: "provider-refreshed-token",
+              refreshToken: "provider-refreshed-token",
+              tokenType: "Bearer",
+              expiresAt: "2026-12-29T00:00:00.000Z",
+              providerSecret: { rotated: true },
+              metadata: { refreshedBy: "provider-runtime" },
+            };
+          },
+        },
+      }),
+    });
+    const credential = {
+      ...expiredCredential({ permissions: "read,write" }),
+      providerSecret: { inventory: "stored" },
+    };
 
     const refreshed = await new OAuthCredentialRefreshService(clientConfigs, providerLoader).refresh(
       "example",
@@ -91,7 +266,10 @@ describe("OAuthCredentialRefreshService", () => {
         permissions: "read,write",
         refreshedBy: "provider-runtime",
       },
+      providerSecret: { rotated: true },
     });
+    expect(receivedMetadata).toBe(credential.metadata);
+    expect(receivedProviderSecret).toBe(credential.providerSecret);
   });
 
   it("uses a connection-scoped OAuth client config before the global config", async () => {
@@ -202,5 +380,251 @@ describe("OAuthCredentialRefreshService", () => {
     await new OAuthCredentialRefreshService(clientConfigs).refresh("example", credential);
 
     expect(String(fetcher.mock.calls[0]?.[1]?.body)).toContain("employer=employer-id");
+  });
+});
+
+describe("OAuthCredentialRefreshService revoke", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("dispatches GitHub singular-token revocation through the provider runtime", async () => {
+    const fetcher = vi.fn(async () => new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetcher);
+    const providerLoader = new ProviderLoader({ github: async () => ({ executors: {}, oauth: githubOAuthRuntime }) });
+    const service = new OAuthCredentialRefreshService(clientConfigs, providerLoader);
+    await expect(
+      service.revoke("github", {
+        ...expiredCredential({}),
+        expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      }),
+    ).resolves.toBe("done");
+    const [url, request] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
+    expect(String(url)).toBe("https://api.github.com/applications/client-id/token");
+    expect(request.method).toBe("DELETE");
+    expect(new Headers(request.headers).get("user-agent")).toBe(githubUserAgent);
+    expect(new Headers(request.headers).get("authorization")).toBe(
+      `Basic ${Buffer.from("client-id:client-secret").toString("base64")}`,
+    );
+    expect(JSON.parse(String(request.body))).toEqual({ access_token: "old-access-token" });
+    expect(String(url)).not.toContain("/grant");
+  });
+
+  it("refreshes an expired credential before revoking its individual access token", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({ access_token: "rotated-access", refresh_token: "rotated-refresh", expires_in: 3600 }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetcher);
+    const loader = new ProviderLoader({ github: async () => ({ executors: {}, oauth: githubOAuthRuntime }) });
+    const credential = expiredCredential({});
+    await expect(new OAuthCredentialRefreshService(clientConfigs, loader).revoke("github", credential)).resolves.toBe(
+      "done",
+    );
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher.mock.calls[0]?.[1].method).toBe("POST");
+    expect(String(fetcher.mock.calls[0]?.[1].body)).toContain("refresh_token=refresh-token");
+    expect(fetcher.mock.calls[1]?.[1].method).toBe("DELETE");
+    expect(String(fetcher.mock.calls[1]?.[0])).toBe("https://api.github.com/applications/client-id/token");
+    expect(JSON.parse(String(fetcher.mock.calls[1]?.[1].body))).toEqual({ access_token: "rotated-access" });
+    expect(credential.accessToken).toBe("old-access-token");
+  });
+
+  it("revokes a still-valid token without depending on an early refresh", async () => {
+    const fetcher = vi.fn(async (_url: string | URL | Request, init?: RequestInit) =>
+      init?.method === "POST"
+        ? Response.json({ error: "temporarily_unavailable" }, { status: 429 })
+        : new Response(null, { status: 204 }),
+    );
+    vi.stubGlobal("fetch", fetcher);
+    const loader = new ProviderLoader({ github: async () => ({ executors: {}, oauth: githubOAuthRuntime }) });
+    const credential = { ...expiredCredential({}), expiresAt: new Date(Date.now() + 30_000).toISOString() };
+    await expect(new OAuthCredentialRefreshService(clientConfigs, loader).revoke("github", credential)).resolves.toBe(
+      "done",
+    );
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls[0]?.[1]?.method).toBe("DELETE");
+    expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual({ access_token: "old-access-token" });
+  });
+
+  it("does not report successful revocation when the required refresh fails", async () => {
+    const fetcher = vi.fn(async () => Response.json({ error: "temporarily_unavailable" }, { status: 429 }));
+    vi.stubGlobal("fetch", fetcher);
+    const loader = new ProviderLoader({ github: async () => ({ executors: {}, oauth: githubOAuthRuntime }) });
+    await expect(
+      new OAuthCredentialRefreshService(clientConfigs, loader).revoke("github", expiredCredential({})),
+    ).rejects.toMatchObject({ code: "oauth_token_refresh_failed" });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not expose GitHub revocation response or transport credential data", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ message: "client-secret old-access-token" }, { status: 403 })),
+    );
+    const providerLoader = new ProviderLoader({ github: async () => ({ executors: {}, oauth: githubOAuthRuntime }) });
+    const service = new OAuthCredentialRefreshService(clientConfigs, providerLoader);
+    await expect(
+      service.revoke("github", {
+        ...expiredCredential({}),
+        expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      }),
+    ).rejects.toMatchObject({
+      code: "oauth_token_revocation_failed",
+      message: "GitHub token revocation failed.",
+    });
+  });
+
+  function revokingConfigs(revocationUrl: string | undefined, config: unknown): OAuthClientConfigService {
+    return {
+      getOAuthDefinition: () => ({
+        type: "oauth2",
+        tokenUrl: "https://provider.example.com/oauth/token",
+        revocationUrl,
+        tokenEndpointAuthMethod: "none",
+        scopes: [],
+      }),
+      getConfig: async () => config,
+      resolveEndpointUrl: (_service: string, endpointUrl: string, resolved: { extra: Record<string, string> }) =>
+        endpointUrl.replace("{tenant}", resolved.extra.tenant ?? ""),
+    } as unknown as OAuthClientConfigService;
+  }
+
+  it("answers unsupported, without a request, when the definition names no revocation endpoint", async () => {
+    const fetcher = vi.fn();
+    vi.stubGlobal("fetch", fetcher);
+    const configs = revokingConfigs(undefined, undefined);
+    const readConfig = vi.spyOn(configs, "getConfig").mockRejectedValue(new Error("Configuration storage unavailable"));
+    const service = new OAuthCredentialRefreshService(configs);
+
+    await expect(service.revoke("example", expiredCredential({}))).resolves.toBe("unsupported");
+    expect(readConfig).not.toHaveBeenCalled();
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("resolves a templated endpoint through the client configuration the credential was minted under", async () => {
+    const fetcher = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(null, { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetcher);
+    const service = new OAuthCredentialRefreshService(
+      revokingConfigs("https://login.example.com/{tenant}/oauth2/revoke", {
+        clientId: "global-client",
+        clientSecret: "",
+        extra: { tenant: "common" },
+      }),
+    );
+
+    await expect(
+      service.revoke(
+        "example",
+        expiredCredential({ oauthClientConfig: { clientId: "connection-client", extra: { tenant: "contoso" } } }),
+      ),
+    ).resolves.toBe("done");
+
+    const [url, init] = fetcher.mock.calls[0] ?? [];
+    expect(url).toBe("https://login.example.com/contoso/oauth2/revoke");
+    const body = init?.body;
+    if (!(body instanceof URLSearchParams)) {
+      throw new Error("Expected the revocation request body to use URLSearchParams");
+    }
+    expect(body.get("client_id")).toBe("connection-client");
+  });
+
+  it("rejects HTTP endpoints even when no client configuration is stored", async () => {
+    const fetcher = vi.fn();
+    vi.stubGlobal("fetch", fetcher);
+    const service = new OAuthCredentialRefreshService(revokingConfigs("http://provider.example.com/revoke", undefined));
+
+    await expect(service.revoke("example", expiredCredential({}))).rejects.toThrow(
+      "OAuth revocation URL must use https.",
+    );
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("refuses a templated endpoint it cannot fill in, so the caller records a failure", async () => {
+    const fetcher = vi.fn();
+    vi.stubGlobal("fetch", fetcher);
+    const service = new OAuthCredentialRefreshService(
+      revokingConfigs("https://login.example.com/{tenant}/oauth2/revoke", undefined),
+    );
+
+    await expect(service.revoke("example", expiredCredential({}))).rejects.toThrow(
+      "Configure an OAuth client for example before revoking its token.",
+    );
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+});
+
+describe("Feishu refresh override integration", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it.each([
+    [20037, "oauth_token_refresh_failed"],
+    [undefined, "provider_error"],
+  ])("preserves the provider classification for error %s through the loader", async (code, expectedCode) => {
+    const providerLoader = new ProviderLoader({ feishu: () => import("../providers/feishu/executors.ts") });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ code, error_description: "Rejected" }, { status: 401 })),
+    );
+    await expect(
+      new OAuthCredentialRefreshService(clientConfigs, providerLoader).refresh(
+        "feishu",
+        expiredCredential({ expires_in: 3600 }),
+      ),
+    ).rejects.toMatchObject({ code: expectedCode });
+  });
+
+  it("retains refresh token, scopes and expiry when Feishu rotates only the access token", async () => {
+    const providerLoader = new ProviderLoader({ feishu: () => import("../providers/feishu/executors.ts") });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ code: 0, access_token: "rotated" })),
+    );
+    const previous = expiredCredential({ expires_in: 3600, scope: "offline_access" });
+    const refreshed = await new OAuthCredentialRefreshService(clientConfigs, providerLoader).refresh(
+      "feishu",
+      previous,
+    );
+    expect(refreshed.accessToken).toBe("rotated");
+    expect(refreshed.refreshToken).toBe(previous.refreshToken);
+    expect(refreshed.metadata.scope).toBe("offline_access");
+    expect(Date.parse(refreshed.expiresAt!)).toBeGreaterThan(Date.now());
+  });
+});
+
+describe("Notion template metadata during refresh", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it.each([undefined, null, "", "different-page-id"])(
+    "preserves the original duplicated template when refresh returns %j",
+    async (templateId) => {
+      stubRefreshResponse({ duplicated_template_id: templateId });
+      const refreshed = await new OAuthCredentialRefreshService(clientConfigs).refresh(
+        "notion",
+        expiredCredential({ duplicated_template_id: "original-page-id" }),
+      );
+      expect(refreshed.accessToken).toBe("new-access-token");
+      expect(refreshed.metadata.duplicated_template_id).toBe("original-page-id");
+    },
+  );
+
+  it("keeps a missing template absent", async () => {
+    stubRefreshResponse({});
+    const refreshed = await new OAuthCredentialRefreshService(clientConfigs).refresh("notion", expiredCredential({}));
+    expect(refreshed.metadata).not.toHaveProperty("duplicated_template_id");
+  });
+
+  it("preserves normal metadata merging for other providers", async () => {
+    stubRefreshResponse({ duplicated_template_id: "new-value" });
+    const refreshed = await new OAuthCredentialRefreshService(clientConfigs).refresh(
+      "example",
+      expiredCredential({ duplicated_template_id: "old-value" }),
+    );
+    expect(refreshed.metadata.duplicated_template_id).toBe("new-value");
   });
 });

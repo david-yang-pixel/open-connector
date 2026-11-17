@@ -1,9 +1,9 @@
 import type { CredentialValidationResult, ProviderExecutors } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { optionalRecord, optionalString, requiredRecord, requiredString } from "../../core/cast.ts";
-import { defineApiKeyProviderExecutors, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 export const pingdomApiBaseUrl: string = "https://api.pingdom.com/api/3.1";
 
@@ -56,7 +56,6 @@ export async function validatePingdomCredential(
     profile: {
       accountId: "pingdom-api-token",
       displayName: "Pingdom API token",
-      grantedScopes: [],
     },
     metadata: {
       apiBaseUrl: pingdomApiBaseUrl,
@@ -67,7 +66,7 @@ export async function validatePingdomCredential(
 }
 
 async function requestPingdomJson(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   path: string,
   query: Record<string, unknown> = {},
   phase: "validate" | "execute" = "execute",

@@ -1,6 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
 import {
@@ -56,7 +55,6 @@ export async function validateEnergyPerformanceCertificatesCredential(
       accountId: "energy_performance_certificates",
       displayName: "Energy Performance Certificates Bearer Token",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: energyPerformanceCertificatesApiBaseUrl,
       validationEndpoint: "/api/codes",
@@ -106,7 +104,7 @@ async function getCertificate(input: Record<string, unknown>, context: ApiKeyPro
 }
 
 async function requestJson(input: {
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   path: string;
   phase: EnergyPerformanceCertificatesPhase;
   query?: Record<string, QueryValue>;

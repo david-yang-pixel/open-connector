@@ -4,7 +4,7 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
 import {
@@ -14,19 +14,22 @@ import {
   optionalScalarString,
   optionalString,
 } from "../../core/cast.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
 import {
   createProviderProxyUrl,
-  createProviderTimeout,
-  defineProviderExecutors,
-  isAbortLikeError,
   normalizeProviderProxyHeaders,
+  readProviderProxyErrorMessage,
+  readProviderProxyResponse,
+  toProviderProxyError,
+} from "../provider-proxy.ts";
+import {
+  createProviderTimeout,
+  isAbortLikeError,
   providerFetch,
   ProviderRequestError,
   providerUserAgent,
-  readProviderProxyErrorMessage,
-  readProviderProxyResponse,
-  requireApiKeyCredential,
-  toProviderProxyError,
+  providerInputError,
 } from "../provider-runtime.ts";
 
 const service = "mixpanel";
@@ -219,7 +222,6 @@ async function validateMixpanelCredential(
         optionalString(matchedServiceAccount.username) ??
         serviceAccountUsername,
     },
-    grantedScopes: [],
     metadata: compactObject({
       baseUrl,
       exportBaseUrl,
@@ -639,10 +641,10 @@ function createMixpanelError(
     return new ProviderRequestError(phase === "validate" ? 400 : response.status, message);
   }
   if (response.status === 404 && (phase === "validate" || notFoundAsInvalidInput)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (response.status === 400 || response.status === 422) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   return new ProviderRequestError(response.status || 502, message);
 }

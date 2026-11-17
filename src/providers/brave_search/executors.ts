@@ -1,11 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   providerUserAgent,
   ProviderRequestError,
   requiredInputString,
@@ -87,7 +86,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "brave_search",
         displayName: "Brave Search API Key",
       },
-      grantedScopes: [],
       metadata: {
         validationEndpoint: "/res/v1/web/search",
         validationQuery: "brave search",
@@ -101,7 +99,7 @@ export const credentialValidators: CredentialValidators = {
 async function requestBraveSearchJson(
   path: string,
   query: Record<string, BraveSearchQueryValue>,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: BraveSearchPhase,
 ): Promise<unknown> {
   let response: Response;

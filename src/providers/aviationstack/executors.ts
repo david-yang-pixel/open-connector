@@ -1,6 +1,5 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -10,13 +9,13 @@ import {
   rawStringOrNull,
   requiredRecord,
 } from "../../core/cast.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineProviderExecutors,
-  defineProviderProxy,
   ProviderRequestError,
   providerResponseError,
   providerUserAgent,
-  requireApiKeyCredential,
   setSearchParams,
 } from "../provider-runtime.ts";
 
@@ -118,7 +117,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "aviationstack",
         displayName: "Aviationstack API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         validationEndpoint: "/airports",
         apiBaseUrl: aviationstackApiBaseUrl,
@@ -223,7 +221,7 @@ async function listCollection(
 async function requestAviationstackJson(input: {
   path: string;
   query: Record<string, AviationstackQueryValue>;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   phase: AviationstackPhase;
 }): Promise<Record<string, unknown>> {
   let response: Response;

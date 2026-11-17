@@ -1,11 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   providerInputError,
   ProviderRequestError,
   providerUserAgent,
@@ -106,7 +105,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "storecensus:api-key",
         displayName: firstCategoryName ? `StoreCensus (${firstCategoryName})` : "StoreCensus API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: storecensusApiBaseUrl,
         validationEndpoint: storecensusValidationPath,
@@ -117,7 +115,7 @@ export const credentialValidators: CredentialValidators = {
 };
 
 async function requestStorecensusJson(input: {
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   method: "GET" | "POST";
   path: string;
   phase: StorecensusPhase;

@@ -5,12 +5,13 @@ import type {
   ProviderExecutors,
   ResolvedCredential,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-executors.ts";
 import type { CustomMcpContext } from "./runtime.ts";
 
 import { isPrivateNetworkAccessAllowed } from "../../core/request.ts";
 import { readOAuthClientConfigMetadata } from "../../oauth/oauth-client-config-service.ts";
-import { createProviderFetch, defineProviderExecutors, ProviderRequestError } from "../provider-runtime.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { createProviderFetch, ProviderRequestError } from "../provider-runtime.ts";
 import { oauth } from "./oauth.ts";
 import {
   callCustomMcpTool,

@@ -58,7 +58,11 @@ async function stageMultipartFile(request: Request, path: string, maxBytes: numb
     parser = Busboy({
       headers: { "content-type": contentType },
       defParamCharset: "utf8",
-      limits: { fields: 0, files: 1, parts: 2, fileSize: maxBytes },
+      // Busboy flags truncation when its counter *reaches* its limit, so give it
+      // one byte of headroom and judge the bytes actually written below. This
+      // also rejects an over-limit file under a fractional limit, where the
+      // counter never equals the limit and `truncated` would stay false.
+      limits: { fields: 0, files: 1, parts: 2, fileSize: maxBytes + 1 },
     });
   } catch {
     throw invalidInput();
@@ -81,13 +85,13 @@ async function stageMultipartFile(request: Request, path: string, maxBytes: numb
 
     const writer = createWriteStream(path, { flags: "wx" });
     staged = pipeline(stream, writer).then(() => {
-      if (stream.truncated) {
+      if (writer.bytesWritten > maxBytes) {
         throw new TransitFileError(413, "file_too_large", `Transit file must be ${maxBytes} bytes or smaller.`);
       }
       return {
         path,
         sizeBytes: writer.bytesWritten,
-        name: info.filename,
+        name: info.filename ?? "",
         mimeType: info.mimeType,
       };
     });

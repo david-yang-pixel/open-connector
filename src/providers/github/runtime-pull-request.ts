@@ -1,4 +1,4 @@
-import type { ProviderActionHandlerSubset } from "../provider-runtime.ts";
+import type { ProviderActionHandlerSubset } from "../provider-executors.ts";
 import type { GitHubActionContext, GitHubActionHandler } from "./runtime-shared.ts";
 
 import {
@@ -8,7 +8,7 @@ import {
   optionalRecord,
   optionalString,
 } from "../../core/cast.ts";
-import { readBoundedResponseBytes } from "../../core/request.ts";
+import { storeResponseInTransit } from "../../core/request.ts";
 import { ProviderRequestError } from "../provider-runtime.ts";
 import {
   buildGitHubUrl,
@@ -780,11 +780,12 @@ async function downloadWorkflowArtifact(
     throw normalizeGitHubError(response, await readJsonResponse(response), "github artifact download failed");
   const name = optionalString(input.fileName) ?? `github-artifact-${artifactId}.zip`;
   const mimeType = response.headers.get("content-type") ?? "application/zip";
-  const bytes = await readBoundedResponseBytes(response, {
-    maxBytes: context.transitFiles.maxBytes,
+  const file = await storeResponseInTransit(response, context.transitFiles, {
+    name,
+    mimeType,
     fieldName: "GitHub workflow artifact",
     createError: (message) => new ProviderRequestError(413, message),
+    signal: context.signal,
   });
-  const file = await context.transitFiles.create(new File([Uint8Array.from(bytes)], name, { type: mimeType }));
   return { file };
 }

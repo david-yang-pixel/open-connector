@@ -1,6 +1,7 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import {
   compactObject,
@@ -161,7 +162,6 @@ export async function validateSevenShiftsCredential(
     profile: {
       accountId: `7_shifts:identity:${identity.identityId}`,
       displayName: buildAccountLabel(firstUser),
-      grantedScopes: [],
     },
     metadata: compactObject({
       identityId: identity.identityId,

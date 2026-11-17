@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { compactObject, optionalBoolean, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
 import { providerUserAgent, ProviderRequestError, runProviderRequest } from "../provider-runtime.ts";
@@ -9,7 +9,6 @@ const beamerApiBaseUrl = "https://api.getbeamer.com/v0";
 
 type BeamerPhase = "validate" | "execute";
 type BeamerActionHandler = ProviderRuntimeHandler<ApiKeyProviderContext>;
-type BeamerContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
 
 export const beamerActionHandlers: ProviderActionHandlers<"beamer", BeamerActionHandler> = {
   async get_feed_url(input, context) {
@@ -151,7 +150,6 @@ export async function validateBeamerCredential(
     profile: {
       displayName: productName,
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: beamerApiBaseUrl,
       validationEndpoint: "/ping",
@@ -163,7 +161,7 @@ export async function validateBeamerCredential(
 async function beamerGetJson(
   path: string,
   query: URLSearchParams,
-  context: BeamerContext,
+  context: ApiKeyProviderContext,
   phase: BeamerPhase,
 ): Promise<unknown> {
   const url = beamerUrl(path);
@@ -185,7 +183,7 @@ async function beamerGetJson(
 async function beamerPostJson(
   path: string,
   body: Record<string, unknown>,
-  context: BeamerContext,
+  context: ApiKeyProviderContext,
   phase: BeamerPhase,
 ): Promise<unknown> {
   return requestBeamerJson(
@@ -206,7 +204,7 @@ async function beamerPostJson(
 async function requestBeamerJson(
   url: URL,
   init: RequestInit,
-  context: BeamerContext,
+  context: ApiKeyProviderContext,
   phase: BeamerPhase,
 ): Promise<unknown> {
   return runProviderRequest({ signal: context.signal, label: "Beamer" }, async (signal) => {

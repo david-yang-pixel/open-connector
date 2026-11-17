@@ -1,6 +1,7 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
 
-import { defineApiKeyProviderExecutors, defineProviderProxy } from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   getWaiverForeverUserInfo,
   waiverforeverActionHandlers,
@@ -31,7 +32,6 @@ export const credentialValidators: CredentialValidators = {
     const userInfo = await getWaiverForeverUserInfo(input.apiKey, fetcher, signal, "validate");
     return {
       profile: { displayName: userInfo.username ?? "WaiverForever API Key" },
-      grantedScopes: [],
       metadata: {
         username: userInfo.username,
         apiBaseUrl: waiverforeverApiBaseUrl,

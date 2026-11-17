@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { compactObject, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
 import {
@@ -78,7 +78,6 @@ export async function validateBigpictureIoCredential(
       accountId: "bigpicture_io-api-key",
       displayName: "BigPicture.io API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       companyApiBaseUrl: bigpictureCompanyApiBaseUrl,
       ipApiBaseUrl: bigpictureIpApiBaseUrl,
@@ -91,7 +90,7 @@ export async function validateBigpictureIoCredential(
 }
 
 async function requestBigpictureJson(input: {
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   baseUrl: string;
   path: string;
   query: Record<string, string>;

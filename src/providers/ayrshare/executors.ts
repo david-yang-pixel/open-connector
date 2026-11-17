@@ -1,6 +1,5 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -10,14 +9,10 @@ import {
   optionalString,
   requiredString,
 } from "../../core/cast.ts";
-import {
-  defineProviderExecutors,
-  defineProviderProxy,
-  providerInputError,
-  ProviderRequestError,
-  providerUserAgent,
-  requireApiKeyCredential,
-} from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerInputError, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "ayrshare";
 const ayrshareBaseUrl = "https://api.ayrshare.com/api";
@@ -117,7 +112,6 @@ export const credentialValidators: CredentialValidators = {
       profile: {
         displayName: profileKey ? "Ayrshare User Profile" : "Ayrshare Primary Profile",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: ayrshareBaseUrl,
         validationEndpoint: "/user",
@@ -402,7 +396,7 @@ async function requestAyrshareJson(
   input: {
     method: AyrshareMethod;
     path: string;
-    context: Pick<AyrshareContext, "apiKey" | "fetcher" | "profileKey" | "signal">;
+    context: AyrshareContext;
     query?: Record<string, unknown>;
     body?: Record<string, unknown>;
   },

@@ -1,14 +1,10 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 
 const service = "moosend";
 const moosendApiBaseUrl = "https://api.moosend.com/v3";
@@ -19,7 +15,7 @@ type MoosendMethod = "GET" | "POST";
 type MoosendActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 
 interface MoosendRequestOptions {
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   path: string;
   phase: MoosendRequestPhase;
   method?: MoosendMethod;
@@ -126,7 +122,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "moosend",
         displayName: "Moosend API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: moosendApiBaseUrl,
         validationEndpoint: moosendValidationPath,

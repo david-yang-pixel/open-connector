@@ -1,10 +1,17 @@
+import type { ProviderHttpAttempt } from "../core/provider-http-dispatch.ts";
 import type { ConnectorRuntime, ConnectorRuntimeOptions } from "./connector-runtime.ts";
+import type { McpOutputMode } from "./mcp-settings.ts";
 
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { cp, mkdtemp, mkdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { getProviderNetworkPolicy } from "../core/provider-network-policy.ts";
 import { createConnectorRuntime } from "./connector-runtime.ts";
+import { AesGcmSecretCodec } from "./secrets/secret-codec.ts";
+import { RuntimeTokenService } from "./storage/runtime-token-service.ts";
+import { SqliteRuntimeDatabase, SqliteRuntimeTokenStore } from "./storage/sqlite/runtime-store.ts";
 
 let runtime: ConnectorRuntime | undefined;
 const directories: string[] = [];
@@ -18,6 +25,281 @@ afterEach(async () => {
 });
 
 describe("headless runtime", () => {
+  it("rejects an invalid MCP output mode from a JavaScript host", async () => {
+    const options = await fixture();
+    await expect(
+      createConnectorRuntime({
+        ...options,
+        mcpOutputMode: "Compact" as McpOutputMode,
+      }),
+    ).rejects.toThrow("OOMOL_CONNECT_MCP_OUTPUT_MODE");
+  });
+
+  it.each<McpOutputMode>(["compatible", "compact"])(
+    "serves MCP results with the configured %s output mode",
+    async (mcpOutputMode) => {
+      const connector = await createConnectorRuntime({ ...(await fixture()), mcpOutputMode });
+      runtime = connector;
+      const client = new Client({ name: "headless-mcp-test", version: "0.0.0" });
+      try {
+        await client.connect(
+          new StreamableHTTPClientTransport(new URL(`${publicOrigin}/mcp`), {
+            fetch: (input, init) => connector.fetch(new Request(input, init)),
+            requestInit: { headers: { authorization: "Bearer runtime-token" } },
+          }),
+        );
+        const result = await client.callTool({ name: "list_apps", arguments: {} });
+        expect(result.structuredContent).toMatchObject({ ok: true, data: expect.any(Array) });
+        expect(result.content).toEqual([
+          {
+            type: "text",
+            text:
+              mcpOutputMode === "compact"
+                ? "The complete result is available in structuredContent."
+                : JSON.stringify(result.structuredContent),
+          },
+        ]);
+      } finally {
+        await client.close();
+      }
+    },
+  );
+
+  it("authenticates stored tokens without listing them and observes revocation immediately", async () => {
+    const options = await fixture();
+    await mkdir(options.dataDir, { recursive: true });
+    const database = new SqliteRuntimeDatabase(join(options.dataDir, "connect.sqlite"), {
+      secretCodec: new AesGcmSecretCodec(options.encryptionKey!),
+    });
+    const list = vi
+      .spyOn(SqliteRuntimeTokenStore.prototype, "list")
+      .mockRejectedValue(new Error("Token authentication must not list all tokens."));
+    try {
+      const tokens = new RuntimeTokenService(database.runtimeTokenStore);
+      const first = await tokens.createToken("first");
+      const second = await tokens.createToken("second");
+      runtime = await createConnectorRuntime({ ...options, runtimeToken: undefined });
+
+      expect(runtime.runtimeAuthConfigured).toBe(true);
+      expect((await request("/v1/health", undefined, "invalid-token")).status).toBe(401);
+      expect((await request("/v1/health", undefined, first.token)).status).toBe(200);
+      await tokens.revokeToken(first.record.id);
+      expect((await request("/v1/health", undefined, first.token)).status).toBe(401);
+      expect((await request("/v1/health", undefined, second.token)).status).toBe(200);
+      expect(list).not.toHaveBeenCalled();
+    } finally {
+      list.mockRestore();
+      database.close();
+    }
+  });
+
+  it.each([45, undefined])(
+    "preserves console and runtime denial formats with retry delay %s",
+    async (retryAfterSeconds) => {
+      const fetcher = vi.fn<typeof fetch>();
+      vi.stubGlobal("fetch", fetcher);
+      runtime = await createConnectorRuntime({
+        ...(await fixture()),
+        providerHttpDispatch: { beforeAttempt: () => ({ allow: false, retryAfterSeconds }) },
+      });
+      const consoleResponse = await request(
+        "/api/connections/github",
+        { authType: "api_key", values: { apiKey: "fixture-secret" } },
+        "admin-token",
+        "PUT",
+      );
+      const runtimeResponse = await request("/v1/connections/github/connect/api-key", { apiKey: "fixture-secret" });
+      for (const response of [consoleResponse, runtimeResponse]) {
+        expect(response.status).toBe(429);
+        expect(response.headers.get("Retry-After")).toBe(
+          retryAfterSeconds === undefined ? null : String(retryAfterSeconds),
+        );
+      }
+      expect(await consoleResponse.json()).toEqual({
+        error: { code: "rate_limited", message: "Provider HTTP dispatch is temporarily unavailable." },
+      });
+      expect(await runtimeResponse.json()).toMatchObject({
+        success: false,
+        errorCode: "rate_limited",
+        message: "Provider HTTP dispatch is temporarily unavailable.",
+      });
+      expect(fetcher).not.toHaveBeenCalled();
+      expect((await (await request("/v1/connections")).json()).data).toEqual([]);
+    },
+  );
+
+  it.each([
+    ["oauth", "https://host.example/settings/connections"],
+    ["credential_validation", "https://host.example/settings/connections"],
+    ["oauth", undefined],
+    ["credential_validation", undefined],
+  ])("completes a denied %s connection request with return URI %s", async (operation, returnUri) => {
+    const fetcher = vi.fn<typeof fetch>(async () =>
+      Response.json({ access_token: "fixture-access-token", token_type: "bearer", scope: "read:user" }),
+    );
+    vi.stubGlobal("fetch", fetcher);
+    runtime = await createConnectorRuntime({
+      ...(await fixture()),
+      providerHttpDispatch: {
+        beforeAttempt: (attempt) =>
+          attempt.context.operation === operation ? { allow: false, retryAfterSeconds: 45 } : { allow: true },
+      },
+    });
+    expect(
+      (
+        await request(
+          "/api/oauth/configs/github",
+          { clientId: "fixture-client", clientSecret: "fixture-secret" },
+          "admin-token",
+          "PUT",
+        )
+      ).status,
+    ).toBe(200);
+    const started = await request("/v1/connections/github/connect", { returnUri });
+    expect(started.status).toBe(200);
+    const attempt = (await started.json()).data;
+    const state = new URL(attempt.authorizationUrl).searchParams.get("state")!;
+    const path = `/oauth/callback?state=${encodeURIComponent(state)}&code=fixture-code`;
+    const callback = await request(path);
+    if (returnUri) {
+      expect(callback.status).toBe(302);
+      const returned = new URL(callback.headers.get("location")!);
+      expect(`${returned.origin}${returned.pathname}`).toBe(returnUri);
+      expect(Object.fromEntries(returned.searchParams)).toEqual({
+        status: "error",
+        service: "github",
+        code: "rate_limited",
+        message: "Provider HTTP dispatch is temporarily unavailable.",
+      });
+    } else {
+      expect(callback.status).toBe(400);
+      expect(await callback.json()).toEqual({
+        error: { code: "rate_limited", message: "Provider HTTP dispatch is temporarily unavailable." },
+      });
+    }
+    expect(callback.headers.get("Retry-After")).toBeNull();
+    const completed = await request(`/v1/connection-requests/${attempt.connectionRequestId}`);
+    expect((await completed.json()).data).toMatchObject({ status: "failed", errorCode: "rate_limited" });
+    expect((await (await request("/v1/connections")).json()).data).toEqual([]);
+    expect(fetcher).toHaveBeenCalledTimes(operation === "oauth" ? 0 : 1);
+    const replay = await request(path);
+    expect(replay.status).toBe(400);
+    expect(await replay.json()).toMatchObject({ error: { code: "invalid_oauth_state" } });
+  });
+
+  it("preserves dispatch denial for OAuth authorizations without a connection request", async () => {
+    const fetcher = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", fetcher);
+    runtime = await createConnectorRuntime({
+      ...(await fixture()),
+      providerHttpDispatch: { beforeAttempt: () => ({ allow: false, retryAfterSeconds: 45 }) },
+    });
+    await request(
+      "/api/oauth/configs/github",
+      { clientId: "fixture-client", clientSecret: "fixture-secret" },
+      "admin-token",
+      "PUT",
+    );
+    const started = await request("/api/oauth/authorizations", { service: "github" });
+    expect(started.status).toBe(200);
+    const { state } = await started.json();
+    const callback = await request(`/oauth/callback?state=${encodeURIComponent(state)}&code=fixture-code`);
+    expect(callback.status).toBe(429);
+    expect(callback.headers.get("Retry-After")).toBe("45");
+    expect(await callback.json()).toEqual({
+      error: { code: "rate_limited", message: "Provider HTTP dispatch is temporarily unavailable." },
+    });
+    expect(fetcher).not.toHaveBeenCalled();
+    expect((await (await request("/v1/connections")).json()).data).toEqual([]);
+  });
+
+  it("preserves admission denial after a real provider remaps it into validation and transport errors", async () => {
+    let deny = false;
+    const fetcher = vi.fn<typeof fetch>(async () => Response.json({ credit_balance: 100 }));
+    vi.stubGlobal("fetch", fetcher);
+    runtime = await createConnectorRuntime({
+      ...(await fixture(["ninjapear"])),
+      providerHttpDispatch: {
+        beforeAttempt: () => (deny ? { allow: false, retryAfterSeconds: 62 } : { allow: true }),
+      },
+    });
+    expect((await request("/v1/connections/ninjapear/connect/api-key", { apiKey: "fixture-secret" })).status).toBe(200);
+    const accounts = (await (await request("/v1/apps", undefined, "runtime-token")).json()).data;
+    deny = true;
+    const executed = await runtime.fetch(
+      new Request(`${publicOrigin}/v1/actions/ninjapear.get_credit_balance`, {
+        method: "POST",
+        headers: {
+          authorization: "Bearer runtime-token",
+          "content-type": "application/json",
+          "x-oo-connector-alias": accounts[0].alias,
+        },
+        body: JSON.stringify({ input: {} }),
+      }),
+    );
+    const validated = await request("/v1/connections/ninjapear/connect/api-key", { apiKey: "another-secret" });
+    for (const response of [executed, validated]) {
+      expect(response.status).toBe(429);
+      expect(response.headers.get("Retry-After")).toBe("62");
+      expect(await response.json()).toMatchObject({ errorCode: "rate_limited" });
+    }
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+
+  it("binds resolved connection authority and exposes dispatch denial as 429 on action, proxy and validation routes", async () => {
+    const attempts: ProviderHttpAttempt[] = [];
+    let deny = false;
+    const fetcher = vi.fn<typeof fetch>(async () => Response.json({ id: 1, login: "fixture-account" }));
+    vi.stubGlobal("fetch", fetcher);
+    runtime = await createConnectorRuntime({
+      ...(await fixture()),
+      providerHttpDispatch: {
+        bindAuthority: (context) => ({ workspaceId: "host-workspace", connectionLineageId: context.connectionId }),
+        beforeAttempt: (attempt) => {
+          attempts.push(attempt);
+          return deny ? { allow: false, retryAfterSeconds: 45 } : { allow: true };
+        },
+      },
+    });
+    const saved = await request("/v1/connections/github/connect/api-key", { apiKey: "fixture-secret" });
+    expect(saved.status).toBe(200);
+    const connection = (await saved.json()).data;
+    expect(attempts[0]?.context).toMatchObject({ operation: "credential_validation", service: "github" });
+    const accounts = (await (await request("/v1/apps", undefined, "runtime-token")).json()).data;
+    deny = true;
+    for (const [route, body] of [
+      ["/v1/actions/github.get_current_user", { input: {}, connectionId: "untrusted" }],
+      ["/v1/proxy/github", { method: "GET", endpoint: "/user", connectionId: "untrusted" }],
+    ] as const) {
+      const response = await runtime.fetch(
+        new Request(`${publicOrigin}${route}`, {
+          method: "POST",
+          headers: {
+            authorization: "Bearer runtime-token",
+            "content-type": "application/json",
+            "x-oo-connector-alias": accounts[0].alias,
+          },
+          body: JSON.stringify(body),
+        }),
+      );
+      expect(response.status).toBe(429);
+      expect(response.headers.get("Retry-After")).toBe("45");
+      expect(await response.json()).toMatchObject({ errorCode: "rate_limited" });
+      expect(attempts.at(-1)?.context.connectionId).toBe(connection.id);
+      expect(attempts.at(-1)?.context.connectionName).toBe(accounts[0].alias);
+      expect(attempts.at(-1)?.authority).toMatchObject({
+        workspaceId: "host-workspace",
+        connectionLineageId: connection.id,
+      });
+    }
+    const refused = await request("/v1/connections/github/connect/api-key", {
+      apiKey: "another-secret",
+    });
+    expect(refused.status).toBe(429);
+    expect(refused.headers.get("Retry-After")).toBe("45");
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(JSON.stringify(attempts)).not.toMatch(/fixture-secret|another-secret|untrusted/);
+  });
   it("serves the existing connection and action contracts under a host mount without a dashboard", async () => {
     const options = await fixture();
     vi.stubGlobal(
@@ -111,6 +393,64 @@ describe("headless runtime", () => {
     );
   });
 
+  it("carries a configured redirect URI override through setup, the authorize URL and the code exchange", async () => {
+    runtime = await createConnectorRuntime(await fixture());
+    expect((await (await request("/v1/providers/github/setup")).json()).data.oauthClient).toMatchObject({
+      expectedRedirectUri: `${publicOrigin}/oauth/callback`,
+    });
+    const refused = await request(
+      "/api/oauth/configs/github",
+      { clientId: "fixture-client", clientSecret: "fixture-secret", redirectUri: "oauth/callback" },
+      "admin-token",
+      "PUT",
+    );
+    expect(refused.status).toBe(400);
+    await expect(refused.json()).resolves.toMatchObject({ error: { code: "invalid_input" } });
+    const configured = await request(
+      "/api/oauth/configs/github",
+      { clientId: "fixture-client", clientSecret: "fixture-secret", redirectUri: "app://oauth/callback" },
+      "admin-token",
+      "PUT",
+    );
+    expect(configured.status).toBe(200);
+    const setup = (await (await request("/v1/providers/github/setup")).json()).data;
+    // The setup block reports only the effective redirect; the override itself stays on the admin config API.
+    expect(setup.oauthClient).toEqual({
+      configured: true,
+      customClientAvailable: false,
+      expectedRedirectUri: "app://oauth/callback",
+      missingFields: [],
+    });
+    expect(JSON.stringify(setup)).not.toMatch(/fixture-client|fixture-secret/);
+
+    const started = await request("/v1/connections/github/connect", {
+      returnUri: "https://host.example/settings/connections",
+    });
+    expect(started.status).toBe(200);
+    const attempt = (await started.json()).data;
+    const authorization = new URL(attempt.authorizationUrl);
+    expect(authorization.searchParams.get("redirect_uri")).toBe("app://oauth/callback");
+
+    // The callback route is unchanged: the app that owns the scheme forwards the
+    // provider's query here, and the exchange repeats the registered redirect.
+    const fetcher = vi.fn(async (url: RequestInfo | URL, _init?: RequestInit) =>
+      String(url).includes("/login/oauth/access_token")
+        ? Response.json({ access_token: "fixture-access-token", token_type: "bearer", scope: "read:user" })
+        : Response.json({ id: 1, login: "fixture-account", name: "Fixture Account" }),
+    );
+    vi.stubGlobal("fetch", fetcher);
+    const callback = await request(
+      `/oauth/callback?state=${encodeURIComponent(authorization.searchParams.get("state")!)}&code=fixture-code`,
+    );
+    expect(callback.status).toBe(302);
+    expect(new URL(callback.headers.get("location")!).searchParams.get("status")).toBe("success");
+    const exchange = fetcher.mock.calls.find(([url]) => String(url).includes("/login/oauth/access_token"));
+    expect(new URLSearchParams(String(exchange?.[1]?.body)).get("redirect_uri")).toBe("app://oauth/callback");
+    expect((await (await request(`/v1/connection-requests/${attempt.connectionRequestId}`)).json()).data.status).toBe(
+      "connected",
+    );
+  });
+
   it("aborts active provider calls before closing storage and rejects requests after close", async () => {
     runtime = await createConnectorRuntime(await fixture());
     vi.stubGlobal("fetch", async () => Response.json({ id: 1, login: "fixture-account" }));
@@ -161,24 +501,146 @@ describe("headless runtime", () => {
     expect((await request("/v1/health", undefined, "runtime-token")).status).toBe(503);
   });
 
-  it("allows one active runtime and releases the slot on initialization failure or close", async () => {
+  it("keeps concurrent runtimes' network policies independent after peer shutdown", async () => {
+    const seen: boolean[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(async () => {
+        await Promise.resolve();
+        seen.push(getProviderNetworkPolicy().allowPrivateNetwork ?? false);
+        return Response.json({ login: "fixture", id: 123 });
+      }),
+    );
+    runtime = await createConnectorRuntime({ ...(await fixture()), network: { allowPrivateNetwork: true } });
+    const peer = await createConnectorRuntime({ ...(await fixture()), network: { allowPrivateNetwork: false } });
+    const connect = (target: ConnectorRuntime) =>
+      target.fetch(
+        new Request(`${publicOrigin}/api/connections/github`, {
+          method: "PUT",
+          headers: { authorization: "Bearer admin-token", "content-type": "application/json" },
+          body: JSON.stringify({ authType: "api_key", values: { apiKey: "fixture-secret" } }),
+        }),
+      );
+    try {
+      const responses = await Promise.all([connect(runtime), connect(peer)]);
+      expect(responses.map((response) => response.status)).toEqual([200, 200]);
+      expect(seen.sort()).toEqual([false, true]);
+      await runtime.close();
+      seen.length = 0;
+      expect((await connect(peer)).status).toBe(200);
+      expect(seen).toEqual([false]);
+    } finally {
+      await peer.close();
+    }
+  });
+
+  it("allows private provider validation only in the opted-in runtime", async () => {
+    const transport = vi.fn<typeof fetch>(async () => {
+      await Promise.resolve();
+      return Response.json({ username: "alice" });
+    });
+    vi.stubGlobal("fetch", transport);
+    runtime = await createConnectorRuntime({
+      ...(await fixture(["kobotoolbox"])),
+      network: { allowPrivateNetwork: true },
+    });
+    const peer = await createConnectorRuntime({
+      ...(await fixture(["kobotoolbox"])),
+      network: { allowPrivateNetwork: false },
+    });
+    const connect = (target: ConnectorRuntime) =>
+      target.fetch(
+        new Request(`${publicOrigin}/api/connections/kobotoolbox`, {
+          method: "PUT",
+          headers: { authorization: "Bearer admin-token", "content-type": "application/json" },
+          body: JSON.stringify({
+            authType: "api_key",
+            values: { apiKey: "fixture-secret", baseUrl: "https://10.0.0.5" },
+          }),
+        }),
+      );
+    try {
+      const [allowed, denied] = await Promise.all([connect(runtime), connect(peer)]);
+      expect(allowed.status).toBe(200);
+      expect(denied.status).toBe(400);
+      expect(await denied.text()).toContain("private or reserved");
+      expect(transport).toHaveBeenCalledTimes(1);
+      expect(String(transport.mock.calls[0]![0])).toBe("https://10.0.0.5/me/");
+      await peer.close();
+      expect((await connect(runtime)).status).toBe(200);
+      expect(transport).toHaveBeenCalledTimes(2);
+    } finally {
+      await peer.close();
+    }
+  });
+
+  it("allows independent runtimes after initialization failures and peer shutdown", async () => {
     const options = await fixture();
     await expect(createConnectorRuntime({ ...options, publicOrigin: "file:///bad" })).rejects.toThrow("publicOrigin");
     await expect(createConnectorRuntime({ ...options, transitFiles: { maxBytes: 0 } })).rejects.toThrow("maxBytes");
+    await expect(createConnectorRuntime({ ...options, oauthResultOrigins: ["*"] })).rejects.toThrow(
+      "exact http(s) origin",
+    );
     runtime = await createConnectorRuntime(options);
-    await expect(createConnectorRuntime(options)).rejects.toThrow("Only one");
-    await runtime.close();
-    runtime = await createConnectorRuntime(options);
+    const peer = await createConnectorRuntime(await fixture());
+    await peer.close();
     expect((await request("/v1/health", undefined, "runtime-token")).status).toBe(200);
   });
 });
 
-async function fixture(): Promise<ConnectorRuntimeOptions> {
+it("starts persisted cleanup without HTTP traffic and waits for its abort on close", async () => {
+  const options = await fixture();
+  await mkdir(options.dataDir, { recursive: true });
+  const codec = new AesGcmSecretCodec(options.encryptionKey!);
+  let database = new SqliteRuntimeDatabase(join(options.dataDir, "connect.sqlite"), { secretCodec: codec });
+  await database.saasProjectStore.saveProject({
+    id: "managed",
+    projectId: "project",
+    baseUrl: "https://saas.example",
+    apiKey: "project-key",
+  });
+  const lease = await database.connectionRequestStore.createSaas({
+    connectionRequestId: crypto.randomUUID(),
+    connectionId: crypto.randomUUID(),
+    connectionName: "cleanup",
+    owner: "admin",
+    service: "github",
+    managedProjectId: "managed",
+    providerConfigId: "config",
+    externalUserId: "user",
+    createdAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 600_000).toISOString(),
+  });
+  await database.connectionRequestStore.saveSaasRequest(lease, "remote");
+  await database.connectionRequestStore.saveSaasCandidate(lease, {
+    connectedAccountId: "account",
+    status: "active",
+    comment: null,
+    profile: { accountId: "user", displayName: "User", grantedScopes: [] },
+  });
+  await database.connectionRequestStore.cancelSaas(lease.pending.connectionRequestId, "admin");
+  database.close();
+  const fetcher = vi.fn<typeof fetch>(() => new Promise(() => {}));
+  vi.stubGlobal("fetch", fetcher);
+  runtime = await createConnectorRuntime(options);
+  await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
+  expect(fetcher.mock.calls[0][1]?.method).toBe("DELETE");
+  await runtime.close();
+  expect(fetcher.mock.calls[0][1]?.signal?.aborted).toBe(true);
+  database = new SqliteRuntimeDatabase(join(options.dataDir, "connect.sqlite"), { secretCodec: codec });
+  try {
+    expect((await database.saasProjectStore.getCleanupStats()).pending).toBe(1);
+  } finally {
+    database.close();
+  }
+});
+
+async function fixture(services = ["github"]): Promise<ConnectorRuntimeOptions> {
   const root = await mkdtemp(join(tmpdir(), "open-connector-runtime-"));
   directories.push(root);
   const catalogDir = join(root, "catalog");
   await mkdir(catalogDir);
-  for (const service of ["github"])
+  for (const service of services)
     await cp(resolve(import.meta.dirname, `../../catalog/apps/${service}.json`), join(catalogDir, `${service}.json`));
   return {
     dataDir: join(root, "state"),

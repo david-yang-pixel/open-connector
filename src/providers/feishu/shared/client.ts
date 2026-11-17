@@ -21,6 +21,8 @@ export interface FeishuJsonRequest {
 }
 
 export interface FeishuActionRuntimeContext {
+  /** Open Platform API base of the deployment this credential belongs to (see cloud.ts). */
+  readonly openBaseUrl: string;
   readonly accessToken: string;
   readonly fetcher: typeof fetch;
   readonly identity: FeishuIdentity;
@@ -30,12 +32,13 @@ export interface FeishuActionRuntimeContext {
 
 export interface CreateFeishuJsonRequestInput extends Pick<
   FeishuActionRuntimeContext,
-  "accessToken" | "fetcher" | "signal"
+  "openBaseUrl" | "accessToken" | "fetcher" | "signal"
 > {
   readonly phase?: "validate" | "execute";
 }
 
 export interface FeishuMultipartRequestInput {
+  readonly openBaseUrl: string;
   readonly accessToken: string;
   readonly fetcher: typeof fetch;
   readonly path: string;
@@ -44,6 +47,7 @@ export interface FeishuMultipartRequestInput {
 }
 
 export interface FeishuRawRequestInput {
+  readonly openBaseUrl: string;
   readonly accessToken: string;
   readonly fetcher: typeof fetch;
   readonly path: string;
@@ -57,17 +61,16 @@ interface FeishuEnvelope {
   readonly data?: unknown;
 }
 
-const feishuOpenBaseUrl = "https://open.feishu.cn/open-apis";
 const feishuRateLimitedErrorCodes = new Set([11232, 11233, 11247, 230020, 230047, 99991400, 1000004, 1000005]);
 const feishuCredentialExpiredErrorCodes = new Set([
   4001, 10005, 10012, 10013, 10014, 10015, 20002, 20005, 20013, 20014, 99991543, 99991661, 99991663, 99991664, 99991665,
-  99991671, 99991673,
+  99991668, 99991671, 99991677,
 ]);
 const feishuScopeMissingErrorCodes = new Set([10023, 11223, 11229, 11241, 99991672, 99991676, 99991679]);
 
 export function createFeishuJsonRequest(input: CreateFeishuJsonRequestInput): FeishuJsonRequest {
   return async (request) => {
-    const url = new URL(`${feishuOpenBaseUrl}${request.path}`);
+    const url = new URL(`${input.openBaseUrl}${request.path}`);
     appendQuery(url, request.query);
 
     const timeout = createProviderTimeout(input.signal);
@@ -112,7 +115,7 @@ export function createFeishuJsonRequest(input: CreateFeishuJsonRequestInput): Fe
 export async function requestFeishuMultipart(input: FeishuMultipartRequestInput): Promise<Record<string, unknown>> {
   const timeout = createProviderTimeout(input.signal);
   try {
-    const response = await input.fetcher(`${feishuOpenBaseUrl}${input.path}`, {
+    const response = await input.fetcher(`${input.openBaseUrl}${input.path}`, {
       method: "POST",
       headers: {
         accept: "application/json",
@@ -151,7 +154,7 @@ export async function withFeishuRawResponse<T>(
   input: FeishuRawRequestInput,
   consume: (response: Response) => Promise<T>,
 ): Promise<T> {
-  const url = new URL(`${feishuOpenBaseUrl}${input.path}`);
+  const url = new URL(`${input.openBaseUrl}${input.path}`);
   appendQuery(url, input.query);
   const timeout = createProviderTimeout(input.signal);
   try {
@@ -266,8 +269,8 @@ function normalizeFeishuError(input: {
       return new ProviderRequestError(400, detailedMessage, errorData);
     }
   }
-  if (input.status === 401 || (code != null && feishuCredentialExpiredErrorCodes.has(code))) {
-    return new ProviderRequestError(401, detailedMessage, errorData);
+  if (code != null && feishuCredentialExpiredErrorCodes.has(code)) {
+    return new ProviderRequestError(401, detailedMessage, errorData, "authorization_failed");
   }
   if (code != null && feishuScopeMissingErrorCodes.has(code)) {
     return new ProviderRequestError(403, detailedMessage, errorData);
@@ -275,5 +278,10 @@ function normalizeFeishuError(input: {
   if (input.status === 400 || input.status === 404 || input.status === 422 || code === 230001) {
     return new ProviderRequestError(input.status || 400, detailedMessage, errorData);
   }
-  return new ProviderRequestError(502, detailedMessage, errorData);
+  return new ProviderRequestError(
+    input.status >= 400 ? input.status : 502,
+    detailedMessage,
+    errorData,
+    "provider_error",
+  );
 }

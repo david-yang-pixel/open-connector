@@ -1,3 +1,5 @@
+import { googleIdentityScopes } from "../googleads/scopes.ts";
+
 export const googleCalendarReadonlyScope = "https://www.googleapis.com/auth/calendar.readonly";
 export const googleCalendarEventsScope = "https://www.googleapis.com/auth/calendar.events";
 export const googleCalendarCalendarsScope = "https://www.googleapis.com/auth/calendar.calendars";
@@ -15,7 +17,6 @@ export const googlecalendarCalendarsWriteScopes: string[] = [
 export const googlecalendarSettingsReadScopes: string[] = [googleCalendarSettingsReadonlyScope];
 export const googlecalendarAclReadScopes: string[] = [googleCalendarAclsReadonlyScope];
 export const googlecalendarAclWriteScopes: string[] = [googleCalendarAclsScope];
-
 export const googlecalendarOAuthScopes: string[] = [
   googleCalendarReadonlyScope,
   googleCalendarEventsScope,
@@ -24,4 +25,5 @@ export const googlecalendarOAuthScopes: string[] = [
   googleCalendarSettingsReadonlyScope,
   googleCalendarAclsScope,
   googleCalendarAclsReadonlyScope,
+  ...googleIdentityScopes,
 ];

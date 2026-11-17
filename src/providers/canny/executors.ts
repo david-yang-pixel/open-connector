@@ -4,22 +4,24 @@ import type {
   ProviderProxyExecutor,
   ProxyExecutionResult,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderRequestContext } from "../provider-runtime.ts";
 
 import { compactObject, optionalBoolean, optionalRecord, optionalString } from "../../core/cast.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
 import {
-  createProviderFetch,
   createProviderProxyUrl,
-  defineApiKeyProviderExecutors,
   normalizeProviderProxyHeaders,
-  ProviderRequestError,
-  providerUserAgent,
   readProviderProxyErrorMessage,
   readProviderProxyResponse,
-  requireApiKeyCredential,
-  requiredInputString,
   toProviderProxyError,
+} from "../provider-proxy.ts";
+import {
+  createProviderFetch,
+  ProviderRequestError,
+  providerUserAgent,
+  requiredInputString,
 } from "../provider-runtime.ts";
 
 const service = "canny";
@@ -101,7 +103,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "canny",
         displayName: "Canny API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: cannyApiBaseUrl,
         validationEndpoint: "/v1/boards/list",
@@ -299,11 +300,7 @@ async function createComment(input: Record<string, unknown>, context: ApiKeyProv
   return { comment: { id: requiredInputString(requireObjectPayload(payload, "created comment").id, "id") } };
 }
 
-async function cannyRequest(
-  path: string,
-  body: Record<string, unknown>,
-  context: Pick<ApiKeyProviderContext, "fetcher" | "signal">,
-) {
+async function cannyRequest(path: string, body: Record<string, unknown>, context: ProviderRequestContext) {
   const response = await context.fetcher(`${cannyApiBaseUrl}${path}`, {
     method: "POST",
     headers: {

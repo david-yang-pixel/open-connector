@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
@@ -87,7 +87,6 @@ export async function validateStackOverflowForTeamsCredential(
       accountId: typeof user.id === "number" ? String(user.id) : `stack-internal:${context.team}`,
       displayName: displayName ? `${displayName} (${context.team})` : `Stack Internal ${context.team}`,
     },
-    grantedScopes: [],
     metadata: {
       team: context.team,
       apiBaseUrl: stackOverflowForTeamsApiBaseUrl,

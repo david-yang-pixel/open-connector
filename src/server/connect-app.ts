@@ -1,33 +1,68 @@
 import type { CatalogStore } from "../catalog-store.ts";
 import type { ActionPolicyService } from "../core/action-policy.ts";
+import type { ProviderHttpDispatchOptions } from "../core/provider-http-dispatch.ts";
+import type { ProviderNetworkPolicy } from "../core/provider-network-policy.ts";
 import type { RuntimeLogger, TransitFileUpload } from "../core/types.ts";
+import type { McpOAuthClientMetadata } from "../custom-mcp/definition.ts";
 import type { IProviderLoader } from "../providers/provider-loader.ts";
 import type { RuntimeJwtVerifier } from "./api/runtime-jwt.ts";
 import type { ITransitFileService } from "./files/transit-file-store.ts";
+import type { McpOutputMode } from "./mcp-settings.ts";
+import type { OAuthServerSettings } from "./oauth/settings.ts";
 import type { ISecretCodec } from "./secrets/secret-codec-core.ts";
 import type { RuntimeDatabase } from "./storage/runtime-database.ts";
 import type { Hono } from "hono";
 
 import { ConnectionService } from "../connection-service.ts";
+import { ActionPolicyService as ExecutionPolicyService } from "../core/action-policy.ts";
+import { withRuntimeExecution } from "../core/runtime-execution.ts";
+import { CustomMcpCatalog } from "../custom-mcp/catalog.ts";
+import { CustomMcpLoader } from "../custom-mcp/loader.ts";
+import { CustomMcpService } from "../custom-mcp/service.ts";
 import { MarketplaceService } from "../marketplace/marketplace-service.ts";
 import { OAuthClientConfigService } from "../oauth/oauth-client-config-service.ts";
 import { OAuthCredentialRefreshService } from "../oauth/oauth-credential-refresh-service.ts";
 import { OAuthFlowService } from "../oauth/oauth-flow-service.ts";
+import { SaasCleanupService } from "../saas/saas-cleanup-service.ts";
+import { SaasClient } from "../saas/saas-client.ts";
+import { SaasExecutionService } from "../saas/saas-execution-service.ts";
+import { SaasOAuthService } from "../saas/saas-oauth-service.ts";
+import { SaasProjectService } from "../saas/saas-project-service.ts";
+import { TriggerMaintenance } from "../triggers/maintenance.ts";
+import { TriggerRunner } from "../triggers/trigger-runner.ts";
 import { ActionRunner } from "./actions/action-runner.ts";
+import { normalizeOAuthResultOrigins } from "./api/oauth-completion-page.ts";
 import { ConnectServer } from "./connect-server.ts";
 import { McpOAuthService } from "./mcp-oauth/mcp-oauth-service.ts";
+import { protectedResourceChallenge } from "./oauth/as-metadata.ts";
+import { resolveOAuthServerConfig } from "./oauth/config.ts";
+import { resolveOAuthAccessToken } from "./oauth/token-endpoint.ts";
 import { RuntimeTokenService } from "./storage/runtime-token-service.ts";
 
 export interface ConnectAppOptions {
+  network?: ProviderNetworkPolicy;
   catalog: CatalogStore;
   providerLoader: IProviderLoader;
+  providerHttpDispatch?: ProviderHttpDispatchOptions;
   runtimeDatabase: RuntimeDatabase;
   transitFiles: ITransitFileService;
   uploadTransitFile?: (request: Request) => Promise<TransitFileUpload>;
   publicOrigin: string;
+  configuredOrigin?: string;
   secretCodec: ISecretCodec;
   adminToken?: string;
   runtimeToken?: string;
+  eventVerifyToken?: string;
+  requireRuntimeAuth?: boolean;
+  /** Which credentials `/mcp` + `/v1` accept; default `runtime_token` (historical behavior). */
+  authMode?: "none" | "runtime_token" | "oauth" | "mixed";
+  /** Inbound OAuth 2.1 authorization server settings; `enabled: false` (default) mounts nothing. */
+  oauth?: OAuthServerSettings;
+  /**
+   * Trust reverse-proxy forwarding headers when keying the OAuth endpoints'
+   * rate-limit buckets. Default `false`; see `OAuthRoutesOptions`.
+   */
+  trustProxyHeaders?: boolean;
   allowedCustomOAuth?: string[];
   verifyRuntimeJwt?: RuntimeJwtVerifier;
   /** Let ChatGPT custom connectors obtain /mcp runtime tokens through OAuth with administrator approval. */
@@ -40,23 +75,59 @@ export interface ConnectAppOptions {
   computeRuntimeAuthConfigured?: boolean;
   compressApiResponses?: boolean;
   serveDocumentation?: boolean;
+  mcpOutputMode?: McpOutputMode;
+  oauthCloseDelaySeconds?: number;
+  oauthResultOrigins?: string[];
+  /** Name and links Connect sends when it registers its own OAuth client with a custom MCP server. */
+  customMcpOAuthClient?: McpOAuthClientMetadata;
 }
 
 export interface ConnectApp {
+  saasCleanup: SaasCleanupService;
+  triggerMaintenance: TriggerMaintenance;
   app: Hono;
   runtimeAuthConfigured: boolean;
 }
 
 export async function createConnectApp(options: ConnectAppOptions): Promise<ConnectApp> {
   if (options.mcpOAuth) assertMcpOAuthConfiguration(options);
+  if (options.mcpOAuth && options.oauth?.enabled) {
+    // Both authorization servers publish /.well-known/oauth-* metadata, so only one can own it.
+    throw new Error("OOMOL_CONNECT_MCP_OAUTH and OOMOL_CONNECT_OAUTH_ENABLED cannot be enabled together.");
+  }
+  const catalog = new CustomMcpCatalog(options.catalog, options.runtimeDatabase.customMcpStore);
+  await catalog.refresh();
+  const providerLoader = new CustomMcpLoader(options.providerLoader, catalog);
+  const network = Object.freeze({
+    allowPrivateNetwork: options.network?.allowPrivateNetwork ?? false,
+    trustedHosts: Object.freeze([...(options.network?.trustedHosts ?? [])]),
+  });
+  const saasClient = new SaasClient();
+  const saasProject = new SaasProjectService({
+    catalog,
+    store: options.runtimeDatabase.saasProjectStore,
+    secretCodec: options.secretCodec,
+    configuredOrigin: options.configuredOrigin,
+    client: saasClient,
+  });
+  const saasOAuth = new SaasOAuthService({
+    projects: saasProject,
+    requests: options.runtimeDatabase.connectionRequestStore,
+    client: saasClient,
+  });
+  const saas = new SaasExecutionService({ projects: saasProject, client: saasClient });
   const marketplace = new MarketplaceService({
-    catalog: options.catalog,
+    catalog,
     store: options.runtimeDatabase.marketplaceStore,
     secretCodec: options.secretCodec,
   });
-  await marketplace.initialize();
+  await withRuntimeExecution(
+    { network, providerHttpDispatch: options.providerHttpDispatch },
+    { operation: "runtime" },
+    () => marketplace.initialize(),
+  );
   const runtimeTokens = new RuntimeTokenService(options.runtimeDatabase.runtimeTokenStore, options.logger);
-  const hasStoredRuntimeTokens = async (): Promise<boolean> => (await runtimeTokens.listTokens()).length > 0;
+  const hasStoredRuntimeTokens = (): Promise<boolean> => options.runtimeDatabase.runtimeTokenStore.hasAny();
   const mcpOAuth = options.mcpOAuth
     ? new McpOAuthService({
         store: options.runtimeDatabase.mcpOAuthStore,
@@ -65,51 +136,119 @@ export async function createConnectApp(options: ConnectAppOptions): Promise<Conn
         allowedRedirectUris: options.mcpOAuthRedirectUris,
       })
     : undefined;
+  const oauthConfig = options.oauth?.enabled
+    ? resolveOAuthServerConfig({
+        issuer: options.oauth.issuer ?? options.publicOrigin,
+        accessTokenTtlSeconds: options.oauth.accessTokenTtlSeconds,
+        refreshTokenTtlSeconds: options.oauth.refreshTokenTtlSeconds,
+        authorizationCodeTtlSeconds: options.oauth.authorizationCodeTtlSeconds,
+        allowDynamicRegistration: options.oauth.allowDynamicRegistration,
+        allowClientIdMetadataDocuments: options.oauth.allowClientIdMetadataDocuments,
+        logger: options.logger,
+      })
+    : undefined;
+  const resolveOAuthToken = oauthConfig
+    ? (token: string) =>
+        resolveOAuthAccessToken(token, {
+          config: oauthConfig,
+          tokens: options.runtimeDatabase.oauthTokenStore,
+          keys: options.runtimeDatabase.oauthSigningKeyStore,
+          clients: options.runtimeDatabase.oauthClientStore,
+          runtimeTokenStore: options.runtimeDatabase.runtimeTokenStore,
+        })
+    : undefined;
   const allowedCustomOAuth = new Set(options.allowedCustomOAuth);
   const isCustomClientConfigAllowed = (service: string): boolean =>
-    allowedCustomOAuth.has("*") || allowedCustomOAuth.has(service);
+    allowedCustomOAuth.has("*") || allowedCustomOAuth.has(service) || catalog.getRecord(service) !== undefined;
   const oauthClientConfigs = new OAuthClientConfigService({
-    catalog: options.catalog,
+    catalog,
     origin: options.publicOrigin,
     store: options.runtimeDatabase.oauthClientConfigStore,
     isCustomClientConfigAvailable: (service) => options.secretCodec.encrypted && isCustomClientConfigAllowed(service),
   });
+  const customMcp = new CustomMcpService({
+    catalog,
+    store: options.runtimeDatabase.customMcpStore,
+    oauthClientConfigs,
+    oauthClientMetadata: options.customMcpOAuthClient,
+    logger: options.logger,
+  });
   const connections = new ConnectionService({
-    catalog: options.catalog,
-    oauthCredentials: new OAuthCredentialRefreshService(oauthClientConfigs, options.providerLoader),
-    providerLoader: options.providerLoader,
+    onConnected: (summary, credential) => customMcp.connectionSaved(summary, credential),
+    providerHttpDispatch: options.providerHttpDispatch,
+    catalog,
+    oauthCredentials: new OAuthCredentialRefreshService(oauthClientConfigs, providerLoader),
+    providerLoader,
     store: options.runtimeDatabase.connectionStore,
     logger: options.logger,
     marketplace,
     onConnectionDeleted: (connectionId) => runtimeTokens.removeConnectionGrants(connectionId),
   });
   const actions = new ActionRunner({
-    catalog: options.catalog,
-    providerLoader: options.providerLoader,
+    network,
+    providerHttpDispatch: options.providerHttpDispatch,
+    catalog,
+    providerLoader,
     connections,
     runs: options.runtimeDatabase.runLogStore,
+    saas,
     transitFiles: options.transitFiles,
     logger: options.logger,
     marketplace,
   });
 
+  const triggers = new TriggerRunner({
+    network,
+    oauthClientConfigs,
+    providerHttpDispatch: options.providerHttpDispatch,
+    catalog,
+    providerLoader,
+    connections,
+    store: options.runtimeDatabase.triggerStore,
+  });
+  const triggerMaintenance = new TriggerMaintenance({
+    network,
+    providerHttpDispatch: options.providerHttpDispatch,
+    store: options.runtimeDatabase.triggerStore,
+    runner: triggers,
+    tokens: options.runtimeDatabase.runtimeTokenStore,
+    runtimePolicy: options.runtimeDatabase.runtimePolicyStore,
+    deploymentPolicy: options.actionPolicy ?? new ExecutionPolicyService(),
+    logger: options.logger,
+  });
   return {
+    triggerMaintenance,
+    saasCleanup: new SaasCleanupService({
+      network,
+      providerHttpDispatch: options.providerHttpDispatch,
+      store: options.runtimeDatabase.saasProjectStore,
+      requests: options.runtimeDatabase.connectionRequestStore,
+      client: saasClient,
+      logger: options.logger,
+    }),
     app: new ConnectServer({
-      catalog: options.catalog,
+      customMcp,
+      actionSearch: { get: () => catalog.getSearchIndex() },
+      network,
+      providerHttpDispatch: options.providerHttpDispatch,
+      catalog,
       publicOrigin: options.publicOrigin,
-      providerLoader: options.providerLoader,
+      providerLoader,
       connections,
       oauthClientConfigs,
       oauthFlow: new OAuthFlowService({
         clientConfigs: oauthClientConfigs,
         connections,
-        providerLoader: options.providerLoader,
+        providerLoader,
         states: options.runtimeDatabase.oauthStateStore,
         requests: options.runtimeDatabase.connectionRequestStore,
         secretCodec: options.secretCodec,
         isCustomClientConfigAllowed,
+        saasOAuth,
       }),
       actions,
+      triggers,
+      triggerMaintenance,
       idempotency: options.runtimeDatabase.idempotencyStore,
       transitFiles: options.transitFiles,
       uploadTransitFile: options.uploadTransitFile,
@@ -117,21 +256,42 @@ export async function createConnectApp(options: ConnectAppOptions): Promise<Conn
       mcpOAuth,
       runtimePolicyStore: options.runtimeDatabase.runtimePolicyStore,
       registerStaticRoutes: options.registerStaticRoutes,
+      eventVerifyToken: options.eventVerifyToken,
+      mcpOutputMode: options.mcpOutputMode,
       auth: {
         adminToken: options.adminToken,
         runtimeToken: options.runtimeToken,
+        requireRuntimeAuth: options.requireRuntimeAuth,
         hasRuntimeTokens: hasStoredRuntimeTokens,
         resolveRuntimeToken: (token) => runtimeTokens.resolveToken(token),
         verifyRuntimeJwt: options.verifyRuntimeJwt,
         mcpResourceMetadataUrl: mcpOAuth?.resourceMetadataUrl,
+        authMode: options.authMode,
+        resolveOAuthToken,
+        oauthChallenge: oauthConfig ? protectedResourceChallenge(oauthConfig) : undefined,
       },
+      oauth: options.oauth,
+      trustProxyHeaders: options.trustProxyHeaders,
+      oauthClients: options.runtimeDatabase.oauthClientStore,
+      oauthCodes: options.runtimeDatabase.oauthCodeStore,
+      oauthTokens: options.runtimeDatabase.oauthTokenStore,
+      oauthKeys: options.runtimeDatabase.oauthSigningKeyStore,
+      runtimeTokenStore: options.runtimeDatabase.runtimeTokenStore,
       actionPolicy: options.actionPolicy,
       logger: options.logger,
       marketplace,
+      saas,
+      saasProject,
+      saasOAuth,
       compressApiResponses: options.compressApiResponses,
       serveDocumentation: options.serveDocumentation,
+      oauthCloseDelaySeconds: options.oauthCloseDelaySeconds,
+      // Validated here as well as where the environment is read, so a host
+      // that passes the option directly gets the same refusal of `*`.
+      oauthResultOrigins: normalizeOAuthResultOrigins(options.oauthResultOrigins ?? []),
     }).createApp(),
     runtimeAuthConfigured:
+      Boolean(options.requireRuntimeAuth) ||
       Boolean(options.runtimeToken) ||
       Boolean(options.verifyRuntimeJwt) ||
       Boolean(mcpOAuth) ||

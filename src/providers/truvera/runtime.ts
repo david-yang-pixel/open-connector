@@ -1,8 +1,8 @@
 import type { CredentialValidationResult, ExecutionContext } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean, optionalRecord, optionalString, requiredRecord } from "../../core/cast.ts";
-import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
+import { ProviderRequestError, providerUserAgent, providerInputError } from "../provider-runtime.ts";
 
 const truveraTestnetApiBaseUrl = "https://api-testnet.truvera.io";
 const truveraProductionApiBaseUrl = "https://api.truvera.io";
@@ -193,7 +193,6 @@ export async function validateTruveraCredential(
       accountId: profile.name || "truvera-api-key",
       displayName: profile.name || "Truvera API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl,
       validationEndpoint: truveraProfilePath,
@@ -320,7 +319,7 @@ function createTruveraError(response: Response, payload: unknown, phase: Truvera
   }
 
   if (phase === "validate" && (response.status === 401 || response.status === 403)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
 
   if (phase === "execute" && (response.status === 401 || response.status === 403)) {

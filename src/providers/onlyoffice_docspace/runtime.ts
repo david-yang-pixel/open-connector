@@ -1,11 +1,16 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { createHash } from "node:crypto";
 import { objectArray, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
 import { assertPublicHttpUrl, isPrivateNetworkAccessAllowed } from "../../core/request.ts";
-import { createProviderTimeout, providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
+import {
+  createProviderTimeout,
+  providerUserAgent,
+  ProviderRequestError,
+  providerInputError,
+} from "../provider-runtime.ts";
 
 export interface OnlyofficeContext {
   apiKey: string;
@@ -23,7 +28,7 @@ export function normalizePortalUrl(
   if (typeof value !== "string" || !value.trim()) throw new ProviderRequestError(400, "portalUrl is required");
   const url = assertPublicHttpUrl(value.trim(), {
     fieldName: "portalUrl",
-    createError: (message) => new ProviderRequestError(400, message),
+    createError: providerInputError,
     allowPrivateNetwork,
   });
   if (url.protocol !== "https:") throw new ProviderRequestError(400, "portalUrl must use HTTPS");
@@ -109,7 +114,6 @@ export async function validateOnlyofficeCredential(
       accountId: createHash("sha256").update(`${context.portalUrl}:${id}`).digest("hex").slice(0, 24),
       displayName: label,
     },
-    grantedScopes: [],
     metadata: { portalUrl: context.portalUrl, apiBaseUrl: context.apiBaseUrl, userId: id },
   };
 }
@@ -202,9 +206,9 @@ function mapError(status: number, payload: unknown, phase: Phase) {
     optionalString(error?.message) ??
     optionalString(root?.message) ??
     `ONLYOFFICE DocSpace request failed with ${status}`;
-  if (phase === "validate" && (status === 401 || status === 403)) return new ProviderRequestError(400, message);
+  if (phase === "validate" && (status === 401 || status === 403)) return providerInputError(message);
   if (status === 401) return new ProviderRequestError(401, message);
-  if ([400, 403, 404, 409, 422].includes(status)) return new ProviderRequestError(400, message);
+  if ([400, 403, 404, 409, 422].includes(status)) return providerInputError(message);
   if (status === 429) return new ProviderRequestError(429, message);
   return new ProviderRequestError(status >= 500 ? 502 : status, message);
 }

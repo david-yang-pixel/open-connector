@@ -1,0 +1,191 @@
+import type { ProviderErrorCode } from "../../core/provider-error-codes.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
+
+import { looseArray, optionalRecord, optionalString } from "../../core/cast.ts";
+import {
+  createProviderTimeout,
+  isAbortLikeError,
+  providerUserAgent,
+  ProviderRequestError,
+  providerInputError,
+  providerResponseError,
+  defaultProviderRequestTimeoutMs,
+} from "../provider-runtime.ts";
+
+export type GoogleQueryValue = string | readonly string[] | undefined;
+
+const defaultService = "googledrive";
+
+export interface GoogleRequestOptions {
+  accessToken: string;
+  fetcher: ProviderFetch;
+  signal?: AbortSignal;
+  method?: string;
+  query?: Record<string, GoogleQueryValue>;
+  body?: unknown;
+  rawBody?: BodyInit;
+  headers?: Record<string, string>;
+  /**
+   * Request timeout as a positive number of milliseconds; defaults to 30 seconds. There is no
+   * "no timeout" value: callers that need longer than the default pass a larger positive number.
+   */
+  timeoutMs?: number;
+  /**
+   * Provider slug used in the fallback error messages this module generates itself.
+   * Defaults to Google Drive so existing callers keep their current wording.
+   */
+  service?: string;
+}
+
+export async function googleJsonRequest<T>(url: string, input: GoogleRequestOptions): Promise<T> {
+  const response = await googleRequest(url, input);
+  return (await response.json()) as T;
+}
+
+export async function googleRequest(url: string, input: GoogleRequestOptions): Promise<Response> {
+  const service = input.service ?? defaultService;
+  const target = new URL(url);
+  for (const [key, value] of Object.entries(input.query ?? {})) {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        target.searchParams.append(key, item);
+      }
+      continue;
+    }
+    if (typeof value === "string") {
+      target.searchParams.set(key, value);
+    }
+  }
+
+  const headers = {
+    authorization: `Bearer ${input.accessToken}`,
+    "user-agent": providerUserAgent,
+    ...(input.headers ?? {}),
+  };
+  const hasJsonBody = input.rawBody == null && input.body !== undefined;
+  const hasRequestBody = input.rawBody != null || hasJsonBody;
+  const method = (input.method ?? (hasRequestBody ? "POST" : "GET")).toUpperCase();
+  if ((method === "GET" || method === "HEAD") && hasRequestBody) {
+    throw providerInputError(`${service} ${method} request must not include a body`);
+  }
+
+  const requestInit: RequestInit = {
+    method,
+    headers:
+      hasJsonBody && !hasContentTypeHeader(headers)
+        ? {
+            ...headers,
+            "content-type": "application/json",
+          }
+        : headers,
+    ...(input.rawBody != null ? { body: input.rawBody } : hasJsonBody ? { body: JSON.stringify(input.body) } : {}),
+  };
+  const timeoutMs = input.timeoutMs ?? defaultProviderRequestTimeoutMs;
+  const timeout = createProviderTimeout(input.signal, timeoutMs);
+  let response: Response;
+  try {
+    response = await input.fetcher(target.toString(), { ...requestInit, signal: timeout.signal });
+  } catch (error) {
+    if (timeout.didTimeout() && isAbortLikeError(error)) {
+      const timeoutSeconds = Math.max(1, Math.ceil(timeoutMs / 1000));
+      const unit = timeoutSeconds === 1 ? "second" : "seconds";
+      throw providerResponseError(`${service} request timed out after ${timeoutSeconds} ${unit}`);
+    }
+    throw error;
+  } finally {
+    timeout.cleanup();
+  }
+
+  await assertGoogleResponse(response, service);
+  return response;
+}
+
+function hasContentTypeHeader(headers: Record<string, string>): boolean {
+  return Object.keys(headers).some((key) => key.toLowerCase() === "content-type");
+}
+
+async function assertGoogleResponse(response: Response, service: string): Promise<void> {
+  if (response.ok) {
+    return;
+  }
+
+  const { message, details, code } = await extractGoogleError(response, service);
+  throw new ProviderRequestError(response.status, message, details, code);
+}
+
+interface GoogleResponseError {
+  message: string;
+  details: unknown;
+  code?: ProviderErrorCode;
+}
+
+async function extractGoogleError(response: Response, service: string): Promise<GoogleResponseError> {
+  const rawText = await response.text().catch(() => "");
+  if (!rawText) {
+    return {
+      message: `${service} request failed with ${response.status}`,
+      details: { status: response.status },
+    };
+  }
+
+  try {
+    const parsed = JSON.parse(rawText) as Record<string, unknown>;
+    const error = optionalRecord(parsed.error);
+    const message = optionalString(error?.message) ?? optionalString(parsed.error_description) ?? rawText;
+    return {
+      message,
+      details: parsed,
+      code: response.status === 403 ? driveRateLimitCode(error) : undefined,
+    };
+  } catch {
+    return {
+      message: rawText,
+      details: rawText,
+    };
+  }
+}
+
+/**
+ * Google answers both a genuine permission failure and a rate limit with HTTP 403 --
+ * the body's `reason` is the only way to tell them apart. The classic Discovery-API
+ * shape carries it in `error.errors[].reason` (the same place Gmail's runtime reads
+ * it); some callers instead see the newer gRPC-transcoded shape, where `error.status`
+ * is `RESOURCE_EXHAUSTED` outright, or `PERMISSION_DENIED` with a quota reason inside
+ * `error.details[]`. Either shape maps to `rate_limited` so OC answers 429 the way
+ * every other provider's rate limit does; anything else is left undefined so the
+ * caller falls back to the default `authorization_failed` for a 403.
+ */
+const driveQuotaReasons = new Set([
+  "ratelimitexceeded",
+  "userratelimitexceeded",
+  "dailylimitexceeded",
+  "quotaexceeded",
+]);
+
+function isDriveQuotaReason(reason: string | undefined): boolean {
+  return driveQuotaReasons.has((reason ?? "").toLowerCase().replace(/[^a-z]/g, ""));
+}
+
+function driveRateLimitCode(error: Record<string, unknown> | undefined): ProviderErrorCode | undefined {
+  if (!error) {
+    return undefined;
+  }
+
+  const classicReasons = looseArray(error.errors).map((entry) => optionalString(optionalRecord(entry)?.reason));
+  if (classicReasons.some(isDriveQuotaReason)) {
+    return "rate_limited";
+  }
+
+  const status = optionalString(error.status);
+  if (status === "RESOURCE_EXHAUSTED") {
+    return "rate_limited";
+  }
+  if (status === "PERMISSION_DENIED") {
+    const detailReasons = looseArray(error.details).map((entry) => optionalString(optionalRecord(entry)?.reason));
+    if (detailReasons.some(isDriveQuotaReason)) {
+      return "rate_limited";
+    }
+  }
+
+  return undefined;
+}

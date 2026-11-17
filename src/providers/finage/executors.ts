@@ -1,6 +1,6 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -11,9 +11,9 @@ import {
   optionalString,
   stringArray,
 } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   providerResponseError,
   providerUserAgent,
   ProviderRequestError,
@@ -81,7 +81,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "finage",
         displayName: "Finage API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         validationEndpoint: "/last/stock/AAPL",
         apiBaseUrl: finageApiBaseUrl,

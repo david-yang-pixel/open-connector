@@ -1,4 +1,4 @@
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import {
   objectArray,
@@ -83,7 +83,6 @@ export async function validateHumanitixCredential(
   options: { fetcher: typeof fetch; signal?: AbortSignal },
 ): Promise<{
   profile: { accountId: string; displayName: string };
-  grantedScopes: string[];
   metadata: Record<string, unknown>;
 }> {
   const payload = await requestHumanitix({
@@ -101,7 +100,6 @@ export async function validateHumanitixCredential(
       accountId: "humanitix:public-api-key",
       displayName: "Humanitix Public API Key",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: humanitixApiBaseUrl,
       validationEndpoint: "/events",

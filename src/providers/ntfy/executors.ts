@@ -1,14 +1,11 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 
 const service = "ntfy";
 const ntfyApiBaseUrl = "https://ntfy.sh";
@@ -75,7 +72,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: username,
         displayName: username ? `${username} (ntfy)` : "ntfy Access Token",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: ntfyApiBaseUrl,
         validationEndpoint: ntfyAccountPath,

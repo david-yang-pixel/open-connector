@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean, optionalRecord, optionalString } from "../../core/cast.ts";
 import { ProviderRequestError, providerUserAgent, runProviderRequest } from "../provider-runtime.ts";
@@ -110,7 +110,6 @@ export async function validateU301Credential(
       accountId: workspaceId,
       displayName: "U301 API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       workspaceId,
       validationEndpoint: u301DomainsPath,

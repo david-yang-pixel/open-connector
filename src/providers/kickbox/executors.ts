@@ -1,16 +1,12 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderRequestContext } from "../provider-runtime.ts";
 
 import { createHash } from "node:crypto";
 import { optionalBoolean, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  isAbortLikeError,
-  ProviderRequestError,
-  providerUserAgent,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { isAbortLikeError, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const service = "kickbox";
 const kickboxApiBaseUrl = "https://api.kickbox.com";
@@ -60,7 +56,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: buildKickboxProviderAccountId(input.apiKey),
         displayName: email,
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl: kickboxApiBaseUrl,
         validationEndpoint: "/v2/verify",
@@ -78,7 +73,7 @@ export const credentialValidators: CredentialValidators = {
 async function requestKickboxVerify(input: {
   apiKey: string;
   email: string;
-  context: Pick<ApiKeyProviderContext, "fetcher" | "signal">;
+  context: ProviderRequestContext;
   phase: KickboxRequestPhase;
 }): Promise<unknown> {
   return requestKickboxJson({
@@ -95,7 +90,7 @@ async function requestKickboxVerify(input: {
 
 async function requestKickboxDisposable(input: {
   domainOrEmail: string;
-  context: Pick<ApiKeyProviderContext, "fetcher" | "signal">;
+  context: ProviderRequestContext;
   phase: KickboxRequestPhase;
 }): Promise<unknown> {
   return requestKickboxJson({
@@ -109,7 +104,7 @@ async function requestKickboxDisposable(input: {
 async function requestKickboxJson(input: {
   baseUrl: string;
   path: string;
-  context: Pick<ApiKeyProviderContext, "fetcher" | "signal">;
+  context: ProviderRequestContext;
   phase: KickboxRequestPhase;
   apiKey?: string;
   query?: Record<string, string | undefined>;

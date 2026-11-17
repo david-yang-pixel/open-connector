@@ -19,6 +19,7 @@ function pending(owner = "admin"): PendingConnectionRequest {
     owner,
     service: "example",
     connectionName: crypto.randomUUID(),
+    retirementGeneration: crypto.randomUUID(),
     createdAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 60_000).toISOString(),
   };

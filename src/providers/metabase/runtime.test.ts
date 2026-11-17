@@ -1,7 +1,7 @@
 import type { ExecutionContext, ResolvedCredential } from "../../core/types.ts";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { setPrivateNetworkAccessAllowed } from "../../core/request.ts";
+import { withProviderNetworkPolicy } from "../../core/provider-network-policy.ts";
 import { validateActionInput } from "../../core/validation.ts";
 import { metabaseActions } from "./actions.ts";
 import { credentialValidators, executors, proxy } from "./executors.ts";
@@ -18,7 +18,6 @@ const context: ExecutionContext = { getCredential: async () => credential };
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  setPrivateNetworkAccessAllowed(false);
 });
 
 interface RestCase {
@@ -98,7 +97,12 @@ describe("Metabase REST compatibility", () => {
         calls.push({ url: String(url), init });
         return Response.json(payload);
       });
-      expect(validateActionInput(metabaseActions.find((action) => action.name === name)!, input).valid).toBe(true);
+      expect(
+        validateActionInput(
+          metabaseActions.find((action) => action.name === name)!,
+          input,
+        ).valid,
+      ).toBe(true);
       const result = await executors[`metabase.${name}`]!(input, context);
       const isList = name.startsWith("list_") || name === "search";
       const expectedValue = isList && !Array.isArray(payload) ? (payload as { data: unknown }).data : payload;
@@ -127,7 +131,6 @@ describe("Metabase REST compatibility", () => {
     expect(calls).toEqual(["https://metabase.example.com/bi/api/user/current"]);
     expect(output).toMatchObject({
       profile: { accountId: "9", displayName: "Test" },
-      grantedScopes: [],
       metadata: { apiBaseUrl: "https://metabase.example.com/bi/api", validationEndpoint: "/user/current" },
     });
   });
@@ -165,7 +168,7 @@ describe("Metabase REST compatibility", () => {
           : { tools: [] };
       return Response.json({ jsonrpc: "2.0", id: request.id, result });
     });
-    await expect(executors["metabase.list_mcp_tools"]!({}, { getCredential })).resolves.toMatchObject({
+    await expect(executors["metabase.list_tools"]!({}, { getCredential })).resolves.toMatchObject({
       ok: true,
       output: { tools: [] },
     });
@@ -181,24 +184,30 @@ describe("Metabase REST compatibility", () => {
       ok: true,
       output: { user: { id: 1 } },
     });
-    await expect(executors["metabase.list_mcp_tools"]!({}, context)).resolves.toMatchObject({ ok: false });
+    await expect(executors["metabase.list_tools"]!({}, context)).resolves.toMatchObject({ ok: false });
   });
 
   it("retains HTTPS public-only URL policy even with the deployment private-network flag enabled", () => {
-    setPrivateNetworkAccessAllowed(true);
-    for (const url of ["http://example.com", "https://127.0.0.1", "https://10.0.0.1", "https://user:pass@example.com"])
-      expect(() => normalizeMetabaseUrls(url)).toThrow();
-    for (const url of ["https://example.com/bi", "https://example.com/bi/api/", "example.com/bi"])
-      expect(normalizeMetabaseUrls(url)).toEqual({
-        instanceUrl: "https://example.com/bi",
-        apiBaseUrl: "https://example.com/bi/api",
-      });
+    return withProviderNetworkPolicy({ allowPrivateNetwork: true }, async () => {
+      for (const url of [
+        "http://example.com",
+        "https://127.0.0.1",
+        "https://10.0.0.1",
+        "https://user:pass@example.com",
+      ])
+        expect(() => normalizeMetabaseUrls(url)).toThrow();
+      for (const url of ["https://example.com/bi", "https://example.com/bi/api/", "example.com/bi"])
+        expect(normalizeMetabaseUrls(url)).toEqual({
+          instanceUrl: "https://example.com/bi",
+          apiBaseUrl: "https://example.com/bi/api",
+        });
+    });
   });
 
   it("rejects missing credentials for both REST and MCP before egress", async () => {
     const fetcher = vi.fn();
     vi.stubGlobal("fetch", fetcher);
-    for (const name of ["get_current_user", "list_mcp_tools"])
+    for (const name of ["get_current_user", "list_tools"])
       await expect(executors[`metabase.${name}`]!({}, { getCredential: async () => undefined })).resolves.toMatchObject(
         { ok: false },
       );

@@ -16,7 +16,9 @@
     "showMore": "さらに表示",
     "showing": "{{shown}} / {{total}} を表示中",
     "success": "成功",
-    "unavailable": "利用不可"
+    "unavailable": "利用不可",
+    "cancel": "キャンセル",
+    "undo": "元に戻す"
   },
   "brand": {
     "subtitle": "ローカルランタイムコンソール",
@@ -36,10 +38,11 @@
     "providers": "プロバイダー",
     "marketplace": "Marketplace",
     "oauthApps": "OAuth Apps",
+    "oauthClients": "OAuthクライアント",
     "actions": "アクション",
     "runs": "実行履歴",
     "access": "API Key",
-    "docs": "ドキュメント"
+    "docs": "接続ガイド"
   },
   "shell": {
     "invalidUnlockToken": "有効な管理者 token を入力してコンソールをロック解除してください。",
@@ -61,9 +64,14 @@
       "providers": {
         "title": "プロバイダー"
       },
-      "marketplace": { "title": "Marketplace" },
+      "marketplace": {
+        "title": "Marketplace"
+      },
       "oauthApps": {
         "title": "OAuth Apps"
+      },
+      "oauthClients": {
+        "title": "OAuthクライアント"
       },
       "actions": {
         "title": "アクション"
@@ -75,12 +83,16 @@
         "title": "API Key"
       },
       "resources": {
-        "title": "リソース"
+        "title": "接続ガイド"
       },
       "authorize": {
         "title": "クライアントの承認"
       }
-    }
+    },
+    "settings": "設定",
+    "settingsDescription": "言語、外観、接続、ランタイムを管理します。",
+    "oomolKeyDescription": "対応サービスと割引を確認し、キーの接続や管理を選択できます。",
+    "notifications": "通知"
   },
   "unlock": {
     "token": "管理者 token",
@@ -114,10 +126,26 @@
     "noRecentCallsDescription": "アクションを実行するとプロバイダー別の呼び出し数が表示されます。"
   },
   "marketplace": {
+    "oneKey": {
+      "headline": "1つのキーでAI・データサービスを利用",
+      "description": "公式OOMOLキーで、このカタログに対応するサービスを利用できます。サービスごとの登録や設定は不要で、利用量に応じて課金されます。",
+      "getKey": "OOMOL Keyを取得",
+      "haveKey": "キーをお持ちですか？接続する",
+      "benefitsLabel": "OOMOL Keyの利用方法",
+      "benefitSetup": "サービスごとのAPIキー設定が不要",
+      "benefitChoice": "各サービスのキーも引き続き利用可能",
+      "benefitPricing": "一部モデルは割引あり、従量課金",
+      "connectTitle": "OOMOL Keyを接続",
+      "connectDescription": "公式OOMOLキーを貼り付け、対応サービスを確認・管理します。",
+      "keyLabel": "OOMOL Key",
+      "keyHelp": "OOMOLコンソールからキーをコピーしてください。接続後、対応サービスを管理できます。",
+      "advanced": "詳細設定：Marketplaceソース",
+      "keyPlaceholder": "公式OOMOL APIキーを貼り付け"
+    },
     "default": {
       "browseDescription": "利用可能な機能を見る",
-      "title": "公式アプリ",
-      "description": "OOMOL Marketplace が提供するサービスです。公式 API キーを接続すると利用できます。",
+      "title": "OOMOL Keyに対応するサービスと機能",
+      "description": "このバージョンに対応する操作のみ表示します。提供元のすべての機能に対応するとは限りません。",
       "failed": "公式カタログを読み込めませんでした。再試行してください。",
       "retry": "再試行",
       "loading": "公式アプリを読み込み中…",
@@ -133,7 +161,10 @@
         "kling": "30%オフ",
         "minimax": "20%オフ",
         "seedance": "10%オフ"
-      }
+      },
+      "supportedActions": "対応する操作：{{count}}件",
+      "connected": "接続済み",
+      "providerDetails": "サービスの詳細"
     },
     "summary": {
       "title": "Connector Marketplace",
@@ -141,8 +172,16 @@
       "providers": "プロバイダー",
       "actions": "アクション"
     },
-    "status": { "disabled": "無効", "available": "利用可能", "unavailable": "利用不可", "auth_error": "認証エラー" },
-    "pricing": { "free": "無料", "metered": "従量課金" },
+    "status": {
+      "disabled": "無効",
+      "available": "利用可能",
+      "unavailable": "利用不可",
+      "auth_error": "認証エラー"
+    },
+    "pricing": {
+      "free": "無料",
+      "metered": "従量課金"
+    },
     "configuration": {
       "reconnect": "この接続先は利用できません。上の設定を確認し、再検証してください。",
       "title": "接続設定",
@@ -184,24 +223,85 @@
     }
   },
   "providers": {
+    "managedEmpty": {
+      "title": "設定済みの接続はありません",
+      "description": "上のOOMOL Keyを接続するか、接続を探すからサービスの認証情報を設定してください。"
+    },
+    "hostedAccess": {
+      "connectedCustom": "管理対象のソースが接続されました。設定済みの接続でサービスを確認できます。",
+      "intro": "1つのOOMOLキーで対応するAI・データサービスを利用できます。各サービスのキーも使用可能です。",
+      "connected": "内蔵アカウントが接続されました。設定済みの接続でサービスを確認できます。",
+      "connect": "OOMOL Keyを接続",
+      "manage": "OOMOL Keyを管理",
+      "close": "設定を閉じる",
+      "features": "対応サービス",
+      "hideFeatures": "機能を閉じる",
+      "removeKey": "キーを削除",
+      "removeHelp": "保存したキーを削除し、すべての内蔵アカウントを無効にしますか？個別に設定した認証情報は保持されます。",
+      "confirmRemove": "キーの削除を確認",
+      "hide": "OOMOL Keyの紹介を非表示",
+      "restore": "OOMOL Key",
+      "hiddenNotice": "右上の設定 ⚙️ → OOMOL Keyから再表示できます。",
+      "hiddenTitle": "OOMOL Keyを非表示にしました"
+    },
+    "managedSources": {
+      "label": "接続元",
+      "all": "すべて",
+      "builtIn": "内蔵アカウント",
+      "ownKey": "自分の認証情報"
+    },
+    "oneKey": {
+      "title": "OOMOL Keyで利用",
+      "description": "サービスごとのAPIキーを設定せず、1つのOOMOLキーで{{name}}にアクセスできます。",
+      "alternative": "下でサービス提供元のキーを直接設定することもできます。",
+      "connect": "OOMOL Keyを接続",
+      "available": "OOMOL Key対応",
+      "builtIn": "内蔵アカウント",
+      "connectedTitle": "内蔵アカウント",
+      "connectedDescription": "{{name}}の内蔵アカウントでこのサービスを利用できます。"
+    },
     "catalogTitle": "プロバイダー",
     "viewLabel": "プロバイダー表示",
-    "views": { "manage": "接続済み", "discover": "アプリを探す" },
+    "views": {
+      "manage": "設定済みの接続",
+      "discover": "接続を探す"
+    },
     "discovery": {
       "browseByTask": "目的から探す",
       "explore": "アプリを見る",
       "scenarios": {
-        "ai": { "title": "AI とエージェント", "description": "モデル、エージェント、検索、メディア生成" },
-        "crossBorderEcommerce": { "title": "EC 運用", "description": "ストア、注文、フルフィルメント、市場データ" },
-        "communication": { "title": "チーム連携", "description": "メッセージ、メール、会議、通知" },
-        "docs": {
-          "title": "ドキュメントと知識",
-          "description": "ドキュメント、ナレッジベース、ドライブ、スプレッドシート"
+        "ai": {
+          "title": "AI とエージェント",
+          "description": "モデル、エージェント、検索、メディア生成"
         },
-        "productivity": { "title": "プロジェクトと生産性", "description": "プロジェクト、タスク、予定、自動化" },
-        "marketing": { "title": "マーケティングと成長", "description": "広告、コンテンツ、リード、成長データ" },
-        "dataStorage": { "title": "データと分析", "description": "データウェアハウス、データベース、BI、ストレージ" },
-        "developer": { "title": "開発とクラウド", "description": "コード、デプロイ、クラウド、オブザーバビリティ" }
+        "investment": {
+          "title": "投資と取引",
+          "description": "株式、暗号資産、市場データ、保有資産、取引履歴"
+        },
+        "crossBorderEcommerce": {
+          "title": "EC 運用",
+          "description": "ストア、注文、フルフィルメント、市場データ"
+        },
+        "communication": {
+          "title": "コラボレーションと知識",
+          "description": "メッセージ、メール、会議、文書、ドライブ、ナレッジベース"
+        },
+        "productivity": {
+          "title": "プロジェクトと生産性",
+          "description": "プロジェクト、タスク、予定、自動化"
+        },
+        "marketing": {
+          "title": "マーケティングと成長",
+          "description": "広告、コンテンツ、リード、成長データ"
+        },
+        "dataStorage": {
+          "title": "データと分析",
+          "description": "データウェアハウス、データベース、BI、ストレージ"
+        },
+        "developer": {
+          "title": "開発とクラウド",
+          "description": "コード、デプロイ、クラウド、オブザーバビリティ"
+        }
       }
     },
     "brandNotice": "第三者の名称、ロゴ、および商標は各権利者に帰属し、対応するプロバイダーを識別する目的でのみ表示されています。本プロジェクトはこれらの権利を主張しません。本プロジェクトを再配布または商用利用する場合、利用者の責任で該当するブランドガイドラインを確認し、用途に必要な許可を取得してください。",
@@ -210,6 +310,8 @@
     "filters": {
       "all": "すべて",
       "connected": "接続済み",
+      "oneKey": "OOMOL Key対応",
+      "noSetup": "設定不要",
       "notConnected": "未接続",
       "oauthNeedsConfig": "OAuth 設定が必要"
     },
@@ -290,6 +392,8 @@
       "noAuth": "認証不要"
     },
     "connectionMessages": {
+      "disconnectNotice": "「{{name}}」を切断しました",
+      "cloudDisconnectNotice": "クラウドのアカウントはバックグラウンドで削除されます。",
       "noAuth": "このプロバイダーはローカル認証情報なしで実行できます。",
       "needsOAuthClient": "{{name}} を接続するには、先にローカル OAuth client を設定してください。",
       "manualOAuthClient": "カスタム OAuth App で {{name}} に接続します。",
@@ -345,13 +449,21 @@
       "callbackUrl": "Callback URL",
       "clientId": "Client ID",
       "clientSecret": "Client Secret",
-      "storedSecretHint": "保存済みの secret は表示されません。変更を保存するときは再入力してください。",
+      "storedSecretHint": "空欄の場合は保存済みのシークレットを保持します。変更するには新しい値を入力してください。",
+      "clearSecret": "保存時に保存済みの {{name}} を削除する",
       "saving": "OAuth client を保存中...",
       "saved": "OAuth client を保存しました。",
       "failed": "OAuth client の保存に失敗しました。",
       "resetting": "OAuth client をリセット中...",
       "reset": "OAuth client をリセットしました。",
-      "resetFailed": "OAuth client のリセットに失敗しました。"
+      "resetFailed": "OAuth client のリセットに失敗しました。",
+      "useDefaultScopes": "既定の権限を使用",
+      "scopeLabel": "認可スコープ",
+      "emptyScopes": "接続に必要な基本権限のみを要求します。",
+      "removeScope": "{{scope}} を削除",
+      "scopePlaceholder": "scope を追加",
+      "additionalScopes": "追加の権限",
+      "advancedScopes": "詳細設定"
     },
     "execution": {
       "executable": "実行可能",
@@ -377,6 +489,75 @@
     "dialog": {
       "configureTitle": "{{name}} OAuth App を設定",
       "editTitle": "{{name}} OAuth App を編集"
+    }
+  },
+  "oauthClients": {
+    "title": "OAuthクライアント",
+    "description": "OAuth 2.1でMCPエンドポイントに接続するクライアントを管理します。",
+    "newClient": "新規クライアント",
+    "emptyTitle": "OAuthクライアントがありません",
+    "emptyDescription": "クライアントを登録すると、MCPクライアントがOAuthで接続できるようになります。",
+    "clientName": "クライアント名",
+    "clientId": "クライアントID",
+    "registration": "登録方式",
+    "authMethod": "トークンエンドポイント認証",
+    "redirectUris": "リダイレクトURI",
+    "redirectUrisHint": "1行に1つのURI。HTTPS、またはループバックのHTTPのみ。",
+    "scopes": "スコープ",
+    "created": "作成",
+    "confidential": "機密",
+    "public": "公開",
+    "registrationType": {
+      "manual": "手動",
+      "dcr": "動的 (DCR)",
+      "cimd": "メタデータ (CIMD)"
+    },
+    "authMethodValue": {
+      "none": "公開 (なし)",
+      "client_secret_basic": "Basic",
+      "client_secret_post": "ボディ送信"
+    },
+    "edit": "編集",
+    "rotateSecret": "シークレットをローテーション",
+    "delete": "削除",
+    "save": "保存",
+    "create": "クライアントを作成",
+    "createDialog": {
+      "title": "新しいOAuthクライアント",
+      "description": "OAuth 2.1認証用のクライアントを登録します。"
+    },
+    "editDialog": {
+      "title": "{{name}}を編集",
+      "description": "クライアント名、リダイレクトURI、スコープを更新します。"
+    },
+    "deleteDialog": {
+      "title": "{{name}}を削除",
+      "description": "このクライアントに発行されたすべてのトークンが失効し、元に戻せません。",
+      "confirm": "クライアントを削除"
+    },
+    "secret": {
+      "title": "{{name}}のクライアントシークレット",
+      "description": "今すぐこのシークレットをコピーしてください。",
+      "warning": "このシークレットは一度しか表示されず、後から取得できません。",
+      "copy": "コピー",
+      "copied": "コピーしました",
+      "done": "完了"
+    },
+    "toasts": {
+      "created": "クライアントを作成しました。",
+      "updated": "クライアントを更新しました。",
+      "rotated": "シークレットをローテーションしました。",
+      "deleted": "クライアントを削除しました。",
+      "saveFailed": "クライアントを保存できませんでした。",
+      "rotateFailed": "シークレットをローテーションできませんでした。",
+      "deleteFailed": "クライアントを削除できませんでした。"
+    },
+    "errors": {
+      "nameRequired": "クライアント名は必須です。",
+      "redirectUriRequired": "リダイレクトURIが少なくとも1つ必要です。",
+      "redirectUriInvalid": "リダイレクトURIは絶対HTTPS URL、またはループバックのHTTPである必要があります。",
+      "scopeInvalid": "サポートされていないスコープが選択されています。",
+      "loadFailed": "OAuthクライアントを読み込めませんでした。"
     }
   },
   "actions": {
@@ -412,7 +593,10 @@
     "running": "実行中",
     "runningAction": "アクションを実行中...",
     "actionFailed": "アクションに失敗しました。",
-    "loadingDetails": "アクションの詳細を読み込み中..."
+    "loadingDetails": "アクションの詳細を読み込み中...",
+    "useFromClient": "クライアントから利用",
+    "clientExampleHelp": "ゲートウェイのサンプルをコピーできます。複数のアカウントがある場合は接続を選んでください。",
+    "clientGuide": "接続ガイド"
   },
   "runs": {
     "noRunsTitle": "実行履歴はまだありません",
@@ -706,6 +890,67 @@
     "openapi": {
       "title": "OpenAPI JSON",
       "description": "生成された spec を script や tool importer で使用します。"
+    },
+    "onboarding": {
+      "eyebrow": "ゲートウェイの準備ができました。クライアントを接続しましょう。",
+      "title": "アプリやAgentからゲートウェイを利用する",
+      "description": "自分のゲートウェイに接続する方法を選び、最初のActionを実行してから、接続済みのサービスを利用しましょう。",
+      "stepAddress": "アドレスを確認",
+      "stepClient": "接続方法を選択",
+      "stepAction": "最初のActionを実行",
+      "prepare": "接続情報を確認",
+      "prepareHelp": "アドレスを入力すると、下のすべてのサンプルに反映されます。",
+      "gatewayUrl": "ゲートウェイのベースURL",
+      "gatewayHelp": "クライアントからアクセスできるアドレスを指定してください。/v1や/mcpは不要です。",
+      "urlError": "認証情報、クエリ、フラグメントを含まない完全なHTTPまたはHTTPSのURLを入力してください。",
+      "authLabel": "ランタイム認証",
+      "tokenAuth": "Runtime Tokenを使用",
+      "oauthAuth": "OAuth 2.1",
+      "noAuth": "認証は無効",
+      "oauthHelp": "MCPクライアントはOAuth 2.1認可サーバーを自動的に検出します。必要に応じて動的クライアント登録も利用できます。",
+      "oauthPkceNote": "PKCE S256は必須で、authorizeリクエストとtokenリクエストにはresourceパラメーター（MCPリソースURI）を送信する必要があります。",
+      "oauthDiscovery": "OAuth 2.1ディスカバリーエンドポイント",
+      "oauthCliSdkNote": "OAuth 2.1 は MCP クライアントに適用されます。以下の CLI と SDK の例は Runtime Token で認証しますが、OAuth 専用のゲートウェイでは拒否されます。これらの例ではゲートウェイを mixed モードにするか、OAuth アクセストークンを指定してください。",
+      "tokenHelp": "トークンを作成し、<RUNTIME_TOKEN>を置き換えてください。このページではトークンを保存しません。",
+      "createToken": "Runtime Tokenを作成",
+      "tokenDifferenceTitle": "どのキーを使いますか？",
+      "tokenDifference": "Runtime Tokenはゲートウェイへのアクセス用、OOMOL Keyはホスト型サービスの有効化用です。サービスの認証情報はゲートウェイに保存されます。",
+      "localhostHelp": "localhostはクライアントの端末を指します。ゲートウェイが別のサーバーにある場合は、そのサーバーのアドレスを指定してください。",
+      "clientTitle": "ゲートウェイの利用方法を選択",
+      "clientHelp": "どの方法でも同じActionを検索・実行できます。利用するクライアントに合わせて選んでください。",
+      "mcpAudience": "Agentクライアント",
+      "cliAudience": "ターミナル・スクリプト",
+      "sdkAudience": "アプリのコード",
+      "mcpTitle": "Agentからゲートウェイを利用",
+      "mcpHelp": "リモートHTTPサーバーとAuthorizationヘッダーに対応するMCPクライアントを使用してください。",
+      "mcpConfigure": "設定をクライアントのMCPサーバー設定にコピーし、認証が有効ならトークンを置き換えてください。",
+      "mcpDiscover": "search_actionsで検索し、get_action_guideで操作のパラメーターを確認します。",
+      "mcpExecute": "右の引数でexecute_actionを試します。アカウントの選択にはlist_connectionsを使えます。",
+      "cliTitle": "ターミナルからActionを実行",
+      "cliHelp": "oo connectorは自分のゲートウェイを使用します。これらのコマンドにOOMOLへのログインは不要です。",
+      "cliInstall": "コマンドを実行する端末にooをインストールします。",
+      "cliConfigure": "同じターミナルで環境変数を設定します。保存済みの接続やホスト型キーより優先されます。",
+      "cliExecute": "Actionを検索し、スキーマを確認してJSONで実行します。",
+      "sdkTitle": "アプリのコードから呼び出す",
+      "sdkHelp": "自分のゲートウェイにはOpenConnectorを使用します。認証情報とサービスへのリクエストはゲートウェイが管理します。",
+      "sdkInstall": "Node.jsまたはTypeScriptプロジェクトにSDKをインストールします。",
+      "sdkConfigure": "認証が有効なら、アプリの環境にOOMOL_CONNECT_RUNTIME_TOKENを設定します。",
+      "sdkExecute": "接続を確認し、カタログを読み取り、同じActionをコードから実行します。",
+      "install": "クライアントをインストール",
+      "configure": "ゲートウェイに接続",
+      "firstAction": "hackernews.get_top_storiesを試す",
+      "copy": "コードをコピー",
+      "copied": "コピーしました",
+      "fullGuide": "完全なガイドを読む",
+      "platform": "クライアントのOS",
+      "tokenEnv": "アプリ環境のランタイムトークン",
+      "nextTitle": "次は自分の業務で使いましょう",
+      "nextHelp": "Hacker Newsにはサービスの認証情報が不要です。成功後は接続済みサービスを選びましょう。各ActionにCLIとSDKのサンプルがあります。",
+      "browseActions": "Actionを探す",
+      "actionDetails": "このActionを見る",
+      "moreTitle": "プロトコルとAPIの参考資料",
+      "sdkRunHelp": "上のコードをclient.mjsに保存し、同じターミナルから実行してください。",
+      "runExample": "サンプルを実行"
     }
   },
   "authorize": {
@@ -725,12 +970,112 @@
     "failed": "承認リクエストを完了できませんでした。",
     "revokeHint": "このトークンは API Key ページに表示され、いつでも権限の変更や取り消しができます。"
   },
-  "hostedPromo": {
-    "title": "Open Connect へようこそ",
-    "headline": "1つのキーで、AI 創作を始めよう",
-    "description": "Kling、Seedance、MiniMax などのモデルで画像・動画を生成。",
-    "offer": "一部モデルは最大30%オフ",
-    "cta": "API キーを取得",
-    "dismiss": "閉じて今後表示しない"
+  "saas": {
+    "authorizationSettings": "認可設定",
+    "updateKey": "キーを更新",
+    "keyStored": "プロジェクトキーは暗号化して保存されています。",
+    "manageProject": "プロジェクトの管理",
+    "errors": {
+      "title": "操作を完了できませんでした",
+      "encryption": "OOMOL_CONNECT_ENCRYPTION_KEY を設定し、Connect を再起動してください。以後も同じ暗号化キーを使用してください。",
+      "origin": "OOMOL_CONNECT_ORIGIN をブラウザーのコンソールのアドレスに設定して再起動してください。プロトコル、ホスト、ポートを一致させてください。",
+      "blocked": "クラウドのアドレスがブロックされました。Fake-IP と DNS の設定を確認し、公開 IP に解決してください。",
+      "dns": "クラウドの名前解決に失敗しました。Connect の DNS 設定を確認してください。",
+      "network": "クラウドに接続できません。ネットワーク、プロキシ、TLS 証明書を確認してください。",
+      "redirect": "キーを保護するためリダイレクトを拒否しました。クラウドのアドレスを確認してください。",
+      "json": "有効な JSON が返されませんでした。API、プロキシ、ログインページを確認してください。",
+      "size": "応答がサイズ制限を超えました。クラウドのログを確認してください。",
+      "timeout": "クラウドへの接続がタイムアウトしました。ネットワークを確認してください。",
+      "key": "プロジェクトキーが無効か権限がありません。Marketplace キーではなくプロジェクトの API キーを使用してください。",
+      "protocol": "API の応答形式に互換性がありません。クラウドと Connect のバージョンを確認してください。",
+      "notFound": "クラウドのリソースが見つかりません。設定と API のデプロイを確認してください。",
+      "inUse": "プロジェクトは使用中です。既定の認可方法を切り替え、接続を削除し、保留中の処理を完了してください。",
+      "mismatch": "プロジェクトまたは認可設定が変わりました。再読み込みして選択してください。",
+      "rateLimit": "リクエストが多すぎます。後でもう一度お試しください。",
+      "configuration": "プロジェクトキー、暗号化設定、コンソールのアドレスを確認してください。",
+      "scopes": "OAuth の権限が不足しています。クラウドのスコープを更新してください。",
+      "input": "入力が無効です。キーまたは選択した設定を確認してください。",
+      "session": "セッションが切れました。コンソールに再度ログインしてください。",
+      "unknown": "操作を完了できません。再試行し、解決しない場合は Connect のログを確認してください。"
+    },
+    "configurationId": "設定 ID",
+    "configurationDetails": "設定の詳細",
+    "settingsDescription": "新しいアカウントの認可と操作を行う場所を選択します。",
+    "settingsTitle": "{{name}} の認可設定",
+    "openProjects": "クラウドプロジェクトを開く",
+    "project": "OOMOL クラウド認可",
+    "projectDescription": "ローカルで OAuth アプリを設定せずに、OOMOL クラウド経由で Gmail などの外部アカウントを接続できます。接続後の操作はクラウドで実行されます。",
+    "remoteNotice": "操作の入力と結果は OOMOL クラウドを経由します。呼び出しでプロジェクトのクレジットを消費する場合があります。ここでは利用額の上限は設定されません。",
+    "projectId": "プロジェクト ID",
+    "projectKey": "プロジェクト API キー",
+    "keyHint": "OOMOL クラウドプロジェクトの API キーを入力してください。Marketplace キーは使用できません。保存済みのキーは表示されません。変更する場合は新しいキーを入力してください。",
+    "cleanup": "クリーンアップ：{{pending}} 件待機中 · {{manual}} 件要確認",
+    "paused": "クリーンアップは停止中です。プロジェクトキーを更新すると再開します。",
+    "save": "プロジェクトを保存",
+    "saving": "保存中…",
+    "saved": "保存しました。",
+    "failed": "操作に失敗しました。再試行してください。",
+    "remove": "プロジェクト設定を削除",
+    "removed": "プロジェクト設定を削除しました。",
+    "removeHint": "先にサービスの既定の接続元をローカルに戻し、SaaS 接続を削除して、保留中の認可とクリーンアップを処理してください。この設定の削除では SaaS プロジェクト自体は削除されません。",
+    "confirmRemove": "削除を確認",
+    "defaultSource": "認可方法",
+    "local": "ローカル OAuth アプリ",
+    "remote": "OOMOL クラウド",
+    "sourceHint": "新しい接続にのみ適用されます。既存の接続は再接続時も元の接続元を使用します。",
+    "loading": "読み込み中…",
+    "loadFailed": "読み込み失敗",
+    "configUnavailable": "利用不可",
+    "configUnavailableHint": "保存されたクラウド設定は現在利用できません。クラウドプロジェクトとプロバイダー設定を確認して再確認するか、別の認証方法を選択してください。",
+    "noConfigs": "互換性のあるクラウド設定がありません。まずクラウドプロジェクトと対応するプロバイダー設定を構成してください。",
+    "saveSource": "接続元を保存",
+    "capabilities": "互換操作 {{count}} 件",
+    "proxyYes": "プロキシ対応",
+    "proxyNo": "プロキシ非対応",
+    "scopes": "スコープ",
+    "pending": "認可を待っています。完了ページを開いたままにしてください。",
+    "connected": "接続が完了しました。",
+    "manualResult": "認可結果を確認できませんでした。再開する前に SaaS プロジェクトを確認してください。",
+    "status": {
+      "unconfigured": "未設定",
+      "available": "利用可能",
+      "unavailable": "利用不可",
+      "auth_error": "プロジェクトキーが無効"
+    },
+    "retry": "再確認"
+  },
+  "customMcp": {
+    "service": "サービス識別子",
+    "serviceHelp": "小文字、数字、アンダースコア、ハイフンを使用します。作成後は変更できません。",
+    "add": "MCP サービスを追加",
+    "description": "リモート MCP サーバーに接続してツールを取得します。",
+    "name": "名前",
+    "endpoint": "MCP 接続先",
+    "transport": "通信方式",
+    "auth": "認証方式",
+    "noAuth": "認証なし",
+    "headers": "API キー / ヘッダー",
+    "headerHelp": "認証ヘッダーを定義します。値は接続の作成時に入力してください。",
+    "headerName": "ヘッダー名",
+    "prefix": "プレフィックス（任意）",
+    "removeHeader": "ヘッダーを削除",
+    "addHeader": "ヘッダーを追加",
+    "oauthHelp": "Client ID を空欄にすると自動登録します。サービス追加後にアカウントを認証してください。",
+    "manualOAuth": "OAuth エンドポイントを手動設定",
+    "issuer": "認可サーバーの URL",
+    "authorizationUrl": "認可エンドポイント",
+    "tokenUrl": "トークンエンドポイント",
+    "scopes": "スコープ（空白区切り）",
+    "working": "接続中…",
+    "settings": "MCP サービス",
+    "save": "保存",
+    "syncConnection": "ツール取得用の接続",
+    "synced": "ツール {{count}} 件、最終同期 {{time}}",
+    "notSynced": "アカウントを接続してツールを取得してください。",
+    "syncFailed": "ツールを取得できませんでした。接続と URL を確認して再試行してください。",
+    "sync": "ツールを同期",
+    "disable": "無効化",
+    "enable": "有効化",
+    "delete": "サービスを削除"
   }
 }

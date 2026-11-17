@@ -4,19 +4,21 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { createHash } from "node:crypto";
 import { compactObject, optionalInteger, optionalNumber, optionalRawString, optionalRecord } from "../../core/cast.ts";
 import { assertPublicHttpUrl } from "../../core/request.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineProviderExecutors,
-  defineProviderProxy,
   providerUserAgent,
   ProviderRequestError,
   readProviderTextBody,
-  requireApiKeyCredential,
   runProviderRequest,
+  providerInputError,
+  providerResponseError,
 } from "../provider-runtime.ts";
 
 const service = "liveagent";
@@ -281,7 +283,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: `liveagent:${host}:${hashApiKey(apiKey)}`,
         displayName: accountLink ?? host,
       },
-      grantedScopes: [],
       metadata: compactObject({
         baseUrl,
         apiBaseUrl,
@@ -300,7 +301,7 @@ function normalizeLiveagentBaseUrl(value: unknown) {
 
   const url = assertPublicHttpUrl(value.trim(), {
     fieldName: "baseUrl",
-    createError: (message) => new ProviderRequestError(400, message),
+    createError: providerInputError,
   });
 
   if (url.username || url.password) {
@@ -409,7 +410,7 @@ function createLiveagentError(status: number, payload: unknown, mode: LiveagentM
   const message = readErrorMessage(payload) ?? `LiveAgent request failed with status ${status}`;
 
   if (status === 401 || status === 403) {
-    return mode === "validate" ? new ProviderRequestError(400, message) : new ProviderRequestError(status, message);
+    return mode === "validate" ? providerInputError(message) : new ProviderRequestError(status, message);
   }
 
   if (status === 429) {
@@ -420,7 +421,7 @@ function createLiveagentError(status: number, payload: unknown, mode: LiveagentM
     return new ProviderRequestError(status === 404 ? 404 : 400, message);
   }
 
-  return new ProviderRequestError(502, message);
+  return providerResponseError(message);
 }
 
 function buildPageQuery(input: Record<string, unknown>) {
@@ -548,14 +549,14 @@ function normalizeDepartment(value: Record<string, unknown>) {
 function asObject(value: unknown, errorMessage: string) {
   const object = optionalRecord(value);
   if (!object) {
-    throw new ProviderRequestError(502, errorMessage);
+    throw providerResponseError(errorMessage);
   }
   return object;
 }
 
 function asObjectArray(value: unknown, errorMessage: string) {
   if (!Array.isArray(value)) {
-    throw new ProviderRequestError(502, errorMessage);
+    throw providerResponseError(errorMessage);
   }
   return value.map((item) => asObject(item, errorMessage));
 }

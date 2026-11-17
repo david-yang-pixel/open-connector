@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean, optionalRecord, optionalString } from "../../core/cast.ts";
 import { assertPublicHttpUrl, isPrivateNetworkAccessAllowed } from "../../core/request.ts";
@@ -320,7 +320,6 @@ export async function validateSvixCredential(
       accountId: "svix",
       displayName: "Svix API Key",
     },
-    grantedScopes: [],
     metadata: {
       serverUrl: optionalString(input.serverUrl),
       validationEndpoint: svixValidationPath,

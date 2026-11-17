@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -11,7 +11,12 @@ import {
   requiredString,
 } from "../../core/cast.ts";
 import { assertPublicHttpUrl, isPrivateNetworkAccessAllowed } from "../../core/request.ts";
-import { providerInputError, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
+import {
+  providerInputError,
+  ProviderRequestError,
+  providerUserAgent,
+  providerResponseError,
+} from "../provider-runtime.ts";
 
 type MailcoachRequestMode = "validate" | "execute";
 const maxMailcoachResponseBytes = 10 * 1024 * 1024;
@@ -189,7 +194,6 @@ export async function validateMailcoachCredential(
       accountId: `mailcoach:${baseUrl}:${userId ?? email}`,
       displayName: email ?? `Mailcoach ${new URL(baseUrl).hostname}`,
     },
-    grantedScopes: [],
     metadata: compactObject({
       baseUrl,
       validationEndpoint: "/api/user",
@@ -211,7 +215,7 @@ export function normalizeMailcoachBaseUrl(
   const withProtocol = raw.includes("://") ? raw : `https://${raw}`;
   const parsed = assertPublicHttpUrl(withProtocol, {
     fieldName: "baseUrl",
-    createError: (message) => new ProviderRequestError(400, message),
+    createError: providerInputError,
     allowPrivateNetwork,
   });
 
@@ -426,7 +430,7 @@ function createMailcoachError(
   const fallbackMessage = response.statusText.trim() || `mailcoach request failed with status ${response.status}`;
   const message = extractMailcoachErrorMessage(payload) ?? fallbackMessage;
   if (response.status >= 300 && response.status < 400) {
-    return new ProviderRequestError(502, message);
+    return providerResponseError(message);
   }
   if (response.status === 401 || response.status === 403) {
     return new ProviderRequestError(mode === "validate" ? 400 : 401, message);
@@ -435,7 +439,7 @@ function createMailcoachError(
     return new ProviderRequestError(429, message);
   }
   if (response.status === 400 || response.status === 422 || (response.status === 404 && notFoundAsInvalidInput)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   return new ProviderRequestError(response.status || 502, message);
 }

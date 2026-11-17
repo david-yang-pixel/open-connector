@@ -6,17 +6,14 @@ import type {
   ProviderProxyExecutor,
   ResolvedCredential,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
 import { compactObject, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-} from "../provider-runtime.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 
 const service = "dropbox_sign";
 export const dropboxSignApiBaseUrl = "https://api.hellosign.com/v3";
@@ -83,7 +80,6 @@ export const credentialValidators: CredentialValidators = {
       fallbackAccountId: "dropbox_sign:oauth2",
       fallbackDisplayName: "Dropbox Sign OAuth",
       fetcher,
-      grantedScopes: input.profile.grantedScopes,
       signal,
     });
   },
@@ -94,7 +90,6 @@ interface DropboxSignValidationInput {
   fallbackAccountId: string;
   fallbackDisplayName: string;
   fetcher: typeof fetch;
-  grantedScopes?: string[];
   signal?: AbortSignal;
 }
 
@@ -112,7 +107,6 @@ async function validateDropboxSignCredential(input: DropboxSignValidationInput):
       accountId: account.accountId ? `dropbox_sign:${account.accountId}` : input.fallbackAccountId,
       displayName: account.emailAddress ?? account.accountId ?? input.fallbackDisplayName,
     },
-    grantedScopes: input.grantedScopes ?? [],
     metadata: compactObject({
       apiBaseUrl: dropboxSignApiBaseUrl,
       accountId: account.accountId ?? undefined,

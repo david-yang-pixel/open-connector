@@ -1,5 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers, ProviderFetch } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { optionalRecord, optionalString } from "../../core/cast.ts";
 import {
@@ -7,6 +8,8 @@ import {
   isAbortLikeError,
   ProviderRequestError,
   providerUserAgent,
+  providerInputError,
+  providerResponseError,
 } from "../provider-runtime.ts";
 
 export const onfleetApiBaseUrl = "https://onfleet.com/api/v2";
@@ -95,7 +98,6 @@ export async function validateOnfleetCredential(
 
   return {
     profile: { accountId: "onfleet", displayName: "Onfleet Account" },
-    grantedScopes: [],
     metadata: { validationEndpoint: "/auth/test" },
   };
 }
@@ -186,7 +188,7 @@ function createOnfleetError(response: Response, payload: unknown, phase: Onfleet
     `Onfleet request failed with status ${response.status}`;
 
   if (phase === "validate" && (response.status === 401 || response.status === 403)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (response.status === 400 || response.status === 404 || response.status === 422) {
     return new ProviderRequestError(response.status, message);
@@ -224,6 +226,6 @@ function requireObject(value: unknown, label: string) {
 }
 
 function requireArray(value: unknown, message: string) {
-  if (!Array.isArray(value)) throw new ProviderRequestError(502, message);
+  if (!Array.isArray(value)) throw providerResponseError(message);
   return value.map((item) => requireObject(item, "Onfleet task"));
 }

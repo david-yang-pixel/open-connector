@@ -1,6 +1,5 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
 import {
@@ -13,12 +12,9 @@ import {
   requiredString,
 } from "../../core/cast.ts";
 import { assertPublicHttpUrl } from "../../core/request.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
 
 const service = "docparser";
 const docparserApiBaseUrl = "https://api.docparser.com";
@@ -94,7 +90,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "docparser:api-key",
         displayName: "Docparser API Key",
       },
-      grantedScopes: [],
       metadata: {
         validationEndpoint: "/v1/ping",
         ping: payload.msg,
@@ -103,10 +98,7 @@ export const credentialValidators: CredentialValidators = {
   },
 };
 
-async function docparserPing(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
-  phase: DocparserRequestPhase,
-): Promise<{ msg: string }> {
+async function docparserPing(context: ApiKeyProviderContext, phase: DocparserRequestPhase): Promise<{ msg: string }> {
   const payload = await docparserRequest({ path: "/v1/ping" }, context, phase);
   const record = optionalRecord(payload);
   const msg = optionalString(record?.msg);
@@ -343,7 +335,7 @@ async function docparserReintegrateDocuments(
 
 async function docparserRequest(
   input: DocparserRequestInput,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: DocparserRequestPhase,
 ): Promise<unknown> {
   const url = new URL(input.path, docparserApiBaseUrl);

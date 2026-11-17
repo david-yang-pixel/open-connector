@@ -1,9 +1,10 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { compactObject, optionalBoolean } from "../../core/cast.ts";
-import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
+import { providerUserAgent, ProviderRequestError, providerInputError } from "../provider-runtime.ts";
 
 type AlchemyPhase = "validate" | "execute";
 type QueryValue = string | number | boolean | undefined;
@@ -51,7 +52,6 @@ export async function validateAlchemyCredential(
     profile: {
       displayName: "Alchemy API Key",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: alchemyRpcBaseUrl,
       nftApiBaseUrl: alchemyNftBaseUrl,
@@ -373,7 +373,7 @@ function createAlchemyHttpError(status: number, payload: unknown, phase: Alchemy
   }
 
   if (status === 400 || status === 404) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
 
   return new ProviderRequestError(status || 500, message);

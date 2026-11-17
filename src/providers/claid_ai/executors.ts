@@ -1,15 +1,10 @@
 import type { ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-  requiredResponseRecord,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent, requiredResponseRecord } from "../provider-runtime.ts";
 
 const service = "claid_ai";
 const claidAiApiBaseUrl = "https://api.claid.ai";
@@ -69,7 +64,7 @@ function buildEditRequestBody(input: Record<string, unknown>): Record<string, un
 async function requestClaidAi(
   path: string,
   init: { method: "GET" | "POST"; body?: Record<string, unknown> },
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: ClaidAiRequestPhase,
 ): Promise<unknown> {
   const url = new URL(`/${claidAiApiVersion}${path}`, claidAiApiBaseUrl);

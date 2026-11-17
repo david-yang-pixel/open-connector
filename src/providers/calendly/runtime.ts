@@ -1,5 +1,5 @@
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { BearerProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { BearerProviderContext } from "../provider-executors.ts";
 
 import {
   booleanString,
@@ -9,7 +9,7 @@ import {
   optionalRecord,
   optionalString,
 } from "../../core/cast.ts";
-import { providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
+import { providerUserAgent, ProviderRequestError, providerResponseError } from "../provider-runtime.ts";
 
 type CalendlyActionContext = BearerProviderContext;
 
@@ -151,7 +151,7 @@ export async function validateCalendlyCredential(
   fetcher: typeof fetch,
   signal?: AbortSignal,
 ): Promise<{
-  profile: { accountId: string; displayName: string; grantedScopes: string[] };
+  profile: { accountId: string; displayName: string };
   metadata: Record<string, unknown>;
 }> {
   const payload = await requestCalendlyJson({
@@ -168,7 +168,6 @@ export async function validateCalendlyCredential(
     profile: {
       accountId: extractCalendlyIdFromUri(userUri, "users"),
       displayName: optionalString(user.name) ?? optionalString(user.email) ?? "Calendly User",
-      grantedScopes: [],
     },
     metadata: compactObject({
       apiBaseUrl: calendlyApiOrigin,
@@ -1048,7 +1047,7 @@ function createCalendlyTransportError(error: unknown, phase: "request" | "respon
     return new ProviderRequestError(504, message);
   }
 
-  return new ProviderRequestError(502, message);
+  return providerResponseError(message);
 }
 
 function isAbortError(error: unknown) {

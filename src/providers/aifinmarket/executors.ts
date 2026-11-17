@@ -1,7 +1,8 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ApiKeyProviderContext, ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ApiKeyProviderContext, ProviderActionHandlers } from "../provider-executors.ts";
 
-import { defineApiKeyProviderExecutors, defineProviderProxy, mapProviderActionHandlers } from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors, mapProviderActionHandlers } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import { aifinMarketActions } from "./actions.ts";
 import { callTool, discoverAccessibleTools, listTools } from "./runtime.ts";
 
@@ -35,7 +36,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: `aifinmarket:mcp:${keyHash}`,
         displayName: `Wind AIFin Market · ${keyHash.slice(-6)}`,
       },
-      grantedScopes: [],
       metadata: {
         mcpOrigin: "https://mcp.wind.com.cn",
         validationServerType: discovered.serverType,

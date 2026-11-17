@@ -1,12 +1,12 @@
-import type { ProviderTransitFile } from "../provider-runtime.ts";
+import type { ProviderTransitFile } from "../provider-files.ts";
 import type { KarakeepExecutionContext, KarakeepHandlerMap } from "./runtime-helpers.ts";
 
 import { optionalString } from "../../core/cast.ts";
-import { readBoundedResponseBytes } from "../../core/request.ts";
+import { storeResponseInTransit } from "../../core/request.ts";
+import { readTransitFileInput } from "../provider-files.ts";
 import {
   providerInputError,
   ProviderRequestError,
-  readTransitFileInput,
   requiredInputString,
   requiredResponseRecord,
 } from "../provider-runtime.ts";
@@ -62,15 +62,17 @@ export async function storeKarakeepResponse(
 ): Promise<ProviderTransitFile> {
   const transitFiles = requireTransitFiles(context);
   const mimeType = normalizeKarakeepMimeType(response.headers.get("content-type")) ?? fallbackMimeType;
-  const bytes = await readBoundedResponseBytes(response, {
-    maxBytes: transitFiles.maxBytes,
+  const stored = await storeResponseInTransit(response, transitFiles, {
+    name,
+    mimeType,
     fieldName: name,
     createError: (message) => new ProviderRequestError(413, message),
+    signal: context.signal,
   });
-  if (bytes.byteLength === 0) {
+  if (stored.sizeBytes === 0) {
+    await transitFiles.delete(stored.fileId).catch(() => undefined);
     throw new ProviderRequestError(502, "Karakeep returned an empty file");
   }
-  const stored = await transitFiles.create(new File([Uint8Array.from(bytes)], name, { type: mimeType }));
   return {
     fileId: stored.fileId,
     downloadUrl: stored.downloadUrl,

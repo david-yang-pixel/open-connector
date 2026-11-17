@@ -4,17 +4,13 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { compactObject, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
-import {
-  credentialProviderProxyBaseUrl,
-  defineProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-  requireApiKeyCredential,
-} from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { credentialProviderProxyBaseUrl, defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const activecampaignValidationPath = "/api/3/users/me";
 const service = "activecampaign";
@@ -120,7 +116,6 @@ export async function validateActivecampaignCredential(
       accountId: buildActivecampaignProviderAccountId(apiUrl, userId),
       displayName: buildUserLabel({ email, username, firstName, lastName }) ?? "ActiveCampaign API Token",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiUrl,
       validationEndpoint: buildValidationEndpoint(apiUrl, activecampaignValidationPath),

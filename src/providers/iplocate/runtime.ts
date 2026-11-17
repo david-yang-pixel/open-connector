@@ -1,14 +1,17 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { isIP } from "node:net";
 import { optionalRecord, optionalString } from "../../core/cast.ts";
-import { createProviderTimeout, providerUserAgent, ProviderRequestError } from "../provider-runtime.ts";
+import {
+  createProviderTimeout,
+  providerUserAgent,
+  ProviderRequestError,
+  providerInputError,
+  defaultProviderRequestTimeoutMs,
+} from "../provider-runtime.ts";
 
 export const iplocateApiBaseUrl = "https://iplocate.io/api";
-
-const requestTimeoutMs = 30_000;
 
 type IplocateRequestPhase = "validate" | "execute";
 type IplocateActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
@@ -94,7 +97,6 @@ export async function validateIplocateCredential(
       accountId: "iplocate:api-key",
       displayName: "IPLocate API Key",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: iplocateApiBaseUrl,
       validationEndpoint: "/lookup",
@@ -106,7 +108,7 @@ export async function validateIplocateCredential(
 
 async function requestIplocateObject(
   input: IplocateRequestInput,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: IplocateRequestPhase,
   responseLabel: string,
 ): Promise<Record<string, unknown>> {
@@ -120,7 +122,7 @@ async function requestIplocateObject(
 
 async function requestIplocateJson(
   input: IplocateRequestInput,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: IplocateRequestPhase,
 ): Promise<unknown> {
   const url = new URL(`${iplocateApiBaseUrl}${input.path}`);
@@ -130,7 +132,7 @@ async function requestIplocateJson(
     }
   }
 
-  const timeout = createProviderTimeout(context.signal, requestTimeoutMs);
+  const timeout = createProviderTimeout(context.signal);
   let response: Response;
   let payload: unknown;
   try {
@@ -143,7 +145,10 @@ async function requestIplocateJson(
     payload = await readIplocatePayload(response);
   } catch (error) {
     if (timeout.didTimeout()) {
-      throw new ProviderRequestError(504, `IPLocate request timed out after ${requestTimeoutMs / 1000} seconds`);
+      throw new ProviderRequestError(
+        504,
+        `IPLocate request timed out after ${defaultProviderRequestTimeoutMs / 1000} seconds`,
+      );
     }
     throw new ProviderRequestError(
       502,
@@ -194,7 +199,7 @@ function createIplocateError(response: Response, payload: unknown, phase: Iploca
     return new ProviderRequestError(phase === "validate" ? 400 : response.status, message);
   }
   if (response.status === 400 || response.status === 404) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   return new ProviderRequestError(response.status >= 500 ? 502 : response.status, message);
 }

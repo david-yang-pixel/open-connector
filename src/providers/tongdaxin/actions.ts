@@ -2,6 +2,7 @@ import type { ActionDefinition } from "../../core/types.ts";
 
 import { s } from "../../core/json-schema.ts";
 import { defineProviderAction } from "../../core/provider-definition.ts";
+import { tongdaxinNamedActions } from "./named-actions.ts";
 
 const service = "tongdaxin";
 
@@ -15,7 +16,9 @@ export const tongdaxinReadOnlyToolNames: string[] = [
   "wenda_news_query",
   "wenda_notice_query",
   "wenda_report_query",
+  "wenda_macro_query",
 ];
+export type TongdaxinReadOnlyToolName = (typeof tongdaxinReadOnlyToolNames)[number];
 
 const toolAnnotationsSchema = s.looseObject("MCP behavior hints supplied by Tongdaxin.", {
   title: s.optional(s.string("A human-readable title for the tool.")),
@@ -30,7 +33,7 @@ const toolAnnotationsSchema = s.looseObject("MCP behavior hints supplied by Tong
 const mcpToolSummarySchema = s.object(
   "A supported read-only financial data tool currently exposed by Tongdaxin MCP.",
   {
-    name: s.stringEnum("The exact supported Tongdaxin MCP tool name to pass to call_tool.", tongdaxinReadOnlyToolNames),
+    name: s.nonWhitespaceString("The exact Tongdaxin MCP tool name to pass to call_tool."),
     description: s.string("The current tool description supplied by Tongdaxin MCP."),
     annotations: toolAnnotationsSchema,
     inputSchema: s.looseObject("The current JSON Schema for the tool arguments, supplied by Tongdaxin MCP."),
@@ -41,7 +44,7 @@ const mcpToolSummarySchema = s.object(
 export const tongdaxinActions: ActionDefinition[] = [
   defineProviderAction(service, {
     name: "list_tools",
-    operationType: "read",
+    operationType: "destructive",
     description:
       "Discover the supported Tongdaxin market data, screening, news, announcement, and research MCP tools with their live input schemas.",
     requiredScopes: [],
@@ -64,7 +67,7 @@ export const tongdaxinActions: ActionDefinition[] = [
     inputSchema: s.object(
       "Input for invoking one supported read-only Tongdaxin MCP tool.",
       {
-        toolName: s.stringEnum("The supported Tongdaxin MCP tool to invoke.", tongdaxinReadOnlyToolNames),
+        toolName: s.nonWhitespaceString("The exact Tongdaxin MCP tool to invoke."),
         arguments: s.looseObject("JSON arguments matching the live inputSchema returned for the selected tool."),
       },
       { optional: ["arguments"] },
@@ -75,4 +78,5 @@ export const tongdaxinActions: ActionDefinition[] = [
       ),
     }),
   }),
+  ...tongdaxinNamedActions,
 ];

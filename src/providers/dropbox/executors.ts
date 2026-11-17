@@ -4,30 +4,34 @@ import type {
   ProviderProxyExecutor,
   TransitFileWriter,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { OAuthProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { OAuthProviderContext } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
 import {
   compactObject,
+  objectArray,
   optionalBoolean,
   optionalNumber,
   optionalRecord as asOptionalObject,
   optionalString as asOptionalString,
   requiredRecord,
 } from "../../core/cast.ts";
-import { readBoundedResponseBytes } from "../../core/request.ts";
+import { storeResponseInTransit } from "../../core/request.ts";
+import { requireOAuthCredential } from "../provider-credentials.ts";
+import { defineOAuthProviderExecutors } from "../provider-executors.ts";
 import {
-  createProviderFetch,
   createProviderProxyUrl,
-  defineOAuthProviderExecutors,
   normalizeProviderProxyEndpoint,
   normalizeProviderProxyHeaders,
-  ProviderRequestError,
-  providerUserAgent,
   readProviderProxyResponse,
-  requireOAuthCredential,
   toProviderProxyError,
+} from "../provider-proxy.ts";
+import {
+  createProviderFetch,
+  ProviderRequestError,
+  providerResponseError,
+  providerUserAgent,
 } from "../provider-runtime.ts";
 
 const dropboxApiBaseUrl = "https://api.dropboxapi.com/2";
@@ -68,6 +72,18 @@ export const dropboxActionHandlers: ProviderActionHandlers<"dropbox", ActionHand
   },
   list_folder_continue(input, { accessToken, fetcher }) {
     return listFolderContinue(input, accessToken, fetcher);
+  },
+  list_file_members(input, { accessToken, fetcher }) {
+    return listFileMembers(input, accessToken, fetcher);
+  },
+  list_file_members_continue(input, { accessToken, fetcher }) {
+    return listFileMembersContinue(input, accessToken, fetcher);
+  },
+  list_folder_members(input, { accessToken, fetcher }) {
+    return listFolderMembers(input, accessToken, fetcher);
+  },
+  list_folder_members_continue(input, { accessToken, fetcher }) {
+    return listFolderMembersContinue(input, accessToken, fetcher);
   },
   get_metadata(input, { accessToken, fetcher }) {
     return getMetadata(input, accessToken, fetcher);
@@ -253,6 +269,60 @@ function normalizeListFolderResult(payload: Record<string, unknown>) {
   };
 }
 
+async function listFileMembers(input: Record<string, unknown>, accessToken: string, fetcher: typeof fetch) {
+  const payload = await dropboxRpcRequest("sharing/list_file_members", {
+    accessToken,
+    fetcher,
+    body: compactObject({
+      file: requireString(input.file, "dropbox file"),
+      include_inherited: optionalBoolean(input.includeInherited),
+      limit: optionalNumber(input.limit),
+    }),
+  });
+  return normalizeMembers(payload);
+}
+
+async function listFileMembersContinue(input: Record<string, unknown>, accessToken: string, fetcher: typeof fetch) {
+  const payload = await dropboxRpcRequest("sharing/list_file_members/continue", {
+    accessToken,
+    fetcher,
+    body: { cursor: requireString(input.cursor, "dropbox file members cursor") },
+  });
+  return normalizeMembers(payload);
+}
+
+async function listFolderMembers(input: Record<string, unknown>, accessToken: string, fetcher: typeof fetch) {
+  const payload = await dropboxRpcRequest("sharing/list_folder_members", {
+    accessToken,
+    fetcher,
+    body: compactObject({
+      shared_folder_id: requireString(input.sharedFolderId, "dropbox shared folder ID"),
+      path: optionalString(input.path),
+      limit: optionalNumber(input.limit),
+    }),
+  });
+  return normalizeMembers(payload);
+}
+
+async function listFolderMembersContinue(input: Record<string, unknown>, accessToken: string, fetcher: typeof fetch) {
+  const payload = await dropboxRpcRequest("sharing/list_folder_members/continue", {
+    accessToken,
+    fetcher,
+    body: { cursor: requireString(input.cursor, "dropbox folder members cursor") },
+  });
+  return normalizeMembers(payload);
+}
+
+function normalizeMembers(payload: Record<string, unknown>) {
+  // Missing member arrays must not turn a malformed ACL response into a complete empty ACL.
+  return {
+    users: objectArray(payload.users, "dropbox users", providerResponseError),
+    groups: objectArray(payload.groups, "dropbox groups", providerResponseError),
+    invitees: objectArray(payload.invitees, "dropbox invitees", providerResponseError),
+    cursor: payload.cursor == null ? null : requireString(payload.cursor, "dropbox members cursor"),
+  };
+}
+
 async function getMetadata(input: Record<string, unknown>, accessToken: string, fetcher: typeof fetch) {
   const payload = await dropboxRpcRequest("files/get_metadata", {
     accessToken,
@@ -269,6 +339,25 @@ async function getMetadata(input: Record<string, unknown>, accessToken: string, 
   };
 }
 
+/**
+ * Serialize a `Dropbox-API-Arg` header value.
+ *
+ * Dropbox requires this header to be ASCII: its own docs say `0x7F` and every
+ * non-ASCII character must be escaped as `\uXXXX`, which is also the range the
+ * official JS SDK escapes. `JSON.stringify` does not escape, and Node's `Headers`
+ * refuses a value outside ByteString, so a path containing any non-ASCII
+ * character threw `TypeError: Cannot convert argument to a ByteString` inside
+ * the runtime BEFORE the request was made. `provider-runtime.ts`'s fallback
+ * then reported it as a bare `internal_error`, discarding the cause.
+ *
+ * Measured 2026-09-18 against a real account: `/kkndme 天涯.pdf` failed in 1ms
+ * with no network call, while ASCII-path siblings downloaded in ~400ms. Dropbox
+ * itself accepts either spelling on the wire; only the header build was broken.
+ */
+function dropboxApiArg(arg: unknown): string {
+  return JSON.stringify(arg).replace(/[\u007f-\uffff]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`);
+}
+
 async function downloadFile(input: Record<string, unknown>, context: ActionContext) {
   const { accessToken, fetcher, transitFiles } = context;
   if (!transitFiles) {
@@ -278,7 +367,7 @@ async function downloadFile(input: Record<string, unknown>, context: ActionConte
     method: "POST",
     headers: {
       ...dropboxAuthHeaders(accessToken),
-      "Dropbox-API-Arg": JSON.stringify({
+      "Dropbox-API-Arg": dropboxApiArg({
         path: requireString(input.path, "dropbox download path"),
       }),
     },
@@ -316,7 +405,7 @@ async function uploadFile(input: Record<string, unknown>, accessToken: string, f
     headers: {
       ...dropboxAuthHeaders(accessToken),
       "Content-Type": source.mimeType || "application/octet-stream",
-      "Dropbox-API-Arg": JSON.stringify(arg),
+      "Dropbox-API-Arg": dropboxApiArg(arg),
     },
     body: Buffer.from(source.bytes),
   });
@@ -597,7 +686,7 @@ async function getSharedLinkFile(input: Record<string, unknown>, context: Action
     method: "POST",
     headers: {
       ...dropboxAuthHeaders(accessToken),
-      "Dropbox-API-Arg": JSON.stringify(arg),
+      "Dropbox-API-Arg": dropboxApiArg(arg),
     },
     signal: context.signal,
   });
@@ -634,12 +723,12 @@ async function storeDropboxDownload(
   }
 
   const mimeType = optionalString(response.headers.get("content-type")) ?? "application/octet-stream";
-  const bytes = await readBoundedResponseBytes(response, {
-    maxBytes: transitFiles.maxBytes,
+  const file = await storeResponseInTransit(response, transitFiles, {
+    name: transitName,
+    mimeType,
     fieldName: "Dropbox download",
     createError: (message) => new ProviderRequestError(413, message),
   });
-  const file = await transitFiles.create(new File([Uint8Array.from(bytes)], transitName, { type: mimeType }));
 
   return {
     fileId,
@@ -822,6 +911,7 @@ function mapDropboxMetadata(value: unknown) {
     url: optionalString(record.url) ?? null,
     expiresAt: optionalString(record.expires) ?? null,
     sharingInfo: asOptionalObject(record.sharing_info) ?? null,
+    hasExplicitSharedMembers: optionalBoolean(record.has_explicit_shared_members) ?? null,
     linkPermissions: asOptionalObject(record.link_permissions) ?? null,
   };
 }

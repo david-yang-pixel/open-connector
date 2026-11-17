@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { compactObject, optionalInteger, optionalRecord, optionalString, requiredString } from "../../core/cast.ts";
 import { providerInputError, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
@@ -69,7 +69,6 @@ export async function validateViggleCredential(
       accountId: "viggle",
       displayName: `Viggle ${balance.credit_balance.balance} credits`,
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: viggleApiBaseUrl,
       authMethod: "bearer",
@@ -81,7 +80,7 @@ export async function validateViggleCredential(
 }
 
 async function getCreditBalance(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: VigglePhase,
 ): Promise<{ credit_balance: Record<string, unknown> }> {
   return {
@@ -267,7 +266,7 @@ async function getRenderJobStatus(input: Record<string, unknown>, context: ApiKe
 
 async function requestViggleJson(
   request: ViggleRequestInput,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: VigglePhase,
 ): Promise<unknown> {
   const url = new URL(request.path, viggleApiBaseUrl);

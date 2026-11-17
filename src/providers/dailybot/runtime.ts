@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -163,7 +163,6 @@ export async function validateDailybotCredential(
       accountId,
       displayName: buildDisplayName(profile.first_name, profile.last_name) ?? accountId,
     },
-    grantedScopes: [],
     metadata: compactObject({
       validationEndpoint: "/v1/me/",
       userId: optionalString(profile.id),
@@ -223,7 +222,7 @@ async function readJsonPayload(response: Response): Promise<unknown> {
 
 function createDailybotError(status: number, payload: unknown, phase: DailybotPhase): ProviderRequestError {
   const message = extractDailybotMessage(payload) ?? `Dailybot request failed with ${status || 500}`;
-  if (phase === "validate" && (status === 401 || status === 403)) return new ProviderRequestError(400, message);
+  if (phase === "validate" && (status === 401 || status === 403)) return providerInputError(message);
   return new ProviderRequestError(status || 500, message);
 }
 

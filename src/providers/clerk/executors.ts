@@ -4,18 +4,13 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { optionalRecord, optionalString } from "../../core/cast.ts";
 import { compactJson } from "../../core/request.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-  requiredInputString,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent, requiredInputString } from "../provider-runtime.ts";
 
 const service = "clerk";
 const clerkApiBaseUrl = "https://api.clerk.com/v1";
@@ -150,7 +145,6 @@ async function validateClerkCredential(input: {
       accountId: instanceId ?? "clerk-api-key",
       displayName: instanceName ? `Clerk: ${instanceName}` : "Clerk API Key",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: clerkApiBaseUrl,
       validationEndpoint: "/instance",
@@ -191,7 +185,7 @@ function buildUserFilterQuery(input: Record<string, unknown>, extraKeys: string[
 async function requestClerk(input: {
   path: string;
   method: string;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   phase: ClerkRequestPhase;
   query?: Array<[string, unknown]>;
   body?: Record<string, unknown>;

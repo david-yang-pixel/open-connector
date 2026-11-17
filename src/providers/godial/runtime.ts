@@ -1,6 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { optionalRecord, optionalString } from "../../core/cast.ts";
 import { ProviderRequestError, providerUserAgent, requiredInputString } from "../provider-runtime.ts";
@@ -51,7 +51,6 @@ export async function validateGodialCredential(
       accountId: "godial",
       displayName: "GoDial API Access Token",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: godialApiBaseUrl,
       validationEndpoint: godialValidationPath,

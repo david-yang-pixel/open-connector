@@ -4,18 +4,18 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
 import { compactObject, optionalBoolean, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineProviderExecutors,
-  defineProviderProxy,
   providerUserAgent,
   ProviderRequestError,
   readProviderTextBody,
-  requireApiKeyCredential,
 } from "../provider-runtime.ts";
 
 const service = "cratedb_cloud";
@@ -175,7 +175,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: user.uid ?? user.email ?? key,
         displayName: user.name ?? user.email ?? user.username ?? "CrateDB Cloud API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: cratedbCloudApiBaseUrl,
         validationEndpoint: cratedbCloudValidationPath,

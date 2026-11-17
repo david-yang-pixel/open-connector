@@ -1,5 +1,5 @@
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 import type { NewRelicActionName } from "./actions.ts";
 
 import {
@@ -155,7 +155,6 @@ export async function validateNewRelicCredential(
     accountId: string;
     displayName: string;
   };
-  grantedScopes: string[];
   metadata: Record<string, unknown>;
 }> {
   const currentUser = await fetchNewRelicCurrentUser(apiKey, fetcher, "validate");
@@ -168,7 +167,6 @@ export async function validateNewRelicCredential(
       accountId: providerAccountId,
       displayName: accountLabel,
     },
-    grantedScopes: [],
     metadata: {
       validationEndpoint: "/graphql",
       user: compactObject({

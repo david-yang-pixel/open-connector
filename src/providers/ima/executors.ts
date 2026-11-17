@@ -6,18 +6,16 @@ import type {
 } from "../../core/types.ts";
 import type { ImaRuntimeContext } from "./runtime.ts";
 
+import { requireCustomCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
 import {
   createProviderProxyUrl,
-  defineProviderExecutors,
   normalizeProviderProxyHeaders,
-  providerFetch,
-  ProviderRequestError,
-  providerUserAgent,
   readProviderProxyErrorMessage,
   readProviderProxyResponse,
-  requireCustomCredential,
   toProviderProxyError,
-} from "../provider-runtime.ts";
+} from "../provider-proxy.ts";
+import { providerFetch, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 import { imaActionHandlers, imaApiBaseUrl, validateImaCredential } from "./runtime.ts";
 
 const service = "ima";

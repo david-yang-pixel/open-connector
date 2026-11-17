@@ -1,6 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -80,7 +79,6 @@ export async function validateTaveCredential(
       accountId: studioId ?? email ?? "tave-api-key",
       displayName: name ?? email ?? "VSCO Workspace API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: taveApiBaseUrl,
       validationEndpoint: "/studio/me",
@@ -92,7 +90,7 @@ export async function validateTaveCredential(
 }
 
 interface TaveRequestInput {
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   path: string;
   params: Record<string, string | undefined>;
   phase: "validate" | "execute";

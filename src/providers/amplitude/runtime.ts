@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
 import { compactObject, optionalInteger, optionalRecord, requiredString } from "../../core/cast.ts";
@@ -9,6 +9,7 @@ import {
   providerFetch,
   ProviderRequestError,
   providerUserAgent,
+  providerInputError,
 } from "../provider-runtime.ts";
 
 export const amplitudeApiBaseUrl = "https://amplitude.com";
@@ -118,7 +119,6 @@ export async function validateAmplitudeCredential(
       accountId: apiKeyId,
       displayName: `Amplitude Project ${apiKeyId}`,
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl,
       dataResidency,
@@ -219,7 +219,7 @@ function requireNonEmptyString(value: unknown, fieldName: string) {
 }
 
 function requireAmplitudeSecretKey(value: unknown): string {
-  return requiredString(value, "apiKey", (message) => new ProviderRequestError(400, message));
+  return requiredString(value, "apiKey", providerInputError);
 }
 
 function normalizeDataResidency(value: unknown) {
@@ -262,7 +262,7 @@ function mapAmplitudeError(status: number, payload: unknown, phase: "validate" |
   let message = readAmplitudeErrorMessage(payload) ?? `Amplitude request failed with ${status}`;
   if (status === 401 || status === 403) {
     if (phase === "validate") {
-      return new ProviderRequestError(400, message);
+      return providerInputError(message);
     }
     return new ProviderRequestError(401, message);
   }

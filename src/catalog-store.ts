@@ -1,10 +1,12 @@
+import type { CatalogLocale } from "./catalog-localization/localization.ts";
 import type { ProviderAuthSetup } from "./core/provider-setup.ts";
 import type { ActionDefinition, AuthType, ProviderDefinition, ProviderScenario } from "./core/types.ts";
 
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { readCatalogIndex } from "./catalog-index.ts";
-import { indexedProvidersWithLazySchemas, readProvidersWithLazySchemas } from "./catalog-lazy-schemas.ts";
+import { loadFileCatalog } from "./catalog-lazy-schemas.ts";
+import { catalogSetupLabels, localizeProvider } from "./catalog-localization/localization.ts";
 import { sortProviders } from "./core/catalog.ts";
 import { resolveProviderScenario } from "./core/provider-scenarios.ts";
 import { describeProviderAuth } from "./core/provider-setup.ts";
@@ -13,6 +15,7 @@ export type ActionExecutionStatus = {
   locallyExecutable: boolean;
   catalogOnly: boolean;
   requiredAuthTypes: AuthType[];
+  authTypesSource: "action" | "provider";
   noAuthRunnable: boolean;
   needsCredential: boolean;
 };
@@ -22,7 +25,7 @@ export type RuntimeActionDefinition = ActionDefinition & {
 };
 
 export type RuntimeProviderDefinition = Omit<ProviderDefinition, "actions"> & {
-  actions: RuntimeActionDefinition[];
+  actions: RuntimeActionSummary[];
   /** Stable task-oriented category supplied to local catalog clients. */
   scenario: ProviderScenario;
   execution: {
@@ -39,14 +42,23 @@ export type RuntimeProviderDefinition = Omit<ProviderDefinition, "actions"> & {
  * needed by the single action detail view, which fetches the full action from
  * `/api/actions/:actionId`. List views read metadata only.
  */
-type ActionSummaryDefinition = Omit<RuntimeActionDefinition, "inputSchema" | "outputSchema">;
+export type RuntimeActionSummary = Omit<RuntimeActionDefinition, "inputSchema" | "outputSchema">;
+export type CatalogProviderMetadata = Omit<ProviderDefinition, "actions"> & {
+  actions: readonly Omit<ActionDefinition, "inputSchema" | "outputSchema">[];
+};
 
 /** One provider as `/api/providers` serves it to list views: metadata plus schema-free actions. */
 export type ProviderSummaryDefinition = Omit<RuntimeProviderDefinition, "actions"> & {
-  actions: ActionSummaryDefinition[];
+  actions: RuntimeActionSummary[];
   /** Host form metadata derived from the same provider definitions. */
   setup: ProviderAuthSetup[];
 };
+
+export interface ProviderDisplayCatalog {
+  providers: (RuntimeProviderDefinition & { categoryDisplayNames?: Record<string, string> })[];
+  providerSummariesJson: Uint8Array<ArrayBuffer>;
+  providerSummariesEtag: string;
+}
 
 /**
  * In-memory view of generated catalog JSON.
@@ -56,6 +68,7 @@ export type ProviderSummaryDefinition = Omit<RuntimeProviderDefinition, "actions
  */
 export type CatalogStore = {
   providers: RuntimeProviderDefinition[];
+  getProviderDisplay(locale: CatalogLocale): ProviderDisplayCatalog;
   /**
    * Schema-free view of `providers`, serialized once as UTF-8 bytes because the
    * catalog is immutable at runtime. Served verbatim by `/api/providers` so the
@@ -73,8 +86,9 @@ export type CatalogStore = {
    * answer conditional requests with `304 Not Modified`.
    */
   providerSummariesEtag: string;
-  actions: RuntimeActionDefinition[];
-  actionsById: Map<string, RuntimeActionDefinition>;
+  actions: RuntimeActionSummary[];
+  actionsById: Map<string, RuntimeActionSummary>;
+  getAction(id: string): Promise<RuntimeActionDefinition | undefined>;
   executableActionIds: Set<string>;
 };
 
@@ -109,19 +123,27 @@ export function createCatalogStore(
   providers: ProviderDefinition[],
   options: CreateCatalogStoreOptions = {},
 ): CatalogStore {
+  const definitions = new Map(
+    providers.flatMap((provider) => provider.actions.map((action) => [action.id, action] as const)),
+  );
+  const metadata = providers.map((provider) => ({
+    ...provider,
+    actions: provider.actions.map(({ inputSchema: _input, outputSchema: _output, ...action }) => action),
+  }));
+  return createCatalogFromMetadata(metadata, async (id) => definitions.get(id)!, options);
+}
+
+/** Build runtime metadata without reading action schemas; callers supply the explicit detail reader. */
+export function createCatalogFromMetadata(
+  providers: CatalogProviderMetadata[],
+  readAction: (id: string) => Promise<ActionDefinition>,
+  options: CreateCatalogStoreOptions,
+): CatalogStore {
   const sortedProviders = sortProviders(providers);
   const executableActions = new Set(options.executableActionIds ?? []);
   const runtimeProviders = sortedProviders.map((provider): RuntimeProviderDefinition => {
-    const actions = provider.actions.map((action): RuntimeActionDefinition => {
-      // A descriptor copy instead of a spread: a lazily loaded action exposes its schemas as
-      // accessors, and spreading would read them all back into memory here. Plain JSON actions copy
-      // to the same keys, in the same order, with the same attributes.
-      const runtimeAction = Object.defineProperties(
-        {},
-        Object.getOwnPropertyDescriptors(action),
-      ) as RuntimeActionDefinition;
-      runtimeAction.execution = createActionExecutionStatus(provider, action, executableActions);
-      return runtimeAction;
+    const actions = provider.actions.map((action): RuntimeActionSummary => {
+      return { ...action, execution: createActionExecutionStatus(provider, action, executableActions) };
     });
 
     return {
@@ -136,16 +158,50 @@ export function createCatalogStore(
     };
   });
   const actions = runtimeProviders.flatMap((provider) => provider.actions);
-  const providerSummaries = runtimeProviders.map(toProviderSummary);
+  const providerSummaries = runtimeProviders.map((provider) => toProviderSummary(provider));
   const providerSummariesJson = JSON.stringify(providerSummaries);
 
+  const englishDisplay: ProviderDisplayCatalog = {
+    providers: runtimeProviders,
+    providerSummariesJson: new TextEncoder().encode(providerSummariesJson),
+    providerSummariesEtag: weakEtag(providerSummariesJson),
+  };
+  const displays = new Map<CatalogLocale, ProviderDisplayCatalog>([["en", englishDisplay]]);
+
+  const actionsById = new Map(actions.map((action) => [action.id, action]));
+  // Follow the source object's lifetime so the file LRU still controls schema retention.
+  const definitions = new WeakMap<ActionDefinition, RuntimeActionDefinition>();
   return {
     providers: runtimeProviders,
     // TextEncoder rather than Buffer: the Cloudflare Workers build shares this function.
-    providerSummariesJson: new TextEncoder().encode(providerSummariesJson),
-    providerSummariesEtag: weakEtag(providerSummariesJson),
+    providerSummariesJson: englishDisplay.providerSummariesJson,
+    providerSummariesEtag: englishDisplay.providerSummariesEtag,
+    getProviderDisplay(locale) {
+      const existing = displays.get(locale);
+      if (existing) return existing;
+      const providers = runtimeProviders.map((provider) => localizeProvider(provider, locale));
+      const json = JSON.stringify(providers.map((provider) => toProviderSummary(provider, locale)));
+      const display = {
+        providers,
+        providerSummariesJson: new TextEncoder().encode(json),
+        providerSummariesEtag: weakEtag(json),
+      };
+      displays.set(locale, display);
+      return display;
+    },
     actions,
-    actionsById: new Map(actions.map((action) => [action.id, action])),
+    actionsById,
+    async getAction(id) {
+      const summary = actionsById.get(id);
+      if (!summary) return undefined;
+      const source = await readAction(id);
+      let definition = definitions.get(source);
+      if (!definition) {
+        definition = { ...source, ...summary };
+        definitions.set(source, definition);
+      }
+      return definition;
+    },
     executableActionIds: executableActions,
   };
 }
@@ -169,63 +225,40 @@ function weakEtag(content: string): string {
   return `W/"${content.length.toString(16)}-${digest}"`;
 }
 
-function toProviderSummary(provider: RuntimeProviderDefinition): ProviderSummaryDefinition {
+function toProviderSummary(
+  provider: RuntimeProviderDefinition,
+  locale: CatalogLocale = "en",
+): ProviderSummaryDefinition {
   return {
     ...provider,
-    actions: provider.actions.map(toActionSummary),
-    setup: provider.auth.map(describeProviderAuth),
+    actions: provider.actions,
+    setup: provider.auth.map((auth) => describeProviderAuth(auth, catalogSetupLabels[locale])),
   };
 }
 
-/**
- * Drop the two schema keys by copying the others in order.
- *
- * Rest destructuring or a spread would read both schemas, which pulls every file-backed schema of a
- * lazily loaded catalog into memory while the summaries are built.
- */
-function toActionSummary(action: RuntimeActionDefinition): ActionSummaryDefinition {
-  const summary: Record<string, unknown> = {};
-  for (const key of Object.keys(action) as (keyof RuntimeActionDefinition)[]) {
-    if (key === "inputSchema" || key === "outputSchema") {
-      continue;
-    }
-    summary[key] = action[key];
-  }
-
-  return summary as ActionSummaryDefinition;
-}
-
-/**
- * Load generated provider catalog files from disk.
- *
- * By default every file is read and parsed in full, a few files at a time (see `readProviderFiles`).
- * With `lazySchemas`, each action keeps only its metadata; the schemas stay on disk behind accessors
- * backed by a small per-file cache, which trades a synchronous read on schema access for a much
- * smaller resident catalog. With `lazySchemaIndexFile` as well, the metadata comes from that one
- * index file and no provider file is read at startup.
- */
+/** Load metadata eagerly; schema reads are explicit through getAction. */
 export async function loadCatalog(catalogDir: string, options: LoadCatalogOptions = {}): Promise<CatalogStore> {
   const entries = await readdir(catalogDir, { withFileTypes: true });
   const fileNames = entries
     .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
     .map((entry) => entry.name);
   const filePaths = fileNames.map((name) => join(catalogDir, name));
-  const providers = options.lazySchemas
-    ? options.lazySchemaIndexFile
-      ? indexedProvidersWithLazySchemas(
-          await readCatalogIndex({ indexFile: options.lazySchemaIndexFile, catalogDir, fileNames }),
-          options.lazySchemaCacheFiles,
-        )
-      : await readProvidersWithLazySchemas(filePaths, options.lazySchemaCacheFiles)
-    : await readProviderFiles(filePaths);
-  return createCatalogStore(providers, {
-    executableActionIds: resolveExecutableActionIds(providers, options),
-  });
+  if (options.lazySchemas) {
+    const indexed = options.lazySchemaIndexFile
+      ? await readCatalogIndex({ indexFile: options.lazySchemaIndexFile, catalogDir, fileNames })
+      : undefined;
+    const source = await loadFileCatalog(filePaths, indexed, options.lazySchemaCacheFiles);
+    return createCatalogFromMetadata(source.providers, source.readAction, {
+      executableActionIds: resolveExecutableActionIds(source.providers, options),
+    });
+  }
+  const providers = await readProviderFiles(filePaths);
+  return createCatalogStore(providers, { executableActionIds: resolveExecutableActionIds(providers, options) });
 }
 
 /** Resolve provider-level executable services into the exact action ids present in a loaded catalog. */
 export function resolveExecutableActionIds(
-  providers: ProviderDefinition[],
+  providers: CatalogProviderMetadata[],
   options: ExecutableActionOptions = {},
 ): Set<string> {
   const actionIds = new Set(options.executableActionIds ?? []);
@@ -241,17 +274,22 @@ export function resolveExecutableActionIds(
 }
 
 function createActionExecutionStatus(
-  provider: ProviderDefinition,
-  action: ActionDefinition,
+  provider: Pick<ProviderDefinition, "authTypes">,
+  action: Pick<ActionDefinition, "id" | "authTypes">,
   executableActions: Set<string>,
 ): ActionExecutionStatus {
   const locallyExecutable = executableActions.has(action.id);
+  const authTypes = action.authTypes ?? provider.authTypes;
+  if (action.authTypes && (!authTypes.length || authTypes.some((type) => !provider.authTypes.includes(type)))) {
+    throw new Error(`Invalid action authentication types: ${action.id}`);
+  }
   return {
     locallyExecutable,
     catalogOnly: !locallyExecutable,
-    requiredAuthTypes: provider.authTypes,
-    noAuthRunnable: provider.authTypes.includes("no_auth"),
-    needsCredential: !provider.authTypes.includes("no_auth"),
+    requiredAuthTypes: authTypes,
+    authTypesSource: action.authTypes ? "action" : "provider",
+    noAuthRunnable: authTypes.includes("no_auth"),
+    needsCredential: !authTypes.includes("no_auth"),
   };
 }
 

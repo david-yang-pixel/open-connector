@@ -1,14 +1,11 @@
-import type { CredentialValidators, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderExecutors, CredentialValidators, ProviderProxyExecutor } from "../../core/types.ts";
+import type { ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { Buffer } from "node:buffer";
-import {
-  defineProviderExecutors,
-  defineProviderProxy,
-  ProviderRequestError,
-  providerUserAgent,
-  requireApiKeyCredential,
-} from "../provider-runtime.ts";
+import { requireApiKeyCredential } from "../provider-credentials.ts";
+import { defineProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 interface Context {
   authorization: string;
@@ -59,7 +56,7 @@ const handlers: ProviderActionHandlers<"zenventory", ProviderRuntimeHandler<Cont
   },
 };
 
-export const executors: import("../../core/types.ts").ProviderExecutors = defineProviderExecutors<Context>({
+export const executors: ProviderExecutors = defineProviderExecutors<Context>({
   service: "zenventory",
   skipDnsValidation: true,
   async createContext(context, fetcher) {
@@ -101,7 +98,6 @@ export const credentialValidators: CredentialValidators = {
     );
     return {
       profile: { accountId: "api_key", displayName: "Zenventory API Key" },
-      grantedScopes: [],
       metadata: { apiBaseUrl: "https://app.zenventory.com/rest", validationEndpoint: "/items" },
     };
   },

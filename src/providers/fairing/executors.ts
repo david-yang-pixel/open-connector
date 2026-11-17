@@ -1,12 +1,11 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderTimeout,
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   isAbortLikeError,
   providerUserAgent,
   ProviderRequestError,
@@ -16,8 +15,7 @@ const service = "fairing";
 const fairingApiBaseUrl = "https://app.fairing.co/api";
 
 type FairingPhase = "validate" | "execute";
-type FairingActionContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
-type FairingActionHandler = (input: Record<string, unknown>, context: FairingActionContext) => Promise<unknown>;
+type FairingActionHandler = (input: Record<string, unknown>, context: ApiKeyProviderContext) => Promise<unknown>;
 
 export const fairingActionHandlers: ProviderActionHandlers<"fairing", FairingActionHandler> = {
   list_responses(input, context) {
@@ -57,7 +55,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "api_key",
         displayName: "Fairing API Key",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: fairingApiBaseUrl,
         validationEndpoint: "/responses",
@@ -67,7 +64,7 @@ export const credentialValidators: CredentialValidators = {
   },
 };
 
-async function listResponses(input: Record<string, unknown>, context: FairingActionContext): Promise<unknown> {
+async function listResponses(input: Record<string, unknown>, context: ApiKeyProviderContext): Promise<unknown> {
   if (input.starting_after !== undefined && input.ending_before !== undefined) {
     throw new ProviderRequestError(400, "starting_after and ending_before are mutually exclusive.");
   }
@@ -98,7 +95,7 @@ async function listResponses(input: Record<string, unknown>, context: FairingAct
 }
 
 async function requestFairingJson(input: {
-  context: FairingActionContext;
+  context: ApiKeyProviderContext;
   path: string;
   query?: Record<string, unknown>;
   phase: FairingPhase;

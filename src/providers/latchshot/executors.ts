@@ -1,6 +1,7 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderTransitFile } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderTransitFile } from "../provider-files.ts";
 
 import {
   compactObject,
@@ -11,11 +12,11 @@ import {
   optionalString,
   requiredString,
 } from "../../core/cast.ts";
-import { readBoundedResponseBytes } from "../../core/request.ts";
+import { storeResponseInTransit } from "../../core/request.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
   createProviderFetch,
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   providerInputError,
   providerResponseError,
   providerUserAgent,
@@ -63,7 +64,6 @@ export const credentialValidators: CredentialValidators = {
       profile: {
         accountId: "latchshot-api-key",
         displayName: `${result.customer.name} (${displayPlan(result.customer.plan)})`,
-        grantedScopes: [],
       },
       metadata: {
         apiBaseUrl: latchshotApiBaseUrl,
@@ -113,19 +113,18 @@ async function captureLatchshotPage(
     throw await createLatchshotError(response, "execute");
   }
 
-  const bytes = await readBoundedResponseBytes(response, {
-    maxBytes: context.transitFiles.maxBytes,
+  const artifact = resolveArtifact(response.headers.get("content-type"), format);
+  const stored = await storeResponseInTransit(response, context.transitFiles, {
+    name: `latchshot-capture.${artifact.extension}`,
+    mimeType: artifact.mimeType,
     fieldName: "Latchshot artifact",
     createError: (message) => new ProviderRequestError(413, message),
+    signal: context.signal,
   });
-  if (bytes.byteLength === 0) {
+  if (stored.sizeBytes === 0) {
+    await context.transitFiles.delete(stored.fileId).catch(() => undefined);
     throw new ProviderRequestError(502, "Latchshot returned an empty artifact.");
   }
-
-  const artifact = resolveArtifact(response.headers.get("content-type"), format);
-  const stored = await context.transitFiles.create(
-    new File([Uint8Array.from(bytes)], `latchshot-capture.${artifact.extension}`, { type: artifact.mimeType }),
-  );
   const file: ProviderTransitFile = {
     fileId: stored.fileId,
     downloadUrl: stored.downloadUrl,
@@ -204,7 +203,7 @@ async function createLatchshotError(response: Response, phase: LatchshotRequestP
   const message = extractLatchshotErrorMessage(text) ?? `Latchshot request failed with HTTP ${response.status}.`;
 
   if (phase === "validate" && (response.status === 401 || response.status === 403)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if ([400, 401, 403, 413, 429].includes(response.status)) {
     return new ProviderRequestError(response.status, message);
@@ -310,7 +309,7 @@ function requireObject(value: unknown, message: string): Record<string, unknown>
   if (record) {
     return record;
   }
-  throw new ProviderRequestError(502, message);
+  throw providerResponseError(message);
 }
 
 function requireNonNegativeInteger(value: unknown, fieldName: string, positive = false): number {

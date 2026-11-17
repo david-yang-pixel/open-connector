@@ -1,5 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
+import type { ApiKeyProviderContext, ProviderActionHandlers } from "../provider-executors.ts";
 
 import { compactObject, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
 import { encodePathSegment } from "../../core/request.ts";
@@ -32,26 +32,13 @@ export const grafanaCloudActionHandlers: ProviderActionHandlers<"grafana_cloud",
       raw: record,
     };
   },
-  async list_stacks(input, context) {
-    const payload = await requestGrafanaCloud(
-      context,
-      buildGrafanaCloudUrl(
-        `/orgs/${encodePathSegment(context.orgSlug)}/instances`,
-        compactObject({
-          pageSize: optionalNumber(input.pageSize),
-          pageCursor: optionalString(input.pageCursor),
-        }),
-      ),
-      "execute",
-    );
+  // The organization instances endpoint returns every stack in one response and rejects any
+  // query parameter it does not define, including pageSize and pageCursor, with 409.
+  async list_stacks(_input, context) {
+    const payload = await requestGrafanaCloud(context, organizationInstancesUrl(context.orgSlug), "execute");
     const record = requiredResponseRecord(payload, "Grafana Cloud stacks response");
-    const metadata = optionalRecord(record.metadata);
-    const pagination = optionalRecord(metadata?.pagination);
-    const nextPage = optionalString(pagination?.nextPage) ?? null;
     return {
       stacks: recordArray(record.items).map(normalizeStack),
-      nextPageCursor: extractPageCursor(nextPage),
-      nextPage,
       raw: record,
     };
   },
@@ -92,11 +79,7 @@ export async function validateGrafanaCloudCredential(
 ): Promise<CredentialValidationResult> {
   const orgSlug = requireGrafanaCloudOrgSlug(values.orgSlug);
   const context = { apiKey, orgSlug, fetcher, signal };
-  const payload = await requestGrafanaCloud(
-    context,
-    buildGrafanaCloudUrl(`/orgs/${encodePathSegment(orgSlug)}/instances`, { pageSize: 1 }),
-    "validate",
-  );
+  const payload = await requestGrafanaCloud(context, organizationInstancesUrl(orgSlug), "validate");
   const record = requiredResponseRecord(payload, "Grafana Cloud stacks response");
   const stacks = recordArray(record.items);
   const firstStack = optionalRecord(stacks[0]);
@@ -109,7 +92,6 @@ export async function validateGrafanaCloudCredential(
       accountId: `grafana_cloud:${orgSlug}`,
       displayName: orgName,
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: grafanaCloudApiBaseUrl,
       orgSlug,
@@ -124,6 +106,10 @@ export function requireGrafanaCloudOrgSlug(value: unknown): string {
   return requireTrimmedString(value, "orgSlug");
 }
 
+function organizationInstancesUrl(orgSlug: string): URL {
+  return buildGrafanaCloudUrl(`/orgs/${encodePathSegment(orgSlug)}/instances`);
+}
+
 function buildGrafanaCloudUrl(path: string, query: Record<string, unknown> = {}): URL {
   const url = new URL(`${grafanaCloudApiBaseUrl}${path}`);
   for (const [key, value] of Object.entries(query)) {
@@ -135,7 +121,7 @@ function buildGrafanaCloudUrl(path: string, query: Record<string, unknown> = {})
 }
 
 async function requestGrafanaCloud(
-  context: Pick<GrafanaCloudContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   url: URL,
   phase: GrafanaCloudRequestPhase,
 ): Promise<unknown> {
@@ -260,18 +246,6 @@ function recordArray(value: unknown): Array<Record<string, unknown>> {
         return record ? [record] : [];
       })
     : [];
-}
-
-function extractPageCursor(nextPage: string | null): string | null {
-  if (!nextPage) {
-    return null;
-  }
-  try {
-    const url = new URL(nextPage, grafanaCloudApiBaseUrl);
-    return optionalString(url.searchParams.get("pageCursor")) ?? null;
-  } catch {
-    return null;
-  }
 }
 
 function requireTrimmedString(value: unknown, fieldName: string): string {

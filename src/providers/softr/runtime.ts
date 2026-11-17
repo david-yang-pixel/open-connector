@@ -1,7 +1,7 @@
 import type { QueryValue } from "../../core/request.ts";
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import {
   compactObject,
@@ -22,7 +22,7 @@ type SoftrRequestMode = "validate" | "execute";
 
 interface SoftrRequestOptions {
   path: string;
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
+  context: ApiKeyProviderContext;
   mode: SoftrRequestMode;
   method?: "GET" | "POST" | "PATCH" | "DELETE";
   query?: Record<string, QueryValue>;
@@ -163,7 +163,6 @@ export async function validateSoftrCredential(
       accountId: workspaceIds.length === 1 ? `softr:workspace:${workspaceIds[0]}` : undefined,
       displayName: "Softr Database API",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: softrApiBaseUrl,
       validationEndpoint: softrValidationPath,

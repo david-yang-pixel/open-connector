@@ -1,6 +1,5 @@
 import type { CredentialValidationResult, ProviderExecutors } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import {
   compactObject,
@@ -11,13 +10,13 @@ import {
   requiredRecord,
   requiredString,
 } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { readTransitFileInput } from "../provider-files.ts";
 import {
-  defineApiKeyProviderExecutors,
   providerInputError,
   ProviderRequestError,
   providerResponseError,
   providerUserAgent,
-  readTransitFileInput,
 } from "../provider-runtime.ts";
 
 const service = "pandadoc";
@@ -301,7 +300,7 @@ export async function validatePandadocCredential(
     ),
   );
   return {
-    profile: { accountId: "pandadoc-api-key", displayName: "PandaDoc API Key", grantedScopes: [] },
+    profile: { accountId: "pandadoc-api-key", displayName: "PandaDoc API Key" },
     metadata: compactObject({
       apiBaseUrl: pandadocApiBaseUrl,
       validationEndpoint: validationPath,
@@ -311,7 +310,7 @@ export async function validatePandadocCredential(
 }
 
 async function requestPandadocJson(
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   options: {
     path: string;
     method?: string;

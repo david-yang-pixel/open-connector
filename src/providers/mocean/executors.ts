@@ -1,13 +1,14 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
   providerUserAgent,
   ProviderRequestError,
+  providerInputError,
+  providerResponseError,
 } from "../provider-runtime.ts";
 
 const service = "mocean";
@@ -99,7 +100,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "api_key",
         displayName: "Mocean API Token",
       },
-      grantedScopes: [],
       metadata: compactObject({
         apiBaseUrl: moceanApiBaseUrl,
         validationEndpoint: "/account/balance",
@@ -112,7 +112,7 @@ export const credentialValidators: CredentialValidators = {
 async function requestMocean(
   method: "GET" | "POST",
   path: string,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   params: Record<string, unknown>,
   phase: MoceanRequestPhase,
 ): Promise<unknown> {
@@ -232,10 +232,10 @@ function mapMoceanStatusError(status: number, message: string, phase: MoceanRequ
   }
 
   if ([2, 3, 5, 6, 14, 26, 28, 29, 34, 46, 51, 72].includes(status)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
 
-  return new ProviderRequestError(502, message);
+  return providerResponseError(message);
 }
 
 function mapMoceanHttpError(response: Response, payload: unknown, phase: MoceanRequestPhase): ProviderRequestError {

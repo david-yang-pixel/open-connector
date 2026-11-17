@@ -1,8 +1,13 @@
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalRecord, optionalString } from "../../core/cast.ts";
-import { providerUserAgent, ProviderRequestError, requiredInputString } from "../provider-runtime.ts";
+import {
+  providerUserAgent,
+  ProviderRequestError,
+  requiredInputString,
+  providerInputError,
+} from "../provider-runtime.ts";
 
 export const loyjoyApiBaseUrl = "https://app-stable.loyjoy.com/api";
 type Phase = "validate" | "execute";
@@ -91,13 +96,11 @@ export const loyjoyActionHandlers: ProviderActionHandlers<
 
 export async function validateLoyjoyApiKey(context: ApiKeyProviderContext): Promise<{
   profile: { accountId: string; displayName: string };
-  grantedScopes: string[];
   metadata: Record<string, unknown>;
 }> {
   await request("/processes", "GET", undefined, context, "validate");
   return {
     profile: { accountId: "api_key", displayName: "LoyJoy Tenant" },
-    grantedScopes: [],
     metadata: { apiBaseUrl: loyjoyApiBaseUrl, validationEndpoint: "/processes" },
   };
 }
@@ -140,8 +143,7 @@ function errorFor(response: Response, payload: unknown, phase: Phase): ProviderR
     optionalString(record?.error) ??
     `LoyJoy request failed with status ${response.status}`;
   if (response.status === 429) return new ProviderRequestError(429, message);
-  if (phase === "validate" && response.status >= 400 && response.status < 500)
-    return new ProviderRequestError(400, message);
+  if (phase === "validate" && response.status >= 400 && response.status < 500) return providerInputError(message);
   if (phase === "execute" && (response.status === 401 || response.status === 403))
     return new ProviderRequestError(401, message);
   return new ProviderRequestError(response.status >= 400 && response.status < 500 ? 400 : 502, message);

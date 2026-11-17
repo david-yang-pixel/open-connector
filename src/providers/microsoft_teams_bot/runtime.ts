@@ -1,0 +1,586 @@
+import type { CredentialValidationResult } from "../../core/types.ts";
+import type { ProviderActionHandlers, ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
+
+import {
+  compactObject,
+  looseArray,
+  optionalInteger,
+  optionalRawString,
+  optionalRecord,
+  optionalString,
+} from "../../core/cast.ts";
+import { assertPublicHttpUrl, encodePathSegment } from "../../core/request.ts";
+import { isAllowedTeamsBotConnectorHost } from "../../core/teams-bot-connector.ts";
+import {
+  providerInputError,
+  ProviderRequestError,
+  providerResponseError,
+  providerUserAgent,
+  readProviderErrorTextBody,
+  readProviderJsonBody,
+  requiredInputString,
+  requiredResponseRecord,
+  runProviderRequest,
+  setSearchParams,
+} from "../provider-runtime.ts";
+
+const service = "microsoft_teams_bot";
+
+const tokenRefreshSkewMs = 60_000;
+
+const defaultTextFormat = "markdown";
+
+const maximumMessageBytes = 100 * 1024;
+// An image URL that is a whole base64 data URI. Its characters need no
+// JSON escaping, so its length is the same inside the serialized activity.
+const embeddedImage = /^data:image\/[\w.+-]+;base64,[A-Za-z0-9+/]+=*$/i;
+
+interface TeamsBotCloud {
+  loginEndpoint: string;
+  scope: string;
+}
+
+const publicCloud: TeamsBotCloud = {
+  loginEndpoint: "https://login.microsoftonline.com",
+  scope: "https://api.botframework.com/.default",
+};
+
+// GCC High and DoD share the sovereign login endpoint and Bot Framework scope.
+const governmentCloud: TeamsBotCloud = {
+  loginEndpoint: "https://login.microsoftonline.us",
+  scope: "https://api.botframework.us/.default",
+};
+
+const governmentHostSuffix = "teams.microsoft.us";
+
+type TeamsBotRequestPhase = "validate" | "execute";
+
+interface TeamsBotCredential {
+  appId: string;
+  clientSecret: string;
+  tenantId: string;
+  serviceUrl?: string;
+}
+
+export interface TeamsBotContext extends TeamsBotCredential {
+  fetcher: ProviderFetch;
+  signal?: AbortSignal;
+}
+
+interface TeamsBotTokenCacheEntry {
+  token: string;
+  expiresAtMs: number;
+}
+
+interface TeamsBotConnectorRequest {
+  context: TeamsBotContext;
+  method: "GET" | "POST" | "PUT" | "DELETE";
+  serviceUrl: string;
+  path: string;
+  query?: Record<string, string | undefined>;
+  body?: Record<string, unknown>;
+}
+
+type TeamsBotActionHandler = ProviderRuntimeHandler<TeamsBotContext>;
+
+const tokenCache = new Map<string, TeamsBotTokenCacheEntry>();
+
+export const microsoftTeamsBotActionHandlers: ProviderActionHandlers<typeof service, TeamsBotActionHandler> = {
+  async send_message(input, context) {
+    const serviceUrl = resolveServiceUrl(input.serviceUrl, context);
+    return readResourceResponse(
+      await requestConnector({
+        context,
+        method: "POST",
+        serviceUrl,
+        path: `${conversationPath(input)}/activities`,
+        body: messageActivity(input),
+      }),
+    );
+  },
+  async reply_to_message(input, context) {
+    const serviceUrl = resolveServiceUrl(input.serviceUrl, context);
+    return readResourceResponse(
+      await requestConnector({
+        context,
+        method: "POST",
+        serviceUrl,
+        path: activityPath(input),
+        body: messageActivity(input, "replyToId"),
+      }),
+    );
+  },
+  async update_message(input, context) {
+    const serviceUrl = resolveServiceUrl(input.serviceUrl, context);
+    return readResourceResponse(
+      await requestConnector({
+        context,
+        method: "PUT",
+        serviceUrl,
+        path: activityPath(input),
+        body: messageActivity(input, "id"),
+      }),
+    );
+  },
+  async delete_message(input, context) {
+    const serviceUrl = resolveServiceUrl(input.serviceUrl, context);
+    await requestConnector({ context, method: "DELETE", serviceUrl, path: activityPath(input) });
+    return { deleted: true };
+  },
+  async create_conversation(input, context) {
+    const serviceUrl = resolveServiceUrl(input.serviceUrl, context);
+    const memberId = optionalString(input.memberId);
+    const teamId = optionalString(input.teamId);
+    if ((memberId === undefined) === (teamId === undefined)) {
+      throw providerInputError("Provide exactly one of memberId or teamId.");
+    }
+    const tenantId = optionalString(input.tenantId) ?? context.tenantId;
+    const response = await requestConnector({
+      context,
+      method: "POST",
+      serviceUrl,
+      path: "/v3/conversations",
+      body: createConversationBody(context, { memberId, teamId, tenantId, input }),
+    });
+    const record = requiredResponseRecord(response, "create_conversation response");
+    return compactObject({
+      ...record,
+      id: requireString(record.id, "conversation id"),
+      activityId: optionalString(record.activityId),
+      serviceUrl: optionalString(record.serviceUrl),
+    });
+  },
+  async list_conversation_members(input, context) {
+    const serviceUrl = resolveServiceUrl(input.serviceUrl, context);
+    const response = requiredResponseRecord(
+      await requestConnector({
+        context,
+        method: "GET",
+        serviceUrl,
+        path: `${conversationPath(input)}/pagedMembers`,
+        query: {
+          pageSize: optionalInteger(input.pageSize)?.toString(),
+          continuationToken: optionalString(input.continuationToken),
+        },
+      }),
+      "members response",
+    );
+    if (!Array.isArray(response.members)) {
+      throw providerResponseError("Microsoft Teams Bot members response did not include a member list.");
+    }
+    return compactObject({ members: response.members, continuationToken: optionalString(response.continuationToken) });
+  },
+  async list_team_channels(input, context) {
+    const serviceUrl = resolveServiceUrl(input.serviceUrl, context);
+    const response = requiredResponseRecord(
+      await requestConnector({
+        context,
+        method: "GET",
+        serviceUrl,
+        path: `/v3/teams/${encodePathSegment(requiredInputString(input.teamId, "teamId"))}/conversations`,
+      }),
+      "team channels response",
+    );
+    if (!Array.isArray(response.conversations)) {
+      throw providerResponseError("Microsoft Teams Bot channels response did not include a channel list.");
+    }
+    return {
+      channels: response.conversations.map((entry) => {
+        const channel = requiredResponseRecord(entry, "team channel");
+        // Teams returns the General channel without a name so clients can localize it.
+        return { id: requireString(channel.id, "channel id"), name: optionalString(channel.name) ?? "General" };
+      }),
+    };
+  },
+};
+
+/**
+ * Read the credential field map into a typed credential, rejecting a default
+ * service URL outside the Bot Connector allow-list.
+ */
+export function readTeamsBotCredential(values: Record<string, string>): TeamsBotCredential {
+  const serviceUrl = optionalString(values.serviceUrl);
+  return {
+    appId: requiredInputString(values.appId, "appId"),
+    clientSecret: requiredInputString(values.clientSecret, "clientSecret"),
+    tenantId: requiredInputString(values.tenantId, "tenantId"),
+    serviceUrl: serviceUrl === undefined ? undefined : normalizeServiceUrl(serviceUrl),
+  };
+}
+
+/**
+ * Validate a caller-supplied service URL against the Bot Connector host
+ * allow-list and return it without query, fragment, or trailing slash.
+ */
+export function normalizeServiceUrl(value: string): string {
+  const url = assertPublicHttpUrl(value, { fieldName: "serviceUrl", createError: providerInputError });
+  if (url.protocol !== "https:" || url.username || url.password) {
+    throw providerInputError("serviceUrl must be an https URL without credentials.");
+  }
+  if (!isAllowedTeamsBotConnectorHost(url.hostname)) {
+    throw providerInputError("serviceUrl must be a Microsoft Teams Bot Connector host.");
+  }
+  return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
+}
+
+/**
+ * Mint one connector token to prove the app registration credentials work.
+ */
+export async function validateTeamsBotCredential(
+  values: Record<string, string>,
+  fetcher: ProviderFetch,
+  signal?: AbortSignal,
+): Promise<CredentialValidationResult> {
+  const credential = readTeamsBotCredential(values);
+  await fetchConnectorToken({ ...credential, fetcher, signal }, cloudForServiceUrl(credential.serviceUrl), "validate");
+  return {
+    profile: {
+      accountId: credential.appId,
+      displayName: `Microsoft Teams Bot ${credential.appId}`,
+    },
+    metadata: compactObject({ tenantId: credential.tenantId, serviceUrl: credential.serviceUrl }),
+  };
+}
+
+/** Returns a cached or newly minted Bot Connector token for the credential's cloud. */
+export function mintTeamsBotConnectorToken(context: TeamsBotContext): Promise<string> {
+  return fetchConnectorToken(context, cloudForServiceUrl(context.serviceUrl), "execute");
+}
+
+interface CreateConversationTarget {
+  memberId?: string;
+  teamId?: string;
+  tenantId: string;
+  input: Record<string, unknown>;
+}
+
+// Teams reads the tenant from channelData.tenant.id in the documented examples and
+// from the top-level tenantId in the REST schema, so both carry it. A team target
+// is a new thread in the team's general channel and needs its first message.
+function createConversationBody(context: TeamsBotContext, target: CreateConversationTarget): Record<string, unknown> {
+  const bot = { id: `28:${context.appId}` };
+  const tenant = { id: target.tenantId };
+  if (target.memberId !== undefined) {
+    return {
+      isGroup: false,
+      bot,
+      members: [{ id: target.memberId }],
+      tenantId: target.tenantId,
+      channelData: { tenant },
+      activity: optionalString(target.input.text) === undefined ? undefined : messageActivity(target.input),
+    };
+  }
+  return {
+    isGroup: true,
+    bot,
+    tenantId: target.tenantId,
+    channelData: {
+      teamsChannelId: target.teamId,
+      teamsTeamId: target.teamId,
+      channel: { id: target.teamId },
+      team: { id: target.teamId },
+      tenant,
+    },
+    activity: messageActivity(target.input),
+  };
+}
+
+function cloudForServiceUrl(serviceUrl: string | undefined): TeamsBotCloud {
+  const host = serviceUrl === undefined ? "" : new URL(serviceUrl).hostname.toLowerCase();
+  return host === governmentHostSuffix || host.endsWith(`.${governmentHostSuffix}`) ? governmentCloud : publicCloud;
+}
+
+function resolveServiceUrl(value: unknown, context: TeamsBotContext): string {
+  const requested = optionalString(value);
+  if (requested !== undefined) {
+    return normalizeServiceUrl(requested);
+  }
+  if (context.serviceUrl === undefined) {
+    throw providerInputError("serviceUrl is required when the credential has no default service URL.");
+  }
+  return context.serviceUrl;
+}
+
+function conversationPath(input: Record<string, unknown>): string {
+  const conversationId = requiredInputString(input.conversationId, "conversationId");
+  const threadId = optionalString(input.threadId);
+  if (threadId === undefined) {
+    return `/v3/conversations/${encodePathSegment(conversationId)}`;
+  }
+  // Teams routes a channel-thread message by the root message id appended to the
+  // conversation id; any existing suffix is replaced.
+  if (!/^[1-9]\d*$/.test(threadId)) {
+    throw providerInputError("threadId must be the numeric ID of the thread's root message.");
+  }
+  const baseId = conversationId.split(";")[0] ?? conversationId;
+  return `/v3/conversations/${encodePathSegment(`${baseId};messageid=${threadId}`)}`;
+}
+
+function activityPath(input: Record<string, unknown>): string {
+  return `${conversationPath(input)}/activities/${encodePathSegment(requiredInputString(input.activityId, "activityId"))}`;
+}
+
+/**
+ * Builds a message activity from text, cards or both. Teams counts a bot message's size in UTF-16, without
+ * base64-encoded images, and refuses one above 100 KB with 413 MessageSizeTooBig, so an oversized message is
+ * refused before it is sent.
+ */
+function messageActivity(
+  input: Record<string, unknown>,
+  activityIdField?: "id" | "replyToId",
+): Record<string, unknown> {
+  const text = optionalString(input.text);
+  const attachments = Array.isArray(input.attachments) && input.attachments.length > 0 ? input.attachments : undefined;
+  if (text === undefined && attachments === undefined) {
+    throw providerInputError("Provide text, attachments, or both.");
+  }
+  const activity: Record<string, unknown> = compactObject({
+    type: "message",
+    text,
+    textFormat: text === undefined ? undefined : (optionalString(input.textFormat) ?? defaultTextFormat),
+    attachments,
+    attachmentLayout: attachments === undefined ? undefined : optionalString(input.attachmentLayout),
+  });
+  if (activityIdField !== undefined) {
+    activity[activityIdField] = requiredInputString(input.activityId, "activityId");
+  }
+  // A JavaScript string length counts UTF-16 code units, two bytes each. Teams leaves base64-encoded images
+  // out of the limit, so only rendered image fields are excluded; text and action data always count, and the
+  // activity itself is sent unchanged.
+  if ((JSON.stringify(activity).length - embeddedImageLength(attachments)) * 2 > maximumMessageBytes) {
+    throw providerInputError("The message exceeds Teams' 100 KB limit for bot messages.");
+  }
+  return activity;
+}
+
+/** Count embedded images only along card rendering paths, never inside text or action data. */
+function embeddedImageLength(value: unknown): number {
+  const images: unknown[] = [];
+  looseArray(value).forEach((entry) => {
+    const attachment = optionalRecord(entry);
+    const content = optionalRecord(attachment?.content);
+    if (!content) return;
+    if (attachment?.contentType === "application/vnd.microsoft.card.adaptive") {
+      const pending: unknown[] = [content];
+      while (pending.length > 0) {
+        const node = optionalRecord(pending.pop());
+        if (!node) continue;
+        switch (node.type) {
+          case "AdaptiveCard":
+          case "Container":
+          case "Column":
+            images.push(optionalRecord(node.backgroundImage)?.url ?? node.backgroundImage);
+            pending.push(...looseArray(node.type === "AdaptiveCard" ? node.body : node.items));
+            if (node.type === "AdaptiveCard") pending.push(...looseArray(node.actions));
+            break;
+          case "ColumnSet":
+            pending.push(...looseArray(node.columns));
+            break;
+          case "ImageSet":
+            pending.push(...looseArray(node.images));
+            break;
+          case "Image":
+            images.push(node.url);
+            break;
+          case "Media":
+            images.push(node.poster);
+            break;
+          case "ActionSet":
+            pending.push(...looseArray(node.actions));
+            break;
+          case "RichTextBlock":
+            pending.push(...looseArray(node.inlines));
+            break;
+          case "Input.Text":
+            pending.push(node.inlineAction);
+            break;
+          case "Action.ShowCard":
+            pending.push(node.card);
+            images.push(node.iconUrl);
+            break;
+          case "Action.Execute":
+          case "Action.Submit":
+          case "Action.OpenUrl":
+          case "Action.ToggleVisibility":
+            images.push(node.iconUrl);
+            break;
+        }
+        pending.push(node.selectAction, node.fallback);
+      }
+      return;
+    }
+    switch (attachment?.contentType) {
+      case "application/vnd.microsoft.card.hero":
+      case "application/vnd.microsoft.card.thumbnail":
+        images.push(...looseArray(content.images).map((image) => optionalRecord(image)?.url));
+        break;
+      case "application/vnd.microsoft.card.receipt":
+        images.push(...looseArray(content.items).map((item) => optionalRecord(optionalRecord(item)?.image)?.url));
+        break;
+      case "application/vnd.microsoft.teams.card.o365connector":
+        looseArray(content.sections).forEach((section) => {
+          const record = optionalRecord(section);
+          images.push(record?.activityImage, optionalRecord(record?.heroImage)?.image);
+          images.push(...looseArray(record?.images).map((image) => optionalRecord(image)?.image));
+        });
+        break;
+      case "application/vnd.microsoft.teams.card.list":
+        images.push(...looseArray(content.items).map((item) => optionalRecord(item)?.icon));
+        break;
+    }
+    images.push(...looseArray(content.buttons).map((button) => optionalRecord(button)?.image));
+  });
+  return images
+    .map(optionalRawString)
+    .reduce((total, url) => total + (url && embeddedImage.test(url) ? url.length : 0), 0);
+}
+
+function readResourceResponse(response: unknown): Record<string, unknown> {
+  const record = optionalRecord(response) ?? {};
+  return compactObject({ ...record, id: optionalString(record.id) });
+}
+
+async function fetchConnectorToken(
+  context: TeamsBotContext,
+  cloud: TeamsBotCloud,
+  phase: TeamsBotRequestPhase,
+): Promise<string> {
+  const cacheKey = [cloud.loginEndpoint, context.tenantId, context.appId, context.clientSecret].join("\u0000");
+  // Validation must reach Microsoft so a revoked secret is not accepted from a cached token.
+  const cached = phase === "validate" ? undefined : tokenCache.get(cacheKey);
+  if (cached && cached.expiresAtMs > Date.now()) {
+    return cached.token;
+  }
+
+  const payload = await runProviderRequest(
+    { signal: context.signal, label: "Microsoft Teams Bot token" },
+    async (signal) => {
+      const response = await context.fetcher(
+        `${cloud.loginEndpoint}/${encodePathSegment(context.tenantId)}/oauth2/v2.0/token`,
+        {
+          method: "POST",
+          headers: {
+            accept: "application/json",
+            "content-type": "application/x-www-form-urlencoded",
+            "user-agent": providerUserAgent,
+          },
+          body: new URLSearchParams({
+            grant_type: "client_credentials",
+            client_id: context.appId,
+            client_secret: context.clientSecret,
+            scope: cloud.scope,
+          }),
+          signal,
+        },
+      );
+      if (!response.ok) {
+        throw await createTokenError(response, phase, signal);
+      }
+      return readProviderJsonBody(response, {
+        emptyBody: {},
+        invalidJsonMessage: "Microsoft Teams Bot token response was not JSON",
+      });
+    },
+  );
+
+  const record = requiredResponseRecord(payload, "token response");
+  const token = optionalString(record.access_token);
+  if (token === undefined) {
+    throw providerResponseError("Microsoft Teams Bot token response did not include an access token.");
+  }
+  const expiresInSeconds = Number(record.expires_in);
+  if (Number.isFinite(expiresInSeconds) && expiresInSeconds > 0) {
+    const nowMs = Date.now();
+    tokenCache.set(cacheKey, {
+      token,
+      expiresAtMs: Math.max(nowMs, nowMs + expiresInSeconds * 1000 - tokenRefreshSkewMs),
+    });
+  }
+  return token;
+}
+
+async function createTokenError(
+  response: Response,
+  phase: TeamsBotRequestPhase,
+  signal: AbortSignal,
+): Promise<ProviderRequestError> {
+  const text = await readProviderErrorTextBody(response, "token error response", signal);
+  const message = readErrorMessage(text);
+  let invalidSecret = false;
+  try {
+    invalidSecret = optionalRecord(JSON.parse(text))?.error === "invalid_client";
+  } catch {}
+  return new ProviderRequestError(
+    invalidSecret ? (phase === "validate" ? 400 : 401) : response.status,
+    message ?? `Microsoft token request failed with HTTP ${response.status}`,
+    undefined,
+    invalidSecret
+      ? phase === "validate"
+        ? "invalid_input"
+        : "authorization_failed"
+      : response.status === 429
+        ? "rate_limited"
+        : "provider_error",
+  );
+}
+
+async function requestConnector(input: TeamsBotConnectorRequest): Promise<unknown> {
+  const token = await fetchConnectorToken(input.context, cloudForServiceUrl(input.serviceUrl), "execute");
+  return runProviderRequest({ signal: input.context.signal, label: "Microsoft Teams Bot" }, async (signal) => {
+    const headers = new Headers({
+      accept: "application/json",
+      authorization: `Bearer ${token}`,
+      "user-agent": providerUserAgent,
+    });
+    if (input.body !== undefined) {
+      headers.set("content-type", "application/json");
+    }
+    const url = new URL(`${input.serviceUrl}${input.path}`);
+    setSearchParams(url, input.query ?? {});
+    const response = await input.context.fetcher(url, {
+      method: input.method,
+      headers,
+      body: input.body === undefined ? undefined : JSON.stringify(input.body),
+      signal,
+    });
+    if (!response.ok) {
+      const message = readErrorMessage(await readProviderErrorTextBody(response, "connector error response", signal));
+      throw new ProviderRequestError(
+        response.status,
+        message ?? `Microsoft Teams Bot request failed with HTTP ${response.status}`,
+        undefined,
+        response.status === 429 ? "rate_limited" : "provider_error",
+      );
+    }
+    return readProviderJsonBody(response, {
+      emptyBody: {},
+      invalidJsonMessage: "Microsoft Teams Bot response was not JSON",
+    });
+  });
+}
+
+/**
+ * Pull a readable message out of a Bot Connector (`error.message`) or
+ * Microsoft Entra (`error_description`) error body, falling back to the text.
+ */
+function readErrorMessage(text: string): string | undefined {
+  const trimmed = text.trim();
+  if (trimmed === "") return undefined;
+  try {
+    const record = optionalRecord(JSON.parse(trimmed));
+    const message = optionalString(optionalRecord(record?.error)?.message) ?? optionalString(record?.error_description);
+    // Entra descriptions carry trace and correlation IDs on later lines.
+    return message?.split("\r\n")[0]?.split("\n")[0] ?? trimmed.slice(0, 500);
+  } catch {
+    return trimmed.slice(0, 500);
+  }
+}
+
+function requireString(value: unknown, label: string): string {
+  const text = optionalString(value);
+  if (text === undefined) {
+    throw providerResponseError(`Microsoft Teams Bot response did not include ${label}.`);
+  }
+  return text;
+}

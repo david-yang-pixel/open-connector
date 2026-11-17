@@ -1,9 +1,15 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { optionalRecord, optionalString } from "../../core/cast.ts";
-import { ProviderRequestError, providerUserAgent, requiredResponseRecord } from "../provider-runtime.ts";
+import {
+  ProviderRequestError,
+  providerUserAgent,
+  requiredResponseRecord,
+  providerInputError,
+} from "../provider-runtime.ts";
 
 export const vectorshiftApiBaseUrl = "https://api.vectorshift.ai/v1";
 const listPipelinesPath = "/pipelines";
@@ -47,7 +53,6 @@ export async function validateVectorshiftCredential(
     profile: {
       accountId: "vectorshift-api-key",
       displayName: "VectorShift API Key",
-      grantedScopes: [],
     },
     metadata: {
       apiBaseUrl: vectorshiftApiBaseUrl,
@@ -205,11 +210,10 @@ function createVectorshiftError(
 ): ProviderRequestError {
   const message = readErrorMessage(payload) ?? `vectorshift request failed with ${response.status}`;
   if (response.status === 429) return new ProviderRequestError(429, message);
-  if (phase === "validate" && (response.status === 401 || response.status === 403))
-    return new ProviderRequestError(400, message);
+  if (phase === "validate" && (response.status === 401 || response.status === 403)) return providerInputError(message);
   if (phase === "execute" && (response.status === 401 || response.status === 403))
     return new ProviderRequestError(401, message);
-  if (response.status >= 400 && response.status < 500) return new ProviderRequestError(400, message);
+  if (response.status >= 400 && response.status < 500) return providerInputError(message);
   return new ProviderRequestError(response.status || 502, message);
 }
 

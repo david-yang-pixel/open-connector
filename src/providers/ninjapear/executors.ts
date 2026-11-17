@@ -4,8 +4,8 @@ import type {
   ProviderExecutors,
   ProviderProxyExecutor,
 } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderFetch, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 
 import {
   compactObject,
@@ -15,20 +15,15 @@ import {
   optionalRecord,
   optionalString,
 } from "../../core/cast.ts";
-import {
-  defineApiKeyProviderExecutors,
-  defineProviderProxy,
-  providerUserAgent,
-  ProviderRequestError,
-  requiredInputString,
-} from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
+import { providerUserAgent, ProviderRequestError, requiredInputString } from "../provider-runtime.ts";
 
 const service = "ninjapear";
 export const ninjapearApiBaseUrl = "https://nubela.co";
 
 type NinjapearRequestPhase = "validate" | "execute";
 type NinjapearQueryValue = string | number | boolean | undefined;
-type NinjapearContext = Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">;
 type NinjapearActionHandler = ProviderRuntimeHandler<ApiKeyProviderContext>;
 
 export const ninjapearActionHandlers: ProviderActionHandlers<"ninjapear", NinjapearActionHandler> = {
@@ -157,7 +152,6 @@ async function validateNinjapearCredential(
       accountId: "ninjapear-api-key",
       displayName: "NinjaPear API Key",
     },
-    grantedScopes: [],
     metadata: compactObject({
       apiBaseUrl: ninjapearApiBaseUrl,
       validationEndpoint: "/api/v1/meta/credit-balance",
@@ -169,7 +163,7 @@ async function validateNinjapearCredential(
 async function requestNinjapear(
   path: string,
   query: Record<string, NinjapearQueryValue>,
-  context: NinjapearContext,
+  context: ApiKeyProviderContext,
   phase: NinjapearRequestPhase,
 ): Promise<Record<string, unknown>> {
   const url = new URL(path, ninjapearApiBaseUrl);

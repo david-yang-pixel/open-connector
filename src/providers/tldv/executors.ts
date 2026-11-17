@@ -1,11 +1,11 @@
 import type { CredentialValidators, ProviderExecutors, ProviderProxyExecutor } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { compactObject, optionalBoolean, optionalInteger, optionalString, requiredString } from "../../core/cast.ts";
 import { encodePathSegment } from "../../core/request.ts";
 import { requestJson } from "../http-json-runtime.ts";
-import { defineApiKeyProviderExecutors, defineProviderProxy } from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { defineProviderProxy } from "../provider-proxy.ts";
 
 const service = "tldv";
 const apiBaseUrl = "https://pasta.tldv.io";
@@ -74,7 +74,6 @@ export const credentialValidators: CredentialValidators = {
         accountId: "tldv-api-key",
         displayName: "tl;dv API Key",
       },
-      grantedScopes: [],
       metadata: {
         apiBaseUrl,
         apiVersion,
@@ -86,7 +85,7 @@ export const credentialValidators: CredentialValidators = {
 
 function tldvRequest(
   path: string,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   options:
     | {
         method?: string;

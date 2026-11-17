@@ -1,6 +1,5 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-runtime.ts";
+import type { ProviderActionHandlers, ApiKeyProviderContext, ProviderRuntimeHandler } from "../provider-executors.ts";
 
 import { optionalRawString, optionalRecord, optionalString } from "../../core/cast.ts";
 import {
@@ -8,12 +7,13 @@ import {
   providerUserAgent,
   ProviderRequestError,
   requiredResponseRecord,
+  providerInputError,
+  defaultProviderRequestTimeoutMs,
 } from "../provider-runtime.ts";
 
 export const lingvanexTranslationApiBaseUrl = "https://api-gl.lingvanex.com";
 
 const translationPath = "/language/translate/v2";
-const requestTimeoutMs = 30_000;
 
 type LingvanexPhase = "validate" | "execute";
 type LingvanexQueryValue = string | string[] | undefined;
@@ -59,7 +59,6 @@ export async function validateLingvanexTranslationApiCredential(
       accountId: "lingvanex_translation_api:api-key",
       displayName: "Lingvanex Translation API Key",
     },
-    grantedScopes: [],
     metadata: {
       apiBaseUrl: lingvanexTranslationApiBaseUrl,
       validationEndpoint: `${translationPath}/languages`,
@@ -136,7 +135,7 @@ async function detectLanguage(input: Record<string, unknown>, context: ApiKeyPro
 
 async function listLanguages(
   input: Record<string, unknown>,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: LingvanexPhase,
 ): Promise<{
   languages: Array<{ language: string; name: string | null; raw: Record<string, unknown> }>;
@@ -173,7 +172,7 @@ async function listLanguages(
 
 async function requestLingvanexJson(
   input: LingvanexRequestInput,
-  context: Pick<ApiKeyProviderContext, "apiKey" | "fetcher" | "signal">,
+  context: ApiKeyProviderContext,
   phase: LingvanexPhase,
 ): Promise<unknown> {
   const url = new URL(input.path, lingvanexTranslationApiBaseUrl);
@@ -188,7 +187,7 @@ async function requestLingvanexJson(
   }
   url.searchParams.set("key", context.apiKey);
 
-  const timeout = createProviderTimeout(context.signal, requestTimeoutMs);
+  const timeout = createProviderTimeout(context.signal);
   let response: Response;
   let payload: unknown;
   try {
@@ -203,7 +202,10 @@ async function requestLingvanexJson(
     payload = await readLingvanexPayload(response);
   } catch (error) {
     if (timeout.didTimeout()) {
-      throw new ProviderRequestError(504, `Lingvanex request timed out after ${requestTimeoutMs / 1000} seconds`);
+      throw new ProviderRequestError(
+        504,
+        `Lingvanex request timed out after ${defaultProviderRequestTimeoutMs / 1000} seconds`,
+      );
     }
     throw new ProviderRequestError(
       502,
@@ -240,13 +242,13 @@ function createLingvanexError(status: number, payload: unknown, phase: Lingvanex
     return new ProviderRequestError(429, message);
   }
   if (phase === "validate" && (status === 400 || status === 401 || status === 403)) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
   if (status === 401 || status === 403) {
     return new ProviderRequestError(status, message);
   }
   if (status === 400) {
-    return new ProviderRequestError(400, message);
+    return providerInputError(message);
   }
 
   return new ProviderRequestError(status >= 500 ? 502 : status, message);

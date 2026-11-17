@@ -1,9 +1,10 @@
 import type { CredentialValidationResult, ProviderExecutors } from "../../core/types.ts";
-import type { ProviderActionHandlers } from "../provider-runtime.ts";
-import type { ApiKeyProviderContext } from "../provider-runtime.ts";
+import type { ProviderActionHandlers } from "../provider-executors.ts";
+import type { ApiKeyProviderContext } from "../provider-executors.ts";
 
 import { compactObject, optionalInteger, optionalNumber, optionalString, requiredString } from "../../core/cast.ts";
-import { defineApiKeyProviderExecutors, ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
+import { defineApiKeyProviderExecutors } from "../provider-executors.ts";
+import { ProviderRequestError, providerUserAgent } from "../provider-runtime.ts";
 
 const pushbulletApiBaseUrl = "https://api.pushbullet.com/v2";
 const pushbulletValidationPath = "/users/me";
@@ -96,9 +97,7 @@ export async function validatePushbulletCredential(
     profile: {
       accountId: iden ? `pushbullet:user:${iden}` : "pushbullet-access-token",
       displayName: name || email || "Pushbullet Access Token",
-      grantedScopes: [],
     },
-    grantedScopes: [],
     metadata: compactObject({
       validationEndpoint: pushbulletValidationPath,
       userIden: iden,

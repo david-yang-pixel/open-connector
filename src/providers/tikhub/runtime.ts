@@ -1,5 +1,6 @@
 import type { CredentialValidationResult } from "../../core/types.ts";
-import type { ApiKeyProviderContext, ProviderActionHandlers, ProviderFetch } from "../provider-runtime.ts";
+import type { ApiKeyProviderContext, ProviderActionHandlers } from "../provider-executors.ts";
+import type { ProviderFetch } from "../provider-runtime.ts";
 import type { TikHubEndpointMethod } from "./endpoint-policy.ts";
 
 import {
@@ -213,7 +214,7 @@ async function invokeTikHubEndpoint(input: Record<string, unknown>, fetcher: typ
         "user-agent": providerUserAgent,
       },
       ...(serializedBody === undefined ? {} : { body: serializedBody }),
-      redirect: "error",
+      redirect: "manual",
       signal: timeout.signal,
     });
     let responseBody: unknown;
@@ -580,7 +581,7 @@ async function requestTikHubUserJson(input: {
         authorization: `Bearer ${input.apiKey}`,
         "user-agent": providerUserAgent,
       },
-      redirect: "error",
+      redirect: "manual",
       signal: timeout.signal,
     });
     const payload = await readTikHubResponseBody(response, tikhubDynamicResponseMaxBytes);
