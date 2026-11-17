@@ -99,6 +99,23 @@ const optionalScopeOAuthProvider: ProviderDefinition = {
   ],
 };
 
+const dynamicOAuthProvider: ProviderDefinition = {
+  ...oauthProvider,
+  service: "dynamic",
+  auth: [
+    {
+      type: "oauth2",
+      authorizationUrl: "{+authorizationEndpoint}",
+      tokenUrl: "{+tokenEndpoint}",
+      scopes: [],
+      tokenEndpointAuthMethod: "none",
+      pkce: { method: "S256" },
+      clientRegistration: "dynamic",
+      connectionFields: [{ key: "serverUrl", label: "Server URL", inputType: "text", required: true, secret: false }],
+    },
+  ],
+};
+
 function authorizationOption(id: string, _required = false, _requires?: string[]): OAuthAuthorizationOption {
   return {
     id,
@@ -1435,6 +1452,71 @@ describe("OAuthFlowService", () => {
     expect(callbackParameters).toEqual({ shop_id: "42" });
     expect(callbackQuery).toBe("?shop_id=41&shop_id=42&hmac=signature");
     expect(callbackState).toBe(started.state);
+  });
+
+  it("registers a connection-scoped OAuth client for dynamic client registration providers", async () => {
+    const registrations: Array<{ values: Record<string, string>; redirectUri: string }> = [];
+    const exchanges: Array<{ codeVerifier?: string; tokenUrl: string; clientId: string }> = [];
+    const services = createServices([dynamicOAuthProvider], {
+      oauthRuntime: {
+        async registerClient(input) {
+          registrations.push({ values: input.values, redirectUri: input.redirectUri });
+          return {
+            clientId: "registered-client",
+            clientSecret: "",
+            extra: {
+              serverUrl: input.values.serverUrl,
+              authorizationEndpoint: "https://auth.example.com/authorize",
+              tokenEndpoint: "https://auth.example.com/token/",
+            },
+            authorizationParams: { resource: input.values.serverUrl, scope: "tools:read" },
+          };
+        },
+        async exchangeCode(input) {
+          exchanges.push({
+            codeVerifier: input.codeVerifier,
+            tokenUrl: input.tokenUrl,
+            clientId: input.clientConfig.clientId,
+          });
+          return { accessToken: "mcp-access-token", tokenType: "Bearer", metadata: {} };
+        },
+      },
+    });
+
+    await expect(services.flow.startAuthorization({ service: "dynamic" })).rejects.toMatchObject({
+      code: "invalid_input",
+      message: "serverUrl is required.",
+    });
+    const started = await services.flow.startAuthorization({
+      service: "dynamic",
+      connectionName: "work",
+      values: { serverUrl: " https://mcp.example.com/mcp ", ignored: "value" },
+    });
+    const authorizationUrl = new URL(started.authorizationUrl);
+
+    expect(registrations).toEqual([
+      { values: { serverUrl: "https://mcp.example.com/mcp" }, redirectUri: "http://localhost:3000/oauth/callback" },
+    ]);
+    expect(authorizationUrl.origin + authorizationUrl.pathname).toBe("https://auth.example.com/authorize");
+    expect(authorizationUrl.searchParams.get("client_id")).toBe("registered-client");
+    expect(authorizationUrl.searchParams.get("resource")).toBe("https://mcp.example.com/mcp");
+    expect(authorizationUrl.searchParams.get("scope")).toBe("tools:read");
+    expect(authorizationUrl.searchParams.get("code_challenge_method")).toBe("S256");
+
+    await services.flow.completeAuthorization({ state: started.state, code: "authorization-code" });
+
+    expect(exchanges).toEqual([
+      { codeVerifier: expect.any(String), tokenUrl: "https://auth.example.com/token/", clientId: "registered-client" },
+    ]);
+    await expect(services.connections.getCredential("dynamic", "work")).resolves.toMatchObject({
+      authType: "oauth2",
+      accessToken: "mcp-access-token",
+      metadata: {
+        oauthClientId: "registered-client",
+        oauthClientConfig: { clientId: "registered-client", extra: { serverUrl: "https://mcp.example.com/mcp" } },
+      },
+    });
+    await expect(services.clientConfigs.listConfigs()).resolves.toEqual([]);
   });
 
   it("rejects OAuth endpoint config values that resolve to local network targets", async () => {

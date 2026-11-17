@@ -1,26 +1,29 @@
-import type { ProviderDefinition } from "../../core/types.ts";
+import type { CredentialDefinition, ProviderDefinition } from "../../core/types.ts";
 
 import { customMcpActions } from "./actions.ts";
+
+const serverUrlField: CredentialDefinition = {
+  key: "serverUrl",
+  label: "MCP Server URL",
+  inputType: "text",
+  required: true,
+  secret: false,
+  placeholder: "https://your-mcp-server.com/mcp",
+  description: "Full remote MCP HTTP endpoint (e.g. https://domain.com/mcp or https://domain.com/sse).",
+};
 
 export const provider: ProviderDefinition = {
   service: "custom_mcp",
   displayName: "Custom Remote MCP",
-  description: "Connect and operate any custom remote MCP server through its streamable HTTP or SSE endpoint.",
+  description:
+    "Connect and operate any custom remote MCP server through its streamable HTTP or SSE endpoint, with a bearer token or MCP OAuth sign-in.",
   categories: ["Developer Tools", "Infrastructure"],
-  authTypes: ["custom_credential"],
+  authTypes: ["custom_credential", "oauth2"],
   auth: [
     {
       type: "custom_credential",
       fields: [
-        {
-          key: "serverUrl",
-          label: "MCP Server URL",
-          inputType: "text",
-          required: true,
-          secret: false,
-          placeholder: "https://your-mcp-server.com/mcp",
-          description: "Full remote MCP HTTP endpoint (e.g. https://domain.com/mcp or https://domain.com/sse).",
-        },
+        serverUrlField,
         {
           key: "authorizationToken",
           label: "Authorization Token (Optional)",
@@ -85,6 +88,23 @@ export const provider: ProviderDefinition = {
             '{"list_tickets":{"mode":"page","requestPageField":"page","requestLimitField":"per_page","responseItemsPath":"data.tickets","responseNextPagePath":"data.next_page","stable":false}}',
           description:
             "Optional per-tool cursor, offset, or page-number mappings used for visible page metadata, continuation, and bounded automatic collection.",
+        },
+      ],
+    },
+    {
+      // MCP authorization: endpoints and the client are discovered and registered per connection.
+      type: "oauth2",
+      authorizationUrl: "{+authorizationEndpoint}",
+      tokenUrl: "{+tokenEndpoint}",
+      scopes: [],
+      tokenEndpointAuthMethod: "none",
+      pkce: { method: "S256" },
+      clientRegistration: "dynamic",
+      connectionFields: [
+        {
+          ...serverUrlField,
+          description:
+            "Remote MCP endpoint that supports MCP OAuth. Open Connector discovers its authorization server and registers itself automatically.",
         },
       ],
     },

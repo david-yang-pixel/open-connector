@@ -202,6 +202,14 @@ export type OAuth2AuthDefinition = {
     state?: string | false;
     scope?: string | false;
   };
+  /**
+   * `dynamic` means there is no deployment-wide OAuth app: each authorization discovers the
+   * authorization server and registers a client for that one connection (for example the MCP
+   * authorization flow), using the provider OAuth runtime's `registerClient`.
+   */
+  clientRegistration?: "dynamic";
+  /** Connection inputs collected before a `dynamic` client registration, such as the server URL. */
+  connectionFields?: CredentialDefinition[];
   /** Extra local OAuth app fields required before starting authorization. */
   clientConfigFields?: OAuthClientConfigFieldDefinition[];
   /** How to register the provider OAuth app that supplies the client id and secret. */

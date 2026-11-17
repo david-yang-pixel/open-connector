@@ -399,6 +399,7 @@
       "manualOAuthClient": "使用自定义 OAuth App 连接 {{name}}。",
       "connectedOAuth": "{{name}} 已通过 OAuth 连接。",
       "connectOAuth": "通过 OAuth 授权流程连接 {{name}}。",
+      "connectDynamicOAuth": "填写 MCP 服务器地址。Open Connector 会自动发现它的授权服务器并完成注册，然后打开 {{name}} 的登录窗口。",
       "saving": "正在保存连接...",
       "loadingAdvancedSettings": "正在加载连接设置...",
       "loadAdvancedSettingsFailed": "连接设置加载失败。",

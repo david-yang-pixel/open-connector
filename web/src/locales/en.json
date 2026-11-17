@@ -399,6 +399,7 @@
       "manualOAuthClient": "Connect {{name}} with a custom OAuth app.",
       "connectedOAuth": "{{name}} is connected through OAuth.",
       "connectOAuth": "Connect {{name}} through its OAuth authorization flow.",
+      "connectDynamicOAuth": "Enter the MCP server URL. Open Connector discovers its authorization server, registers itself automatically, and opens the {{name}} sign-in window.",
       "saving": "Saving connection...",
       "loadingAdvancedSettings": "Loading connection settings...",
       "loadAdvancedSettingsFailed": "Failed to load connection settings.",

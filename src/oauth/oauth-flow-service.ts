@@ -1,5 +1,6 @@
 import type { ConnectionService } from "../connection-service.ts";
 import type { StoredConnection } from "../connection-store.ts";
+import type { OAuth2AuthDefinition } from "../core/types.ts";
 import type { IProviderLoader } from "../providers/provider-loader.ts";
 import type { SaasOAuthService } from "../saas/saas-oauth-service.ts";
 import type { ISecretCodec } from "../server/secrets/secret-codec-core.ts";
@@ -40,6 +41,8 @@ export interface OAuthAuthorizationStartInput {
   connectionName?: string;
   clientConfig?: OAuthClientConfigInput;
   authorizationOptionIds?: string[];
+  /** Connection inputs for providers whose OAuth client is registered per connection. */
+  values?: Record<string, string>;
 }
 
 export interface OAuthAuthorizationCompleteInput {
@@ -131,6 +134,12 @@ export class OAuthFlowService {
 
   async startConnectionRequest(input: OAuthConnectionRequestInput): Promise<OAuthConnectionRequestStart> {
     validateReturnUri(input.returnUri);
+    if (this.clientConfigs.getOAuthDefinition(input.service).clientRegistration === "dynamic") {
+      throw new OAuthFlowError(
+        "unsupported_auth_type",
+        `${input.service} OAuth connections are created from the console, which collects the server URL first.`,
+      );
+    }
     const remote = await this.saasOAuth?.start(input);
     if (remote) return remote;
     const requestedScopes = input.authorizationOptionIds;
@@ -224,7 +233,10 @@ export class OAuthFlowService {
     this.connections.assertProviderAvailable(service);
     const retirementGeneration = await this.connections.getRetirementGeneration(service, connectionName);
     const auth = this.clientConfigs.getOAuthDefinition(service);
+    const registration =
+      auth.clientRegistration === "dynamic" ? await this.registerDynamicClient(service, auth, input.values) : undefined;
     const config =
+      registration?.config ??
       requestConfig ??
       (input.clientConfig
         ? this.resolveCustomClientConfig(service, input.clientConfig)
@@ -263,12 +275,12 @@ export class OAuthFlowService {
       issuer: auth.issuer,
       requireIssuer: auth.requireIssuer,
       redirectUri,
-      clientConfig: input.clientConfig || auth.issuer ? config : undefined,
+      clientConfig: input.clientConfig || auth.issuer || registration ? config : undefined,
     };
 
     const authorizationUrl = new URL(this.clientConfigs.resolveEndpointUrl(service, auth.authorizationUrl, config));
     if (auth.resource) authorizationUrl.searchParams.set("resource", auth.resource);
-    for (const [key, value] of Object.entries(auth.authorizationParams ?? {})) {
+    for (const [key, value] of Object.entries({ ...auth.authorizationParams, ...registration?.authorizationParams })) {
       authorizationUrl.searchParams.set(key, value);
     }
     setAuthorizationParam(authorizationUrl, auth.authorizationRequestFields?.clientId, "client_id", config.clientId);
@@ -280,8 +292,9 @@ export class OAuthFlowService {
     if (scopeField !== false) {
       if (authorizationScopes.length > 0) {
         authorizationUrl.searchParams.set(scopeParameterName, authorizationScopes.join(auth.scopeSeparator ?? " "));
-      } else {
-        // An explicit empty selection must also remove a scope baked into the endpoint URL.
+      } else if (registration?.authorizationParams[scopeParameterName] === undefined) {
+        // An explicit empty selection must also remove a scope baked into the endpoint URL, but a
+        // dynamically registered client keeps the scope its registration discovered.
         authorizationUrl.searchParams.delete(scopeParameterName);
       }
     }
@@ -463,6 +476,40 @@ export class OAuthFlowService {
       }
       throw error;
     }
+  }
+
+  /** Register a connection-scoped OAuth client for a provider without a deployment-wide OAuth app. */
+  private async registerDynamicClient(
+    service: string,
+    auth: OAuth2AuthDefinition,
+    values: Record<string, string> | undefined,
+  ): Promise<{ config: OAuthClientConfig; authorizationParams: Record<string, string> }> {
+    const providerOAuth = await this.providerLoader.loadProviderOAuthRuntime?.(service);
+    if (!providerOAuth?.registerClient) {
+      throw new OAuthFlowError("unsupported_auth_type", `${service} cannot register an OAuth client.`);
+    }
+    const connectionValues: Record<string, string> = {};
+    for (const field of auth.connectionFields ?? []) {
+      const value = values?.[field.key]?.trim();
+      if (value) connectionValues[field.key] = value;
+      else if (field.required) throw new OAuthFlowError("invalid_input", `${field.key} is required.`);
+    }
+    const registration = await providerOAuth.registerClient({
+      service,
+      values: connectionValues,
+      redirectUri: this.clientConfigs.expectedRedirectUri(service),
+      createError: (message) => new OAuthFlowError("oauth_client_registration_failed", message),
+    });
+    return {
+      config: {
+        service,
+        clientId: registration.clientId,
+        clientSecret: registration.clientSecret,
+        extra: registration.extra,
+        secretExtra: {},
+      },
+      authorizationParams: registration.authorizationParams,
+    };
   }
 
   private resolveCustomClientConfig(service: string, input: OAuthClientConfigInput): OAuthClientConfig {

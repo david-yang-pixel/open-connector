@@ -14,6 +14,7 @@ import {
   requiredRawString,
   requiredString,
   requiredStringArray,
+  stringRecord,
 } from "../../core/cast.ts";
 import { OAuthClientConfigError } from "../../oauth/oauth-client-config-service.ts";
 import { OAuthCallbackError, OAuthFlowError } from "../../oauth/oauth-flow-service.ts";
@@ -319,6 +320,7 @@ export function createConsoleOAuthRoutes({
         connectionName,
         clientConfig: readOAuthClientConfigInput(body),
         authorizationOptionIds: readOptionalStringArray(body, "authorizationOptionIds"),
+        values: stringRecord(optionalRecord(body.values) ?? {}),
       });
       const authorizationUrl = new URL(authorization.authorizationUrl);
       logger?.info(

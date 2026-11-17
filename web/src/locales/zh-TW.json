@@ -399,6 +399,7 @@
       "manualOAuthClient": "使用自訂 OAuth App 連線 {{name}}。",
       "connectedOAuth": "{{name}} 已透過 OAuth 連線。",
       "connectOAuth": "透過 {{name}} 的 OAuth 授權流程連線。",
+      "connectDynamicOAuth": "填寫 MCP 伺服器網址。Open Connector 會自動探索其授權伺服器並完成註冊，再開啟 {{name}} 的登入視窗。",
       "saving": "正在儲存連線...",
       "loadingAdvancedSettings": "正在載入連線設定...",
       "loadAdvancedSettingsFailed": "連線設定載入失敗。",

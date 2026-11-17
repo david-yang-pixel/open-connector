@@ -29,6 +29,10 @@ export type ProviderAuthSetup =
       /** Scopes added to every authorization request for connection validation or renewal. */
       requiredScopes?: string[];
       authorizationOptions?: OAuthAuthorizationOptionSetup[];
+      /** `dynamic` connections register their own OAuth client, so no OAuth app needs configuring. */
+      clientRegistration?: OAuth2AuthDefinition["clientRegistration"];
+      /** Inputs sent as `values` when starting a `dynamic` authorization. */
+      connectionFields?: CredentialDefinition[];
     };
 
 interface OAuthAuthorizationOptionSetup extends OAuthAuthorizationOption {
@@ -60,6 +64,8 @@ export function describeProviderAuth(auth: ProviderAuthDefinition, labels?: Prov
         supportsScopeSelection: auth.authorizationRequestFields?.scope !== false,
         requiredScopes: auth.requiredScopes,
         authorizationOptions: describeOAuthAuthorizationOptions(auth),
+        clientRegistration: auth.clientRegistration,
+        connectionFields: auth.connectionFields,
       };
   }
 }

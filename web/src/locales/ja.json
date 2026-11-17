@@ -399,6 +399,7 @@
       "manualOAuthClient": "カスタム OAuth App で {{name}} に接続します。",
       "connectedOAuth": "{{name}} は OAuth で接続済みです。",
       "connectOAuth": "OAuth 認可フローで {{name}} に接続します。",
+      "connectDynamicOAuth": "MCP サーバーの URL を入力してください。Open Connector が認可サーバーを検出して自動登録し、{{name}} のサインイン画面を開きます。",
       "saving": "接続を保存中...",
       "loadingAdvancedSettings": "接続設定を読み込んでいます...",
       "loadAdvancedSettingsFailed": "接続設定の読み込みに失敗しました。",

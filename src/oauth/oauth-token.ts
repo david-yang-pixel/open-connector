@@ -78,7 +78,29 @@ export interface OAuthAuthorizationScopeResolutionInput {
 }
 
 /** Provider-local overrides for token protocols that do not follow the standard OAuth request shape. */
+export interface OAuthClientRegistrationInput {
+  service: string;
+  /** Connection inputs declared by the provider's `connectionFields`. */
+  values: Record<string, string>;
+  redirectUri: string;
+  signal?: AbortSignal;
+  createError(message: string): Error;
+}
+
+/** OAuth client registered for one connection by a `dynamic` client-registration provider. */
+export interface OAuthClientRegistration {
+  clientId: string;
+  /** Empty for public clients. */
+  clientSecret: string;
+  /** Stored with the connection and used to resolve `{key}` endpoint templates on exchange and refresh. */
+  extra: Record<string, string>;
+  /** Extra authorization request parameters for this registration, such as `scope` or `resource`. */
+  authorizationParams: Record<string, string>;
+}
+
 export interface ProviderOAuthRuntime {
+  /** Discover and register an OAuth client for one connection; required by `clientRegistration: "dynamic"`. */
+  registerClient?(input: OAuthClientRegistrationInput): Promise<OAuthClientRegistration>;
   resolveAuthorizationScopes?(input: OAuthAuthorizationScopeResolutionInput): Promise<string[]>;
   buildAuthorizationUrl?(input: {
     authorizationUrl: URL;

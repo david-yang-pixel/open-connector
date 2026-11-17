@@ -399,6 +399,7 @@
       "manualOAuthClient": "Подключить {{name}} через собственное приложение OAuth.",
       "connectedOAuth": "{{name}} подключен через OAuth.",
       "connectOAuth": "Подключите {{name}} через OAuth authorization flow.",
+      "connectDynamicOAuth": "Укажите URL MCP-сервера. Open Connector найдёт его сервер авторизации, зарегистрируется автоматически и откроет окно входа {{name}}.",
       "saving": "Сохранение подключения...",
       "loadingAdvancedSettings": "Загрузка настроек подключения...",
       "loadAdvancedSettingsFailed": "Не удалось загрузить настройки подключения.",
