@@ -1,8 +1,15 @@
 import type { FeishuActionRuntimeContext, FeishuJsonRequest } from "./client.ts";
 import type { FeishuIdentity } from "./client.ts";
 
-import { objectArray, optionalBoolean, optionalRecord, optionalString } from "../../../core/cast.ts";
-import { ProviderRequestError, providerResponseError } from "../../provider-runtime.ts";
+import {
+  compactObject,
+  objectArray,
+  optionalBoolean,
+  optionalRawString,
+  optionalRecord,
+  optionalString,
+} from "../../../core/cast.ts";
+import { ProviderRequestError, providerInputError, providerResponseError } from "../../provider-runtime.ts";
 import { uploadFeishuMedia } from "./media.ts";
 import { readFeishuResponsePage } from "./response.ts";
 
@@ -255,6 +262,13 @@ async function getMessageReadUsers(input: Record<string, unknown>, request: Feis
   return normalizePage(data);
 }
 
+/**
+ * Search messages with the body `POST /im/v1/messages/search` expects: every
+ * filter lives under `filter`, list-valued filters such as `from_types` are
+ * arrays, and `time_range` carries the caller's ISO 8601 strings unchanged, as
+ * the official Lark CLI sends them. Flattened filters are silently ignored by
+ * Feishu, so a wrong shape degrades to an unfiltered tenant-wide search.
+ */
 async function searchMessages(input: Record<string, unknown>, request: FeishuJsonRequest) {
   const data = await request({
     method: "POST",
@@ -263,21 +277,68 @@ async function searchMessages(input: Record<string, unknown>, request: FeishuJso
       page_size: optionalNumber(input.pageSize),
       page_token: optionalString(input.pageToken),
     },
-    body: {
-      query: optionalString(input.query),
-      chat_ids: stringArray(input.chatIds),
-      from_ids: stringArray(input.senderIds),
-      include: optionalString(input.attachmentType),
-      chat_type: optionalString(input.chatType),
-      from_type: optionalString(input.senderType),
-      exclude_from_type: optionalString(input.excludeSenderType),
-      is_at_me: optionalBoolean(input.isAtMe),
-      at_chatter_ids: stringArray(input.atUserIds),
-      start_time: isoTimeToMilliseconds(input.startTime),
-      end_time: isoTimeToMilliseconds(input.endTime),
-    },
+    body: buildMessageSearchBody(input),
   });
   return normalizePage(data);
+}
+
+function buildMessageSearchBody(input: Record<string, unknown>): Record<string, unknown> {
+  const senderType = optionalString(input.senderType);
+  const excludeSenderType = optionalString(input.excludeSenderType);
+  if (senderType !== undefined && senderType === excludeSenderType) {
+    throw providerInputError("senderType and excludeSenderType cannot be the same value");
+  }
+  const attachmentType = optionalString(input.attachmentType);
+  const filter = compactObject({
+    chat_ids: nonEmptyStringArray(input.chatIds),
+    from_ids: nonEmptyStringArray(input.senderIds),
+    include_attachment_types: attachmentType === undefined ? undefined : [attachmentType],
+    chat_type: optionalString(input.chatType),
+    from_types: senderType === undefined ? undefined : [senderType],
+    exclude_from_types: excludeSenderType === undefined ? undefined : [excludeSenderType],
+    is_at_me: input.isAtMe === true ? true : undefined,
+    at_chatter_ids: nonEmptyStringArray(input.atUserIds),
+    time_range: readMessageSearchTimeRange(input),
+  });
+  const body: Record<string, unknown> = { query: optionalRawString(input.query) ?? "" };
+  if (Object.keys(filter).length > 0) {
+    body.filter = filter;
+  }
+  return body;
+}
+
+function readMessageSearchTimeRange(input: Record<string, unknown>): Record<string, string> | undefined {
+  const startTime = readIsoTime(input.startTime, "startTime");
+  const endTime = readIsoTime(input.endTime, "endTime");
+  if (startTime && endTime && startTime.timestamp > endTime.timestamp) {
+    throw providerInputError("startTime cannot be later than endTime");
+  }
+  if (!startTime && !endTime) {
+    return undefined;
+  }
+  return compactObject({ start_time: startTime?.value, end_time: endTime?.value });
+}
+
+interface IsoTime {
+  readonly value: string;
+  readonly timestamp: number;
+}
+
+function readIsoTime(value: unknown, fieldName: string): IsoTime | undefined {
+  const time = optionalString(value);
+  if (time === undefined) {
+    return undefined;
+  }
+  const timestamp = Date.parse(time);
+  if (!Number.isFinite(timestamp)) {
+    throw providerInputError(`${fieldName} must be an ISO 8601 time: ${time}`);
+  }
+  return { value: time, timestamp };
+}
+
+function nonEmptyStringArray(value: unknown) {
+  const items = stringArray(value);
+  return items && items.length > 0 ? items : undefined;
 }
 
 function normalizePage(data: Record<string, unknown>) {
@@ -301,17 +362,6 @@ function stringArray(value: unknown) {
 
 function optionalNumber(value: unknown) {
   return typeof value === "number" ? value : undefined;
-}
-
-function isoTimeToMilliseconds(value: unknown) {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) {
-    throw new ProviderRequestError(400, `invalid ISO 8601 time: ${value}`);
-  }
-  return String(timestamp);
 }
 
 function readFileType(value: unknown) {
