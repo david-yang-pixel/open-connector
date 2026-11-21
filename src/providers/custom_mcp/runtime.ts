@@ -143,12 +143,32 @@ export async function listCustomMcpTools(context: CustomMcpContext): Promise<Cus
   return published;
 }
 
+/** Accept call_tool arguments as a JSON object, or as a JSON string that encodes one, since many MCP callers stringify nested objects. */
+function readCustomMcpToolArguments(value: unknown): Record<string, unknown> {
+  if (value == null || (typeof value === "string" && !value.trim())) {
+    return {};
+  }
+  let parsed = value;
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      throw providerInputError("arguments string is not valid JSON.");
+    }
+  }
+  const args = optionalRecord(parsed);
+  if (!args) {
+    throw providerInputError("arguments must be a JSON object or a JSON string that encodes one.");
+  }
+  return args;
+}
+
 export async function callCustomMcpTool(
   context: CustomMcpContext,
   input: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
   const toolName = requiredString(input.toolName, "toolName", providerInputError);
-  const args = optionalRecord(input.arguments) ?? {};
+  const args = readCustomMcpToolArguments(input.arguments);
   return withCustomMcpClient(context, async (client) => {
     const tools = await getCustomMcpToolCatalog(context, client);
     const tool = tools.find((candidate) => candidate.name === toolName);
