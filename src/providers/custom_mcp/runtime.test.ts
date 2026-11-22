@@ -204,6 +204,25 @@ describe("custom MCP runtime", () => {
     expect(result.structuredContent).toEqual({ rows: [1] });
   });
 
+  it("accepts arguments encoded as a JSON string", async () => {
+    await callCustomMcpTool(context(), { toolName: "query_logs", arguments: '{"query":"error"}' });
+
+    expect(client.callTool).toHaveBeenCalledWith(
+      { name: "query_logs", arguments: { query: "error" } },
+      { timeout: 120000, signal: undefined },
+    );
+  });
+
+  it("rejects argument strings that are not JSON objects before calling the remote tool", async () => {
+    for (const value of ["{query:", '["error"]', "42", '"error"']) {
+      await expect(callCustomMcpTool(context(), { toolName: "query_logs", arguments: value })).rejects.toMatchObject({
+        status: 400,
+      });
+    }
+    expect(client.listTools).not.toHaveBeenCalled();
+    expect(client.callTool).not.toHaveBeenCalled();
+  });
+
   it("validates the pagination fields that OpenConnector injects into the remote call", async () => {
     client.listTools.mockResolvedValueOnce({
       tools: [

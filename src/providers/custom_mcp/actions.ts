@@ -48,12 +48,12 @@ export const customMcpActions: ActionDefinition[] = [
     inputSchema: s.object(
       {
         toolName: s.string({ description: "Name of the remote MCP tool to invoke." }),
-        arguments: s.object(
-          {},
-          {
-            additionalProperties: true,
-            description: "Key-value arguments conforming to the tool's inputSchema.",
-          },
+        arguments: s.anyOf(
+          "Arguments conforming to the tool's inputSchema, as a JSON object or a JSON string that encodes one.",
+          [
+            s.looseObject("Key-value arguments conforming to the tool's inputSchema."),
+            s.string("A JSON string that encodes the arguments object."),
+          ],
         ),
         confirmOperation: s.string({
           description:
